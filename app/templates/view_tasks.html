@@ -2,181 +2,115 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Artillery - View Tasks</title>
+    <title>View Tasks</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <style>
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 1em;
+            margin-top: 20px;
         }
 
         th, td {
             padding: 10px;
-            border: 1px solid #555;
+            border: 1px solid #444;
+            text-align: center;
         }
 
         th {
-            background-color: #333;
+            background-color: #222;
+            color: #fff;
         }
 
-        .run-btn {
-            background-color: #28a745;
-            color: white;
-            padding: 5px 10px;
-            border: none;
-            cursor: pointer;
+        tr:nth-child(even) {
+            background-color: #2c2c2c;
         }
 
-        .log-link {
-            color: #00ffff;
-        }
-
-        .command-preview {
-            margin-top: 0.5rem;
-            background-color: #1e1e1e;
-            color: #00eaff;
-            padding: 0.5rem;
-            border-radius: 4px;
-            display: none;
-        }
-
-        a.toggle-command-link {
-            color: #00eaff;
-            text-decoration: underline;
-            cursor: pointer;
-        }
-
-        .btn-edit, .btn-delete, .btn-delete-archive {
+        .btn {
             display: inline-block;
-            margin-right: 5px;
-            padding: 4px 8px;
+            padding: 5px 10px;
+            margin: 2px;
+            border-radius: 4px;
             font-size: 0.9em;
-            border: none;
-            cursor: pointer;
             text-decoration: none;
+            color: white;
         }
 
-        .btn-edit {
+        .btn-primary {
             background-color: #007bff;
-            color: white;
         }
 
-        .btn-delete {
+        .btn-secondary {
+            background-color: #6c757d;
+        }
+
+        .btn-danger {
             background-color: #dc3545;
-            color: white;
-        }
-
-        .btn-delete-archive {
-            background-color: #ff8800;
-            color: white;
         }
     </style>
 </head>
 <body>
-    <header>
-        <div class="banner">
-            <div class="title">ARTILLERY</div>
-            <nav class="nav">
-                <a href="/">Home</a>
-                <a href="/new-task">New Task</a>
-                <a href="/tasks">View Tasks</a>
-                <a href="/config">Config</a>
-            </nav>
-        </div>
-    </header>
 
-    <main class="content">
-        <h1>Task List</h1>
+<header>
+    <div class="banner">
+        <div class="title">ARTILLERY</div>
+        <nav class="nav">
+            <a href="/">Home</a>
+            <a href="/new-task">New Task</a>
+            <a href="/tasks">View Tasks</a>
+            <a href="/config">Config</a>
+        </nav>
+    </div>
+</header>
 
-        {% if tasks %}
-        <table>
-            <thead>
-                <tr>
-                    <th>Task Name</th>
-                    <th>Schedule</th>
-                    <th>Command</th>
-                    <th>Status</th>
-                    <th>Next Run</th>
-                    <th>Log</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for task in tasks %}
-                <tr>
-                    <td>{{ task.name }}</td>
-                    <td>{{ task.schedule }}</td>
-                    <td>
-                        <a href="javascript:void(0);" class="toggle-command-link" onclick="toggleCommand('{{ task.name }}')">Show Command</a>
-                        <pre id="cmd-{{ task.name }}" class="command-preview">{{ task.command }}</pre>
-                    </td>
-                    <td>{{ task.status }}</td>
-                    <td>{{ task.next_run }}</td>
-                    <td>
-                        {% if task.has_log %}
-                            <a href="{{ url_for('main.download_log', task_name=task.name) }}">Download</a>
-                        {% else %}
-                            No log
-                        {% endif %}
-                    </td>
-                    <!-- Inside the <td> Action column -->
-                        <td style="white-space: nowrap;">
-                            <!-- Edit -->
-                            <a href="{{ url_for('main.edit_task', task_name=task.name) }}" class="btn-edit">Edit</a>
+<main class="content">
+    <h1>Scheduled Tasks</h1>
 
-                            <!-- Delete Task -->
-                            <form method="POST" action="{{ url_for('main.delete_task', task_name=task.name) }}" style="display:inline;" onsubmit="return confirmDeleteTask('{{ task.name }}');">
-                                <button type="submit" class="btn-delete">Delete</button>
-                            </form>
+    {% if tasks %}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Schedule</th>
+                <th>Action</th>
+                <th>Active</th>
+                <th>Danger Zone</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for task in tasks %}
+            <tr>
+                <td>{{ task.name }}</td>
+                <td>{{ task.schedule }}</td>
 
-                            <!-- Delete Archive -->
-                            <form method="POST" action="{{ url_for('main.delete_archive', task_name=task.name) }}" style="display:inline;" onsubmit="return confirmDeleteArchive('{{ task.name }}');">
-                                <button type="submit" class="btn-delete-archive">Delete Archive</button>
-                            </form>
+                <!-- Action -->
+                <td>
+                    <a href="/edit-task/{{ task.name }}" class="btn btn-primary">Edit</a>
+                    <a href="/run-now/{{ task.name }}" class="btn btn-primary">Run</a>
+                </td>
 
-                            <!-- Manual Run -->
-                            <form method="POST" action="{{ url_for('main.run_task', task_name=task.name) }}" style="display:inline;" onsubmit="return confirmDeleteArchive('{{ task.name }}');">
-                                <button type="submit" class="run-btn">Run</button>
-                            </form>
+                <!-- Active -->
+                <td>
+                    <a href="/toggle-pause/{{ task.name }}" class="btn btn-secondary">
+                        {% if task.paused %}Resume{% else %}Pause{% endif %}
+                    </a>
+                </td>
 
-                            <!-- Pause or Resume -->
-                            {% if task.is_paused %}
-                            <form method="POST" action="{{ url_for('main.resume_task', task_name=task.name) }}" style="display:inline;">
-                                <button type="submit">Resume</button>
-                            </form>
-                            {% else %}
-                            <form method="POST" action="{{ url_for('main.pause_task', task_name=task.name) }}" style="display:inline;">
-                                <button type="submit">Pause</button>
-                            </form>
-                            {% endif %}
-
-                        
-                        </td>
-
-                    
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
+                <!-- Danger Zone -->
+                <td>
+                    <a href="/delete-task/{{ task.name }}" class="btn btn-danger"
+                       onclick="return confirm('Are you sure you want to delete this task?')">Delete</a>
+                    <a href="/delete-archive/{{ task.name }}" class="btn btn-danger"
+                       onclick="return confirm('Are you sure you want to delete the downloaded files for this task?')">Delete Archive</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
         <p>No tasks found.</p>
-        {% endif %}
-    </main>
+    {% endif %}
+</main>
 
-    <script>
-        function toggleCommand(taskName) {
-            const el = document.getElementById("cmd-" + taskName);
-            el.style.display = (el.style.display === "none") ? "block" : "none";
-        }
-
-        function confirmDeleteTask(taskName) {
-            return confirm(`Are you sure you want to delete the entire task "${taskName}"?\nThis will NOT delete downloaded media.`);
-        }
-
-        function confirmDeleteArchive(taskName) {
-            return confirm(`Are you sure you want to delete the download archive for "${taskName}"?\nThis will cause files to be re-downloaded.`);
-        }
-    </script>
 </body>
 </html>
