@@ -35,5 +35,17 @@
         </div>
         {% endif %}
     </main>
+
+    <h2>Recent Downloads</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 10px;">
+  {% for image in recent_images %}
+    <a href="{{ url_for('main.serve_downloaded_image', filename=image) }}" target="_blank">
+      <img src="{{ url_for('main.serve_downloaded_image', filename=image) }}" 
+           style="width: 120px; height: 120px; object-fit: cover; border-radius: 8px;" 
+           alt="recent download">
+    </a>
+  {% endfor %}
+</div>
+
 </body>
 </html>

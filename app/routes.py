@@ -13,23 +13,27 @@ main = Blueprint('main', __name__)
 
 # ---------------------- Routes ----------------------
 
-@main.route('/', methods=['GET', 'POST'])
-def index():
-    output = ""
-    if request.method == 'POST':
-        url = request.form.get('gallery_url')
-        if url:
-            try:
-                result = subprocess.run(
-                    ["gallery-dl", "--config", "/config/config.json", url],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True
-                )
-                output = result.stdout
-            except Exception as e:
-                output = f"Error: {str(e)}"
-    return render_template('index.html', output=output)
+@main.route("/downloads/<path:filename>")
+def serve_downloaded_image(filename):
+    return send_from_directory("/downloads", filename)
+
+@main.route("/")
+def homepage():
+    image_extensions = {".jpg", ".jpeg", ".png"}
+    image_files = []
+
+    for root, _, files in os.walk("/downloads"):
+        for name in files:
+            ext = Path(name).suffix.lower()
+            if ext in image_extensions:
+                full_path = Path(root) / name
+                rel_path = full_path.relative_to("/downloads")
+                image_files.append((full_path.stat().st_mtime, str(rel_path)))
+
+    image_files.sort(reverse=True)
+    recent_images = [path for _, path in image_files[:20]]
+
+    return render_template("homepage.html", recent_images=recent_images)
 
 @main.route('/config', methods=['GET', 'POST'])
 def config_editor():
