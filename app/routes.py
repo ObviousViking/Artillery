@@ -5,6 +5,7 @@ import json
 import subprocess
 import traceback
 from app.scheduler import scheduler
+from flask import send_from_directory
 
 
 # ✅ Define once and keep it at the top
@@ -13,8 +14,8 @@ main = Blueprint('main', __name__)
 
 # ---------------------- Routes ----------------------
 
-@main.route("/downloads/<path:filename>")
-def serve_downloaded_image(filename):
+@app.route("/downloads/<path:filename>")
+def serve_download(filename):
     return send_from_directory("/downloads", filename)
 
 @main.route("/")
