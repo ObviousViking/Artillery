@@ -11,26 +11,23 @@ from logging.handlers import RotatingFileHandler
 
 scheduler = BackgroundScheduler(timezone="UTC")
 
-
 log_dir = "/config/logs"
 os.makedirs(log_dir, exist_ok=True)
 log_file = os.path.join(log_dir, "scheduler.log")
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(asctime)s] %(message)s",
-    handlers=[
-        RotatingFileHandler(log_file, maxBytes=1024*1024, backupCount=3),
-        logging.StreamHandler()  # Keep printing to Docker logs too (optional)
-    ]
-)
+logger = logging.getLogger("scheduler")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    file_handler = RotatingFileHandler(log_file, maxBytes=1024*1024, backupCount=3)
+    stream_handler = logging.StreamHandler()
+    formatter = logging.Formatter("[%(asctime)s] %(message)s")
+    file_handler.setFormatter(formatter)
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
 
 def log(msg):
-    logging.info(msg)
-
-
-
-
+    logger.info(msg)
 
 def run_task(task_name):
     log(f"[Scheduler] Running scheduled task: {task_name}")
@@ -61,7 +58,7 @@ def run_task(task_name):
         log(f"[Scheduler] Error running {task_name}: {e}")
 
 def refresh_tasks():
-    log(f"[Scheduler] Reloading task definitions at {datetime.utcnow().isoformat()}")
+    log("[Scheduler] Reloading task definitions")
 
     task_dir = Path("/tasks")
 
@@ -100,9 +97,8 @@ def start_scheduler():
     else:
         log("[Scheduler] Scheduler already running")
 
-    refresh_tasks()  # ✅ No args
+    refresh_tasks()
 
-    # ✅ Also no args here
     scheduler.add_job(refresh_tasks, IntervalTrigger(seconds=60), id="reload_tasks", replace_existing=True)
 
     try:
@@ -110,7 +106,6 @@ def start_scheduler():
             time.sleep(10)
     except (KeyboardInterrupt, SystemExit):
         scheduler.shutdown()
-
 
 
 def log(msg):
