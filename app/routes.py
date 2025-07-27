@@ -14,9 +14,10 @@ main = Blueprint('main', __name__)
 
 # ---------------------- Routes ----------------------
 
-@app.route("/downloads/<path:filename>")
+@main.route("/downloads/<path:filename>")
 def serve_download(filename):
     return send_from_directory("/downloads", filename)
+
 
 @main.route("/")
 def homepage():
@@ -32,7 +33,7 @@ def homepage():
                 image_files.append((full_path.stat().st_mtime, str(rel_path)))
 
     image_files.sort(reverse=True)
-    recent_images = [path for _, path in image_files[:20]]
+    recent_images = [{"url": f"/downloads/{path}"} for _, path in image_files[:20]]
 
     return render_template("index.html", recent_images=recent_images)
 
