@@ -6,21 +6,44 @@ from datetime import datetime
 import subprocess
 import time
 import os
+import logging
+from logging.handlers import RotatingFileHandler
 
 scheduler = BackgroundScheduler(timezone="UTC")
 
+
+log_dir = "/config/logs"
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, "scheduler.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(message)s",
+    handlers=[
+        RotatingFileHandler(log_file, maxBytes=1024*1024, backupCount=3),
+        logging.StreamHandler()  # Keep printing to Docker logs too (optional)
+    ]
+)
+
+def log(msg):
+    logging.info(msg)
+
+
+
+
+
 def run_task(task_name):
-    print(f"[Scheduler] Running scheduled task: {task_name}")
+    log(f"[Scheduler] Running scheduled task: {task_name}")
     task_path = Path(f"/tasks/{task_name}")
     paused_file = task_path / "paused.txt"
 
     if paused_file.exists():
-        print(f"[Scheduler] Task '{task_name}' is paused. Skipping.")
+        log(f"[Scheduler] Task '{task_name}' is paused. Skipping.")
         return
 
     command_file = task_path / "command.txt"
     if not command_file.exists():
-        print(f"[Scheduler] Missing command.txt for {task_name}")
+        log(f"[Scheduler] Missing command.txt for {task_name}")
         return
 
     command = command_file.read_text().strip()
@@ -33,19 +56,19 @@ def run_task(task_name):
             stderr=subprocess.STDOUT,
             text=True
         )
-        print(f"[Scheduler] Output from {task_name}:\n{result.stdout}")
+        log(f"[Scheduler] Output from {task_name}:\n{result.stdout}")
     except Exception as e:
-        print(f"[Scheduler] Error running {task_name}: {e}")
+        log(f"[Scheduler] Error running {task_name}: {e}")
 
 def refresh_tasks():
-    print(f"[Scheduler] Reloading task definitions at {datetime.utcnow().isoformat()}")
+    log(f"[Scheduler] Reloading task definitions at {datetime.utcnow().isoformat()}")
 
     task_dir = Path("/tasks")
 
     # Remove all jobs except the auto-refresh one
     for job in scheduler.get_jobs():
         if job.id != "reload_tasks":
-            print(f"[Scheduler] Removing job: {job.id}")
+            log(f"[Scheduler] Removing job: {job.id}")
             scheduler.remove_job(job.id)
 
     # Re-scan all folders
@@ -64,18 +87,18 @@ def refresh_tasks():
                         id=task_name,
                         replace_existing=True
                     )
-                    print(f"[Scheduler] Registered: {task_name} (cron: {cron_expr})")
+                    log(f"[Scheduler] Registered: {task_name} (cron: {cron_expr})")
                 except Exception as e:
-                    print(f"[Scheduler] Failed to register {task_name}: Invalid cron '{cron_expr}' — {e}")
+                    log(f"[Scheduler] Failed to register {task_name}: Invalid cron '{cron_expr}' — {e}")
 
 def start_scheduler():
-    print("[Scheduler] Starting scheduler...")
+    log("[Scheduler] Starting scheduler...")
 
     if not scheduler.running:
         scheduler.start()
-        print("[Scheduler] Scheduler started")
+        log("[Scheduler] Scheduler started")
     else:
-        print("[Scheduler] Scheduler already running")
+        log("[Scheduler] Scheduler already running")
 
     refresh_tasks()  # ✅ No args
 
@@ -91,4 +114,4 @@ def start_scheduler():
 
 
 def log(msg):
-    print(f"[{datetime.utcnow().isoformat()}] {msg}")
+    log(f"[{datetime.utcnow().isoformat()}] {msg}")
