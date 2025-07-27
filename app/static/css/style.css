@@ -1,0 +1,176 @@
+body {
+    margin: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #0d0d0d;
+    color: #ffffff;
+}
+
+.banner {
+    background: linear-gradient(to right, #111111, #1a0033);
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #ff00cc;
+}
+
+.title {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #ff00cc;
+    letter-spacing: 2px;
+}
+
+.nav a {
+    margin-left: 1.5rem;
+    text-decoration: none;
+    color: #00eaff;
+    font-weight: bold;
+    transition: color 0.3s ease;
+}
+
+.nav a:hover {
+    color: #ff00cc;
+}
+
+.content {
+    padding: 2rem;
+    text-align: center;
+}
+
+form {
+    margin-top: 2rem;
+}
+
+input[type="text"] {
+    padding: 0.75rem;
+    width: 50%;
+    max-width: 500px;
+    border: none;
+    border-radius: 5px;
+    background-color: #1a1a1a;
+    color: white;
+    font-size: 1rem;
+    margin-bottom: 1rem;
+}
+
+button {
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    background-color: #ff00cc;
+    border: none;
+    border-radius: 5px;
+    color: black;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+button:hover {
+    background-color: #00eaff;
+    color: black;
+}
+
+.output {
+    background-color: #1e1e1e;
+    border: 1px solid #00eaff;
+    padding: 1rem;
+    margin-top: 2rem;
+    text-align: left;
+    width: 80%;
+    margin-left: auto;
+    margin-right: auto;
+    border-radius: 5px;
+}
+
+.flash {
+    padding: 1rem;
+    margin: 1rem auto;
+    width: 80%;
+    text-align: center;
+    border-radius: 5px;
+    font-weight: bold;
+}
+
+.flash.success {
+    background-color: #003322;
+    border: 1px solid #00ff88;
+    color: #00ff88;
+}
+
+.flash.error {
+    background-color: #330000;
+    border: 1px solid #ff0055;
+    color: #ff0055;
+}
+
+
+.button {
+    background-color: #00eaff;
+    color: black;
+    border: none;
+    padding: 0.4rem 0.75rem;
+    border-radius: 4px;
+    text-decoration: none;
+    margin-right: 0.5rem;
+    cursor: pointer;
+}
+
+.button.danger {
+    background-color: #ff5555;
+    color: white;
+}
+.btn-edit, .btn-delete {
+    padding: 0.4rem 0.8rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    margin-right: 4px;
+}
+
+.btn-edit {
+    background-color: #007bff;
+    color: white;
+    text-decoration: none;
+}
+
+.btn-delete {
+    background-color: #dc3545;
+    color: white;
+}
+.btn-edit, .btn-delete, .btn-delete-archive {
+    padding: 0.4rem 0.8rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    margin-right: 5px;
+}
+
+.btn-edit {
+    background-color: #007bff;
+    color: white;
+    text-decoration: none;
+}
+
+.btn-delete {
+    background-color: #dc3545;
+    color: white;
+}
+
+.btn-delete-archive {
+    background-color: #6c757d;
+    color: white;
+}
+
+pre.command-preview {
+    background-color: #1e1e1e;
+    border: 1px solid #00eaff;
+    padding: 0.5rem;
+    color: #00eaff;
+    margin-top: 0.5rem;
+    border-radius: 5px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}

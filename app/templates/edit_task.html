@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Edit Task - {{ task_name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        main.content {
+            max-width: 720px;
+            margin: 2rem auto;
+            padding: 1rem;
+        }
+        form label {
+            display: block;
+            margin: 1rem 0 0.25rem;
+            font-weight: bold;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 0.5rem;
+            background-color: #1a1a1a;
+            color: #00eaff;
+            border: 1px solid #00eaff;
+            border-radius: 4px;
+        }
+        .checkbox-group {
+            margin-top: 1rem;
+        }
+        .checkbox-group label {
+            font-weight: normal;
+            display: inline-block;
+        }
+        .actions {
+            margin-top: 2rem;
+        }
+        .actions button,
+        .actions a.button {
+            display: inline-block;
+            padding: 0.6rem 1.2rem;
+            margin-right: 1rem;
+            background-color: #00eaff;
+            color: black;
+            border: none;
+            border-radius: 5px;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .actions a.button {
+            background-color: #555;
+            color: #fff;
+        }
+        h1 {
+            color: #00eaff;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="banner">
+            <div class="title">ARTILLERY</div>
+            <nav class="nav">
+                <a href="/">Home</a>
+                <a href="/new-task">New Task</a>
+                <a href="/view-tasks">View Tasks</a>
+                <a href="/config">Config</a>
+            </nav>
+        </div>
+    </header>
+    <main class="content">
+        <h1>Edit Task: {{ task_name }}</h1>
+        <form method="post">
+            <label for="schedule">Schedule</label>
+            <input type="text" id="schedule" name="schedule" value="{{ schedule }}" required>
+
+            <div class="checkbox-group">
+                <input type="checkbox" id="use_download_archive" name="use_download_archive" {% if has_archive %}checked{% endif %}>
+                <label for="use_download_archive">Use download archive</label>
+            </div>
+
+            <div class="actions">
+                <button type="submit">Save Changes</button>
+                <a href="{{ url_for('main.view_tasks') }}" class="button">Cancel</a>
+            </div>
+        </form>
+    </main>
+</body>
+</html>

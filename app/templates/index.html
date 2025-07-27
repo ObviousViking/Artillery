@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Artillery</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<header>
+    <div class="banner">
+        <div class="title">ARTILLERY</div>
+        <nav class="nav">
+            <a href="/">Home</a>
+            <a href="/new-task">New Task</a>
+            <a href="/tasks">View Tasks</a>
+            <a href="/config">Config</a>
+        </nav>
+    </div>
+</header>
+
+
+    <main class="content">
+        <h1>Welcome to Artillery</h1>
+        <p>Enter a gallery URL below to start firing off downloads.</p>
+
+        <form action="/" method="post">
+            <input type="text" name="gallery_url" placeholder="https://example.com/gallery" required>
+            <button type="submit">Fire!</button>
+        </form>
+
+        {% if output %}
+        <div class="output">
+            <h2>Output:</h2>
+            <pre>{{ output }}</pre>
+        </div>
+        {% endif %}
+    </main>
+</body>
+</html>

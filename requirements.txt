@@ -1,0 +1,4 @@
+flask
+gallery-dl
+requests
+apscheduler
