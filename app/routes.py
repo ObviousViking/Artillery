@@ -33,7 +33,7 @@ def homepage():
     image_files.sort(reverse=True)
     recent_images = [path for _, path in image_files[:20]]
 
-    return render_template("homepage.html", recent_images=recent_images)
+    return render_template("index.html", recent_images=recent_images)
 
 @main.route('/config', methods=['GET', 'POST'])
 def config_editor():
