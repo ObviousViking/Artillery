@@ -17,13 +17,14 @@ if (isset($_SESSION['success'])) {
 
 $logDir = '/logs';
 $downloadsDir = '/downloads';
+$cacheFile = "$logDir/image_cache.json";
+$cacheTTL = 120; // seconds
 
 foreach ([$logDir, $downloadsDir] as $dir) {
     if (!is_dir($dir)) {
         mkdir($dir, 0755, true);
     }
 }
-
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $url = trim($_POST['gallery_url'] ?? '');
@@ -34,14 +35,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $python = '/opt/venv/bin/python3';
         $script = realpath(__DIR__ . '/runner-single.py');
-        
+
         if (!file_exists($script)) {
             $_SESSION['error'] = "Python script not found.";
         } else {
             $escaped_url = escapeshellarg($url);
             $command = "$python $script $escaped_url 2>&1";
             $output = shell_exec($command);
-        
+
             if ($output === null) {
                 $_SESSION['error'] = "Failed to execute the download script.";
             } else {
@@ -50,7 +51,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['output'] = $output;
             }
         }
-        
     }
     header("Location: index.php");
     exit;
@@ -62,24 +62,31 @@ if (isset($_SESSION['output'])) {
 }
 
 $allowed_ext = ['jpg', 'jpeg', 'png'];
-$all_images = [];
-if (is_dir($downloadsDir)) {
+$recent_images = [];
+
+if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < $cacheTTL)) {
+    $cached = json_decode(file_get_contents($cacheFile), true);
+    if (is_array($cached)) {
+        $recent_images = array_slice($cached, 0, 60);
+    }
+} else {
+    $all_images = [];
     $dir_iterator = new RecursiveIteratorIterator(
         new RecursiveDirectoryIterator($downloadsDir, RecursiveDirectoryIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::SELF_FIRST
+        RecursiveIteratorIterator::CHILD_FIRST
     );
-
     foreach ($dir_iterator as $file) {
         if ($file->isFile() && in_array(strtolower($file->getExtension()), $allowed_ext)) {
             $relativePath = str_replace(__DIR__, '', $file->getPathname());
             $all_images[$file->getMTime()] = ltrim($relativePath, '/\\');
         }
     }
+    krsort($all_images);
+    $recent_images = array_slice($all_images, 0, 60);
+    file_put_contents($cacheFile, json_encode(array_values($all_images), JSON_UNESCAPED_SLASHES));
 }
-
-krsort($all_images);
-$recent_images = array_slice($all_images, 0, 60);
 ?>
+
 
 <!DOCTYPE html>
 <html lang="en">
