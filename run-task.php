@@ -12,16 +12,21 @@ if (!$task_name) {
 $python = '/opt/venv/bin/python3';
 $script = '/var/www/html/runner-task.py';
 $escaped_task = escapeshellarg($task_name);
-$command = "$python $script $escaped_task 2>&1";
+$command = "$python $script $escaped_task";
 
-$output = shell_exec($command);
+$descriptorspec = [
+    0 => ["pipe", "r"],                          // STDIN
+    1 => ["file", "/dev/null", "a"],             // STDOUT → null
+    2 => ["file", "/dev/null", "a"]              // STDERR → null
+];
 
-if ($output === null) {
-    $_SESSION['error'] = "Failed to execute task.";
+$process = proc_open($command, $descriptorspec, $pipes);
+
+if (is_resource($process)) {
+    proc_close($process);
+    $_SESSION['success'] = "Task '$task_name' started in background.";
 } else {
-    file_put_contents("/logs/$task_name.log", "[" . date('Y-m-d H:i:s') . "] $command\n$output\n\n", FILE_APPEND);
-    $_SESSION['success'] = "Task '$task_name' started.";
-    $_SESSION['output'] = $output;
+    $_SESSION['error'] = "Failed to launch task.";
 }
 
 header("Location: tasks.php");
