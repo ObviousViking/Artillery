@@ -111,7 +111,7 @@ def main():
             if should_run(cron_expr, now, last_check):
                 log("   ✓ Task is scheduled to run - passing to runner")
                 try:
-                    subprocess.Popen([sys.executable, str(RUNNER_SCRIPT)], cwd=str(task_dir))
+                    subprocess.Popen([sys.executable, str(RUNNER_SCRIPT), str(task_dir)], cwd=str(task_dir))
                 except Exception as e:
                     log(f"   - Error launching task: {e}")
             else:
