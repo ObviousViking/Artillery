@@ -11,117 +11,94 @@
     }
 
     body {
-        background-color: #181818;
-        color: #e0e0e0;
-        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        background-color: #111;
+        color: #eee;
+        font-family: sans-serif;
         margin: 0;
         padding: 0;
-        line-height: 1.5;
     }
 
     .banner {
-        background-color: #252525;
-        padding: 1rem 1.5rem;
+        background-color: #222;
+        padding: 15px 20px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        border-bottom: 1px solid #333;
+        border-bottom: 1px solid #444;
     }
 
     .banner .title {
-        font-size: 1.75rem;
-        color: #00b7c3;
-        font-weight: 600;
+        font-size: 1.8rem;
+        color: #00eaff;
+        font-weight: bold;
     }
 
     nav.nav a {
-        color: #00b7c3;
-        margin-left: 1.5rem;
+        color: #00eaff;
+        margin-left: 20px;
         text-decoration: none;
-        font-weight: 500;
-        transition: color 0.2s ease, opacity 0.2s ease;
+        font-weight: bold;
+        transition: color 0.2s ease;
     }
 
     nav.nav a:hover {
-        opacity: 0.8;
         text-decoration: underline;
     }
 
     button,
     input[type="submit"] {
-        background: linear-gradient(135deg, #00b7c3, #008c95);
-        color: #fff;
+        background-color: #28a745;
+        color: white;
         border: none;
-        padding: 0.75rem 1.5rem;
-        border-radius: 6px;
-        font-weight: 500;
+        padding: 10px 15px;
+        border-radius: 5px;
+        font-weight: bold;
         cursor: pointer;
-        transition: transform 0.2s ease, background 0.2s ease;
     }
 
     button:hover,
     input[type="submit"]:hover {
-        background: linear-gradient(135deg, #00c7d3, #009ca5);
-        transform: scale(1.02);
+        background-color: #218838;
     }
 
     main.content {
-        max-width: 960px;
-        margin: 2rem auto;
-        padding: 2rem;
-        background-color: #252525;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    }
-
-    h1 {
-        font-size: 2rem;
-        font-weight: 600;
-        color: #e0e0e0;
-        margin-bottom: 1.5rem;
+        max-width: 900px;
+        margin: 20px auto;
+        padding: 10px;
+        background-color: #1a1a1a;
+        border-radius: 10px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
     }
 
     label {
-        font-weight: 500;
+        font-weight: bold;
         display: block;
-        margin-top: 1.25rem;
-        color: #e0e0e0;
+        margin-top: 1rem;
     }
 
     input[type="text"],
     textarea {
         width: 100%;
-        padding: 0.75rem;
-        background-color: #2e2e2e;
-        color: #e0e0e0;
-        border: 1px solid #444;
-        border-radius: 6px;
+        padding: 0.5rem;
+        background-color: #1e1e1e;
+        color: #eee;
+        border: 1px solid #00eaff;
+        border-radius: 5px;
         margin-top: 0.25rem;
-        transition: border-color 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    input[type="text"]:focus,
-    textarea:focus {
-        border-color: #00b7c3;
-        box-shadow: 0 0 0 2px rgba(0, 183, 195, 0.3);
-        outline: none;
     }
 
     pre.command-preview {
-        background-color: #2e2e2e;
-        border: 1px solid #444;
+        background-color: #1e1e1e;
+        border: 1px solid #00eaff;
         padding: 1rem;
-        color: #00b7c3;
-        border-radius: 6px;
+        color: #00eaff;
+        border-radius: 5px;
         margin-top: 1rem;
-        font-family: 'JetBrains Mono', monospace;
-        white-space: pre-wrap;
-        word-wrap: break-word;
     }
 
     .tabs {
         display: flex;
-        border-bottom: 1px solid #333;
+        border-bottom: 1px solid #444;
         margin-top: 2rem;
         flex-wrap: wrap;
     }
@@ -129,28 +106,20 @@
     .tabs button {
         background: none;
         border: none;
-        padding: 0.75rem 1.5rem;
+        padding: 0.75rem 1.25rem;
         cursor: pointer;
-        color: #a0a0a0;
-        font-weight: 500;
-        border-bottom: 2px solid transparent;
-        transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
-    }
-
-    .tabs button:hover {
-        color: #e0e0e0;
-        background: #2e2e2e;
+        color: #00eaff;
+        border-bottom: 3px solid transparent;
+        font-weight: bold;
     }
 
     .tabs button.active {
-        color: #00b7c3;
-        border-color: #00b7c3;
-        background: #2e2e2e;
+        border-color: #00eaff;
     }
 
     .tab-content {
         display: none;
-        padding: 1.5rem 0;
+        padding: 1rem 0;
     }
 
     .tab-content.active {
@@ -159,31 +128,26 @@
 
     .flag-group {
         margin-bottom: 1rem;
-        display: flex;
-        align-items: center;
     }
 
     .flag-group label {
-        font-weight: 400;
+        font-weight: normal;
         margin-left: 0.5rem;
-        color: #e0e0e0;
     }
 
     small {
         display: block;
         margin-top: 0.25rem;
-        color: #a0a0a0;
-        font-size: 0.875rem;
+        color: #ccc;
     }
 
     small a {
-        color: #00b7c3;
+        color: #00eaff;
         text-decoration: none;
     }
 
     small a:hover {
         text-decoration: underline;
-        opacity: 0.8;
     }
     </style>
 
@@ -206,7 +170,7 @@
             <label for="schedule">Schedule (Cron Expression)</label>
             <input type="text" name="schedule" id="schedule" required placeholder="e.g. 0 */6 * * *">
             <small style="display: block; margin-top: 0.25rem; color: #ccc;">
-                Use <a href="https://crontab.guru/" target="_blank" style="color: #ff00cc;">crontab.guru</a><br>
+                Use <a href="https://crontab.guru/" target="_blank" style="color: #00eaff;">crontab.guru</a><br>
                 Example: <code>0 */6 * * *</code> = every 6 hours
             </small>
 

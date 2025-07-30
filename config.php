@@ -1,20 +1,15 @@
 <?php
-// config.php
-
-// Enable error reporting for debugging
+// config.php (unchanged PHP code)
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
-// Start session for flashed messages
 session_start();
 
-// Initialize variables
-$config_file = __DIR__ . '/config/gallery-dl.conf';
+$config_file = '/config/gallery-dl.conf';
 $config_content = '';
 $flash_messages = [];
 
-// Load existing config
 if (file_exists($config_file)) {
     $config_content = file_get_contents($config_file);
     if ($config_content === false) {
@@ -24,7 +19,6 @@ if (file_exists($config_file)) {
     $flash_messages[] = ['warning', 'Config file not found. A new one will be created on save.'];
 }
 
-// Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['config_content'])) {
     $new_content = trim($_POST['config_content']);
     if (file_put_contents($config_file, $new_content) !== false) {
@@ -35,7 +29,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['config_content'])) {
     }
 }
 
-// Merge with existing flash messages (e.g., from fetch-default-config.php)
 if (!empty($_SESSION['flash_messages'])) {
     $flash_messages = array_merge($flash_messages, $_SESSION['flash_messages']);
     $_SESSION['flash_messages'] = []; // Clear after merging
@@ -49,104 +42,187 @@ if (!empty($_SESSION['flash_messages'])) {
     <meta charset="UTF-8">
     <title>Edit Config | Artillery</title>
     <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <style>
+    * {
+        box-sizing: border-box;
+    }
+
     body {
-        background-color: #111;
-        color: #eee;
-        font-family: sans-serif;
+        background-color: #181818;
+        color: #e0e0e0;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
         margin: 0;
+        padding: 0;
+        line-height: 1.5;
     }
 
     .banner {
-        background: #222;
-        padding: 15px 20px;
+        background-color: #252525;
+        padding: 1rem 1.5rem;
         display: flex;
         justify-content: space-between;
         align-items: center;
+        border-bottom: 1px solid #333;
     }
 
     .title {
-        font-size: 1.8rem;
-        font-weight: bold;
+        font-size: 1.75rem;
+        color: #00b7c3;
+        font-weight: 600;
     }
 
     .nav a {
-        margin-left: 15px;
-        color: #00eaff;
+        color: #00b7c3;
+        margin-left: 1.5rem;
         text-decoration: none;
+        font-weight: 500;
+        transition: color 0.2s ease, opacity 0.2s ease;
     }
 
     .nav a:hover {
+        opacity: 0.8;
         text-decoration: underline;
     }
 
     .content {
-        max-width: 900px;
-        margin: 20px auto;
-        padding: 10px;
+        max-width: 1200px;
+        /* Match View Tasks page */
+        margin: 2rem auto;
+        padding: 2rem;
+        background-color: #252525;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
 
     h1 {
-        font-size: 1.8rem;
-        font-weight: bold;
-        margin-bottom: 20px;
+        font-size: 2rem;
+        font-weight: 600;
+        color: #e0e0e0;
+        margin-bottom: 1.5rem;
     }
 
     textarea {
-        width: 90%;
-        background: #1a1a1a;
-        color: #00eaff;
-        border: 1px solid #00eaff;
-        font-family: monospace;
+        width: 100%;
+        /* Full width for better usability */
+        padding: 0.75rem;
+        background-color: #2e2e2e;
+        color: #e0e0e0;
+        border: 1px solid #444;
+        border-radius: 6px;
+        font-family: 'JetBrains Mono', monospace;
         font-size: 0.9rem;
-        padding: 10px;
-        border-radius: 4px;
         resize: vertical;
+        min-height: 400px;
+        /* Ensure sufficient height for config content */
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
 
-    button {
-        padding: 10px 20px;
-        margin: 10px 5px;
-        background-color: #28a745;
-        color: white;
+    textarea:focus {
+        border-color: #00b7c3;
+        box-shadow: 0 0 0 2px rgba(0, 183, 195, 0.3);
+        outline: none;
+    }
+
+    .btn-save,
+    .btn-default {
+        padding: 0.5rem;
         border: none;
-        border-radius: 4px;
+        border-radius: 6px;
+        color: #fff;
         cursor: pointer;
         font-size: 0.9rem;
+        /* For icons */
+        line-height: 1;
+        width: 2rem;
+        height: 2rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        position: relative;
+        margin: 0.25rem;
     }
 
-    button:hover {
-        opacity: 0.9;
+    .btn-save {
+        background: linear-gradient(135deg, #00b7c3, #008c95);
+    }
+
+    .btn-save:hover {
+        background: linear-gradient(135deg, #00c7d3, #009ca5);
+        transform: scale(1.05);
+        box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
     }
 
     .btn-default {
-        background-color: #6c757d;
+        background: linear-gradient(135deg, #546e7a, #455a64);
     }
 
     .btn-default:hover {
-        opacity: 0.9;
+        background: linear-gradient(135deg, #607d8b, #546e7a);
+        transform: scale(1.05);
+        box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+    }
+
+    [data-tooltip]:hover:after {
+        content: attr(data-tooltip);
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #2e2e2e;
+        color: #e0e0e0;
+        padding: 0.3rem 0.6rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        white-space: nowrap;
+        z-index: 10;
+        margin-bottom: 0.5rem;
     }
 
     .flash {
-        padding: 10px;
-        margin-bottom: 15px;
-        border-radius: 4px;
+        padding: 0.75rem;
+        margin-bottom: 1rem;
+        border-radius: 6px;
+        font-size: 0.95rem;
     }
 
     .flash.success {
-        background-color: #28a745;
-        color: white;
+        background-color: #2e2e2e;
+        color: #2e7d32;
     }
 
     .flash.error {
-        background-color: #dc3545;
-        color: white;
+        background-color: #2e2e2e;
+        color: #ff5555;
     }
 
     .flash.warning {
-        background-color: #ff8800;
-        color: white;
+        background-color: #2e2e2e;
+        color: #f57c00;
+    }
+
+    @media (max-width: 600px) {
+        .content {
+            margin: 1rem;
+            padding: 1.5rem;
+        }
+
+        textarea {
+            padding: 0.5rem;
+            font-size: 0.85rem;
+        }
+
+        .btn-save,
+        .btn-default {
+            padding: 0.4rem;
+            width: 1.8rem;
+            height: 1.8rem;
+        }
     }
     </style>
 </head>
@@ -159,7 +235,6 @@ if (!empty($_SESSION['flash_messages'])) {
         <h1>Edit gallery-dl Config</h1>
 
         <?php
-        // Display flash messages
         foreach ($flash_messages as $message) {
             list($category, $text) = $message;
             echo "<div class=\"flash $category\">" . htmlspecialchars($text) . "</div>";
@@ -168,12 +243,15 @@ if (!empty($_SESSION['flash_messages'])) {
 
         <form method="post">
             <textarea name="config_content" rows="25"><?php echo htmlspecialchars($config_content); ?></textarea>
-            <br><br>
-            <button type="submit">Save Config</button>
-        </form>
-
-        <form method="POST" action="fetch-default-config.php">
-            <button type="submit" class="btn-default">Fetch Default Config</button>
+            <div style="display: flex; gap: 0.3rem; margin-top: 1rem;">
+                <button type="submit" class="btn-save" aria-label="Save Config" data-tooltip="Save Config">
+                    <i class="fas fa-save"></i>
+                </button>
+                <a href="fetch-default-config.php" class="btn-default" aria-label="Fetch Default Config"
+                    data-tooltip="Fetch Default Config">
+                    <i class="fas fa-download"></i>
+                </a>
+            </div>
         </form>
     </main>
 </body>

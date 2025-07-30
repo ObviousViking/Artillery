@@ -2,7 +2,7 @@
 session_start();
 
 $task_name = $_POST['task_name'] ?? '';
-$archive_file = __DIR__ . "/tasks/$task_name/{$task_name}.sqlite";
+$archive_file = "/tasks/$task_name/{$task_name}.sqlite";
 
 if ($task_name && file_exists($archive_file)) {
     unlink($archive_file);

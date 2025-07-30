@@ -13,22 +13,30 @@ if (empty($taskName) || empty($schedule) || empty($urlList)) {
     die("Missing required fields.");
 }
 
-$taskDir = __DIR__ . "/tasks/$taskName";
+// Use the mounted volume path
+$taskDir = "/tasks/$taskName";
 
 // Prevent overwriting
 if (is_dir($taskDir)) {
     die("Task '$taskName' already exists.");
 }
 
-mkdir($taskDir, 0777, true);
+// Create the task directory
+if (!mkdir($taskDir, 0777, true)) {
+    die("Failed to create task directory.");
+}
 
 // Save URL list
-file_put_contents("$taskDir/url_list.txt", $urlList);
+if (file_put_contents("$taskDir/url_list.txt", $urlList) === false) {
+    die("Failed to write url_list.txt");
+}
 
 // Save schedule
-file_put_contents("$taskDir/schedule.txt", $schedule);
+if (file_put_contents("$taskDir/schedule.txt", $schedule) === false) {
+    die("Failed to write schedule.txt");
+}
 
-// Build command
+// Build base command
 $command = "gallery-dl -i url_list.txt -f /O -d /downloads --no-input --verbose --write-log log.txt --no-part";
 
 $flags = [];
@@ -62,7 +70,10 @@ if (!empty($flags)) {
     $command .= ' ' . implode(' ', $flags);
 }
 
-file_put_contents("$taskDir/command.txt", $command);
+// Save command
+if (file_put_contents("$taskDir/command.txt", $command) === false) {
+    die("Failed to write command.txt");
+}
 
 header("Location: tasks.php");
 exit();

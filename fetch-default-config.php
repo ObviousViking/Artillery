@@ -6,8 +6,8 @@ ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 session_start();
 
-$config_file = __DIR__ . '/config/gallery-dl.conf';
-$default_config_file = __DIR__ . '/config/gallery-dl.default.conf';
+$config_file = '/config/gallery-dl.conf';
+$default_config_file = '/config/gallery-dl.default.conf';
 $github_default_url = 'https://raw.githubusercontent.com/mikf/gallery-dl/master/docs/gallery-dl.conf';
 
 $flash_messages = [];

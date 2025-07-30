@@ -6,7 +6,7 @@ if (!$task_name) {
     die("Invalid task name.");
 }
 
-$task_path = __DIR__ . "/tasks/$task_name";
+$task_path = "/tasks/$task_name";
 if (!is_dir($task_path)) {
     die("Task folder does not exist.");
 }

@@ -2,30 +2,27 @@
 session_start();
 
 $task_name = basename($_POST['task_name'] ?? '');
+
 if (!$task_name) {
-    $_SESSION['error'] = "No task specified.";
+    $_SESSION['error'] = "Task name not provided.";
     header("Location: tasks.php");
-    exit;
+    exit();
 }
 
-$task_dir = __DIR__ . "/tasks/$task_name";
-$command_file = "$task_dir/command.txt";
+$python = '/opt/venv/bin/python3';
+$script = '/var/www/html/runner-task.py';
+$escaped_task = escapeshellarg($task_name);
+$command = "$python $script $escaped_task 2>&1";
 
-if (!file_exists($command_file)) {
-    $_SESSION['error'] = "Command not found for task '$task_name'.";
-    header("Location: tasks.php");
-    exit;
+$output = shell_exec($command);
+
+if ($output === null) {
+    $_SESSION['error'] = "Failed to execute task.";
+} else {
+    file_put_contents("/logs/$task_name.log", "[" . date('Y-m-d H:i:s') . "] $command\n$output\n\n", FILE_APPEND);
+    $_SESSION['success'] = "Task '$task_name' started.";
+    $_SESSION['output'] = $output;
 }
 
-$command = trim(file_get_contents($command_file));
-$escaped_command = escapeshellarg($command);
-$escaped_dir = escapeshellarg($task_dir);
-$runner_path = escapeshellarg(__DIR__ . "/runner.py");
-
-// Build the background command for Windows
-$cmd = "start /B cmd /C \"cd $escaped_dir && python $runner_path $escaped_command\"";
-pclose(popen($cmd, "r"));
-
-$_SESSION['success'] = "Task '$task_name' started in background.";
 header("Location: tasks.php");
-exit;
+exit();

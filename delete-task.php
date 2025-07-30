@@ -2,7 +2,7 @@
 session_start();
 
 $task_name = $_POST['task_name'] ?? '';
-$task_path = __DIR__ . "/tasks/$task_name";
+$task_path = "/tasks/$task_name";
 
 if ($task_name && is_dir($task_path)) {
     function rrmdir($dir) {
