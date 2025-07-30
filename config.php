@@ -1,12 +1,12 @@
 <?php
-// config.php (unchanged PHP code)
+// config.php (updated)
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
 session_start();
 
-$config_file = '/config/gallery-dl.conf';
+$config_file = '/config/config.json';
 $config_content = '';
 $flash_messages = [];
 
@@ -21,17 +21,22 @@ if (file_exists($config_file)) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['config_content'])) {
     $new_content = trim($_POST['config_content']);
-    if (file_put_contents($config_file, $new_content) !== false) {
-        $flash_messages[] = ['success', 'Config saved successfully.'];
-        $config_content = $new_content;
+    json_decode($new_content);
+    if (json_last_error() === JSON_ERROR_NONE) {
+        if (file_put_contents($config_file, $new_content) !== false) {
+            $flash_messages[] = ['success', 'Config saved successfully.'];
+            $config_content = $new_content;
+        } else {
+            $flash_messages[] = ['error', 'Error saving config file.'];
+        }
     } else {
-        $flash_messages[] = ['error', 'Error saving config file.'];
+        $flash_messages[] = ['error', 'Invalid JSON. Config not saved.'];
     }
 }
 
 if (!empty($_SESSION['flash_messages'])) {
     $flash_messages = array_merge($flash_messages, $_SESSION['flash_messages']);
-    $_SESSION['flash_messages'] = []; // Clear after merging
+    $_SESSION['flash_messages'] = [];
 }
 ?>
 
@@ -90,7 +95,6 @@ if (!empty($_SESSION['flash_messages'])) {
 
     .content {
         max-width: 1200px;
-        /* Match View Tasks page */
         margin: 2rem auto;
         padding: 2rem;
         background-color: #252525;
@@ -107,7 +111,6 @@ if (!empty($_SESSION['flash_messages'])) {
 
     textarea {
         width: 100%;
-        /* Full width for better usability */
         padding: 0.75rem;
         background-color: #2e2e2e;
         color: #e0e0e0;
@@ -117,7 +120,6 @@ if (!empty($_SESSION['flash_messages'])) {
         font-size: 0.9rem;
         resize: vertical;
         min-height: 400px;
-        /* Ensure sufficient height for config content */
         transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
 
@@ -135,7 +137,6 @@ if (!empty($_SESSION['flash_messages'])) {
         color: #fff;
         cursor: pointer;
         font-size: 0.9rem;
-        /* For icons */
         line-height: 1;
         width: 2rem;
         height: 2rem;
@@ -229,7 +230,6 @@ if (!empty($_SESSION['flash_messages'])) {
 
 <body>
     <?php include 'header.php'; ?>
-
 
     <main class="content">
         <h1>Edit gallery-dl Config</h1>
