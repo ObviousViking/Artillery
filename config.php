@@ -21,18 +21,30 @@ if (file_exists($config_file)) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['config_content'])) {
     $new_content = trim($_POST['config_content']);
+
+    // Validate JSON
     json_decode($new_content);
     if (json_last_error() === JSON_ERROR_NONE) {
+
+        // Backup old config
+        if (file_exists($config_file)) {
+            $timestamp = date("Ymd_His");
+            copy($config_file, $config_file . ".bak.$timestamp");
+        }
+
+        // Save new config
         if (file_put_contents($config_file, $new_content) !== false) {
             $flash_messages[] = ['success', 'Config saved successfully.'];
             $config_content = $new_content;
         } else {
             $flash_messages[] = ['error', 'Error saving config file.'];
         }
+
     } else {
         $flash_messages[] = ['error', 'Invalid JSON. Config not saved.'];
     }
 }
+
 
 if (!empty($_SESSION['flash_messages'])) {
     $flash_messages = array_merge($flash_messages, $_SESSION['flash_messages']);
