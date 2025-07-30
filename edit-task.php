@@ -233,7 +233,8 @@ foreach ($flags as $i => $flag) {
             <textarea name="url_list" rows="5" required><?= htmlspecialchars($urls) ?></textarea>
 
             <label for="interval">Run Every (Minutes)</label>
-            <input type="number" name="interval" id="interval" min="1" required placeholder="e.g. 60">
+            <input type="number" name="interval" id="interval" min="1" required placeholder="e.g. 60"
+                value="<?= htmlspecialchars($interval) ?>">
             <small style="display: block; margin-top: 0.25rem; color: #ccc;">
                 This task will run every X minutes, starting from its last run time.
             </small>

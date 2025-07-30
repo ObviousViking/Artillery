@@ -321,10 +321,6 @@
         buttons[0].click();
     }
 
-    function isValidCron(cron) {
-        const parts = cron.trim().split(/\s+/);
-        return parts.length === 5 && parts.every(p => p.length > 0);
-    }
 
     document.addEventListener("DOMContentLoaded", () => {
         document.querySelectorAll("input, textarea").forEach(el => {
@@ -334,13 +330,7 @@
         setupTabs();
         updateCommand();
 
-        document.querySelector("form").addEventListener("submit", function(e) {
-            const schedule = document.querySelector("[name='schedule']").value;
-            if (!isValidCron(schedule)) {
-                e.preventDefault();
-                alert("Invalid cron expression. It must have 5 fields (e.g. 0 */6 * * *)");
-            }
-        });
+
     });
     </script>
 </body>
