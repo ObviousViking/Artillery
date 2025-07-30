@@ -15,9 +15,12 @@ if (!is_dir($task_path)) {
 $url_list = $_POST['url_list'] ?? '';
 file_put_contents("$task_path/url_list.txt", $url_list);
 
-// Save schedule
-$schedule = $_POST['schedule'] ?? '';
-file_put_contents("$task_path/schedule.txt", trim($schedule));
+// Save interval (instead of schedule.txt)
+$interval = intval($_POST['interval'] ?? 0);
+if ($interval < 1) {
+    die("Invalid interval.");
+}
+file_put_contents("$task_path/interval.txt", $interval);
 
 // Build command
 $flags = [];
