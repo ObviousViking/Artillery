@@ -97,7 +97,7 @@ if (is_dir($task_dir)) {
             'command' => '',
             'status' => file_exists($lockfile) ? 'Running' : 'Idle',
             'last_run' => file_exists($last_run_file) ? date('d M Y H:i', strtotime(trim(file_get_contents($last_run_file)))) : '-',
-            'has_log' => file_exists("$log_dir/$subfolder.log"),
+            'has_log' => file_exists("$task_dir/$subfolder/log.txt"),
             'is_paused' => file_exists("$task_dir/$subfolder/paused.txt")
         ];
 
