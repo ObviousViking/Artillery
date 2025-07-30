@@ -484,7 +484,7 @@ if (is_dir($task_dir)) {
                     <td><?= htmlspecialchars($task['last_run']) ?></td>
                     <td>
                         <?php if ($task['has_log']): ?>
-                        <a class="log-link" href="logs/<?= urlencode($task['name']) ?>.log">Download</a>
+                        <a class="log-link" href="download-log.php?task=<?= urlencode($task['name']) ?>">Download</a>
                         <?php else: ?>
                         No log
                         <?php endif; ?>
