@@ -23,7 +23,7 @@ Easily view all configured tasks, run status, last execution time, and direct ac
 ### Create/Edit Tasks
 Configure gallery URLs and fine-tune flags like rate limits, retries, sleep intervals, and output formats.
 
-![New Task Screenshot](screenshots/new-task.png)
+![New Task Screenshot](screenshots/tasks.png)
 
 ---
 
