@@ -203,12 +203,12 @@
             <label>Gallery URLs (one per line)</label>
             <textarea name="url_list" rows="5" required></textarea>
 
-            <label for="schedule">Schedule (Cron Expression)</label>
-            <input type="text" name="schedule" id="schedule" required placeholder="e.g. 0 */6 * * *">
+            <label for="interval">Run Every (Minutes)</label>
+            <input type="number" name="interval" id="interval" min="1" required placeholder="e.g. 60">
             <small style="display: block; margin-top: 0.25rem; color: #ccc;">
-                Use <a href="https://crontab.guru/" target="_blank" style="color: #ff00cc;">crontab.guru</a><br>
-                Example: <code>0 */6 * * *</code> = every 6 hours
+                This task will run every X minutes, starting from its last run time.
             </small>
+
 
             <label>Command Preview</label>
             <pre id="command_preview" class="command-preview">Generating...</pre>

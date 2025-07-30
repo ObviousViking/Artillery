@@ -1,79 +1,65 @@
 <?php
-// Basic validation
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header("Location: new-task.php");
-    exit();
+    die("Invalid request method.");
 }
 
-$taskName = preg_replace('/[^\w\-]/', '_', $_POST['task_name'] ?? '');
-$schedule = trim($_POST['schedule'] ?? '');
-$urlList  = trim($_POST['url_list'] ?? '');
+$taskName = preg_replace('/[^\w\-]/', '_', trim($_POST['task_name'] ?? ''));
+$urlList = trim($_POST['url_list'] ?? '');
+$interval = intval($_POST['interval'] ?? 0);
 
-if (empty($taskName) || empty($schedule) || empty($urlList)) {
-    die("Missing required fields.");
+if (!$taskName || !$urlList || $interval < 1) {
+    die("Missing task name, URL list, or invalid interval.");
 }
 
-// Use the mounted volume path
-$taskDir = "/tasks/$taskName";
-
-// Prevent overwriting
-if (is_dir($taskDir)) {
-    die("Task '$taskName' already exists.");
+$taskDir = __DIR__ . "/tasks/$taskName";
+if (file_exists($taskDir)) {
+    die("Task already exists.");
 }
 
-// Create the task directory
-if (!mkdir($taskDir, 0777, true)) {
-    die("Failed to create task directory.");
-}
+mkdir($taskDir, 0777, true);
+file_put_contents("$taskDir/url_list.txt", $urlList);
+file_put_contents("$taskDir/interval.txt", $interval);
 
-// Save URL list
-if (file_put_contents("$taskDir/url_list.txt", $urlList) === false) {
-    die("Failed to write url_list.txt");
-}
-
-// Save schedule
-if (file_put_contents("$taskDir/schedule.txt", $schedule) === false) {
-    die("Failed to write schedule.txt");
-}
-
-// Build base command
-$command = "gallery-dl -i url_list.txt -f /O -d /downloads --no-input --verbose --write-log log.txt --no-part";
+// Build command
+$cmd = "gallery-dl -i url_list.txt -f /O --no-input --verbose --write-log log.txt --no-part";
 
 $flags = [];
 
-foreach ($_POST as $key => $value) {
-    if (strpos($key, 'flag_') === 0) {
-        $flag = '--' . str_replace('_', '-', substr($key, 5));
-        $flags[] = $flag;
-    }
-
-    if ($key === 'use_cookies') {
-        $flags[] = '-C cookies.txt';
-    }
-
-    if ($key === 'use_download_archive') {
-        $flags[] = "--download-archive {$taskName}.sqlite";
-    }
-
-    // Optional values
-    $optionalFlags = [
-        'retries', 'limit_rate', 'sleep', 'sleep_request',
-        'sleep_429', 'sleep_extractor', 'rename', 'rename_to'
-    ];
-    if (in_array($key, $optionalFlags) && !empty($value)) {
-        $flagName = '--' . str_replace('_', '-', $key);
-        $flags[] = "$flagName $value";
+function addFlag($key, $val = null) {
+    global $flags;
+    if (!empty($val)) {
+        $flags[] = "--$key " . escapeshellarg($val);
     }
 }
+
+foreach ($_POST as $key => $val) {
+    if ($key === 'flag_write_unsupported') $flags[] = "--write-unsupported";
+    if ($key === 'flag_no_skip') $flags[] = "--no-skip";
+    if ($key === 'flag_write_metadata') $flags[] = "--write-metadata";
+    if ($key === 'flag_write_info_json') $flags[] = "--write-info-json";
+    if ($key === 'flag_write_tags') $flags[] = "--write-tags";
+    if ($key === 'use_cookies') $flags[] = "-C cookies.txt";
+    if ($key === 'use_download_archive') {
+        $flags[] = "--download-archive " . escapeshellarg("$taskName.sqlite");
+    }
+}
+
+// Text inputs
+addFlag('retries', $_POST['retries'] ?? null);
+addFlag('limit-rate', $_POST['limit_rate'] ?? null);
+addFlag('sleep', $_POST['sleep'] ?? null);
+addFlag('sleep-request', $_POST['sleep_request'] ?? null);
+addFlag('sleep-429', $_POST['sleep_429'] ?? null);
+addFlag('sleep-extractor', $_POST['sleep_extractor'] ?? null);
+addFlag('rename', $_POST['rename'] ?? null);
+addFlag('rename-to', $_POST['rename_to'] ?? null);
 
 if (!empty($flags)) {
-    $command .= ' ' . implode(' ', $flags);
+    $cmd .= ' ' . implode(' ', $flags);
 }
 
-// Save command
-if (file_put_contents("$taskDir/command.txt", $command) === false) {
-    die("Failed to write command.txt");
-}
+file_put_contents("$taskDir/command.txt", $cmd);
 
-header("Location: tasks.php");
-exit();
+header("Location: index.php");
+exit;
+?>
