@@ -10,7 +10,10 @@ if (!$task || !is_dir($task_path)) {
 $urls = file_exists("$task_path/url_list.txt") ? file_get_contents("$task_path/url_list.txt") : '';
 $interval = file_exists("$task_path/interval.txt") ? intval(trim(file_get_contents("$task_path/interval.txt"))) : '';
 $command_raw = file_exists("$task_path/command.txt") ? file_get_contents("$task_path/command.txt") : '';
-$flags = preg_split('/\s+/', $command_raw);
+$flags = array_values(array_filter($flags, function($f) {
+    return $f !== '--config' && !str_starts_with($f, '/config/');
+}));
+
 
 // Parse flags
 $enabled_flags = [];
