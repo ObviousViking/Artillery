@@ -27,7 +27,7 @@ if (!$taskName || !$urlList || $interval < 1) {
 }
 
 // --- CREATE TASK DIR ---
-$taskDir = __DIR__ . "/tasks/$taskName";
+$taskDir = "/tasks/$taskName";
 if (file_exists($taskDir)) {
     log_debug("❌ Task already exists: $taskDir");
     die("Task already exists.");
