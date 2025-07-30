@@ -99,7 +99,9 @@ def main():
             if should_run(interval, last_run, now):
                 log("   ✓ Task is scheduled to run - passing to runner")
                 try:
-                    subprocess.Popen([sys.executable, str(RUNNER_SCRIPT)], cwd=str(task_dir))
+                    log(f"    > Executing: /opt/venv/bin/python3 /var/www/html/runner-task.py {task_dir}")
+
+                    subprocess.Popen(["/opt/venv/bin/python3", "/var/www/html/runner-task.py", str(task_dir)])
                 except Exception as e:
                     log(f"   - Error launching task: {e}")
             else:
