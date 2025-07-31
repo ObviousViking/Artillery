@@ -61,30 +61,6 @@ if (isset($_SESSION['output'])) {
     unset($_SESSION['output']);
 }
 
-$allowed_ext = ['jpg', 'jpeg', 'png'];
-$recent_images = [];
-
-if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < $cacheTTL)) {
-    $cached = json_decode(file_get_contents($cacheFile), true);
-    if (is_array($cached)) {
-        $recent_images = array_slice($cached, 0, 60);
-    }
-} else {
-    $all_images = [];
-    $dir_iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($downloadsDir, RecursiveDirectoryIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::CHILD_FIRST
-    );
-    foreach ($dir_iterator as $file) {
-        if ($file->isFile() && in_array(strtolower($file->getExtension()), $allowed_ext)) {
-            $relativePath = str_replace(__DIR__, '', $file->getPathname());
-            $all_images[$file->getMTime()] = ltrim($relativePath, '/\\');
-        }
-    }
-    krsort($all_images);
-    $recent_images = array_slice($all_images, 0, 60);
-    file_put_contents($cacheFile, json_encode(array_values($all_images), JSON_UNESCAPED_SLASHES));
-}
 ?>
 
 
