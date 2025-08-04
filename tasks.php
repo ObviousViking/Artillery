@@ -33,6 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             file_put_contents($pause_file, 'paused');
             $_SESSION['success'] = "Task '$task_name' paused.";
         }
+
         header("Location: " . $_SERVER['PHP_SELF']);
         exit();
     }
@@ -108,93 +109,134 @@ if (is_dir($task_dir)) {
 }
 ?>
 
-<!-- Include the same HTML head & style you already have -->
-<!-- Skip repeating it here for brevity -->
+<!DOCTYPE html>
+<html lang="en">
 
-<!-- Inside <tbody> loop -->
-<?php foreach ($tasks as $task): ?>
-<tr>
-    <td><?= htmlspecialchars($task['display_name']) ?></td>
-    <td><?= htmlspecialchars($task['schedule']) ?></td>
-    <td>
-        <a href="javascript:void(0);" class="toggle-command-link"
-            onclick="toggleCommand('<?= htmlspecialchars($task['name']) ?>')">Show Command</a>
-        <pre id="cmd-<?= htmlspecialchars($task['name']) ?>"
-            class="command-preview"><?= htmlspecialchars($task['command']) ?></pre>
-    </td>
-    <td id="status-<?= htmlspecialchars($task['name']) ?>">
-        <?php if (strtolower($task['status']) === 'running'): ?>
-        <i class="fas fa-spinner fa-spin" title="Running" style="color:#00e676;"></i>
-        <?php else: ?>
-        <i class="fas fa-circle" title="Idle" style="color:#888;"></i>
-        <?php endif; ?>
-    </td>
-    <td><?= htmlspecialchars($task['last_run']) ?></td>
-    <td>
-        <?php if ($task['has_log']): ?>
-        <a class="log-link" href="download-log.php?task=<?= urlencode($task['name']) ?>">Download</a>
-        <?php else: ?>
-        No log
-        <?php endif; ?>
-    </td>
-    <td>
-        <div class="actions">
-            <form method="POST" action="run-task.php" style="display:inline;">
-                <input type="hidden" name="task_name" value="<?= htmlspecialchars($task['name']) ?>">
-                <button type="submit" class="run-btn" aria-label="Run Task" data-tooltip="Run">
-                    <i class="fas fa-play"></i>
-                </button>
-            </form>
-            <a href="edit-task.php?task=<?= urlencode($task['name']) ?>" class="btn-edit" aria-label="Edit Task"
-                data-tooltip="Edit">
-                <i class="fas fa-pencil-alt"></i>
-            </a>
-            <form method="POST" action="" style="display:inline;">
-                <input type="hidden" name="task_name" value="<?= htmlspecialchars($task['name']) ?>">
-                <input type="hidden" name="pause_toggle" value="1">
-                <button type="submit" class="btn-pause"
-                    aria-label="<?= $task['is_paused'] ? 'Resume Task' : 'Pause Task' ?>"
-                    data-tooltip="<?= $task['is_paused'] ? 'Resume' : 'Pause' ?>">
-                    <i class="fas <?= $task['is_paused'] ? 'fa-play' : 'fa-pause' ?>"></i>
-                </button>
-            </form>
-            <form method="POST" action="delete-task.php"
-                onsubmit="return confirmDeleteTask('<?= htmlspecialchars($task['display_name']) ?>');"
-                style="display:inline;">
-                <input type="hidden" name="task_name" value="<?= htmlspecialchars($task['name']) ?>">
-                <button type="submit" class="btn-delete" aria-label="Delete Task" data-tooltip="Delete">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </form>
-            <form method="POST" action="delete-archive.php"
-                onsubmit="return confirmDeleteArchive('<?= htmlspecialchars($task['display_name']) ?>');"
-                style="display:inline;">
-                <input type="hidden" name="task_name" value="<?= htmlspecialchars($task['name']) ?>">
-                <button type="submit" class="btn-delete-archive" aria-label="Delete Archive"
-                    data-tooltip="Delete Archive">
-                    <i class="fas fa-archive"></i>
-                </button>
-            </form>
-        </div>
-    </td>
-</tr>
-<?php endforeach; ?>
+<head>
+    <meta charset="UTF-8">
+    <title>Artillery - Task List</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+    body {
+        background-color: #181818;
+        color: #eee;
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 1rem;
+    }
 
-<!-- Add this to bottom of the page -->
-<script>
-function updateStatuses() {
-    fetch('task-statuses.php')
-        .then(res => res.json())
-        .then(data => {
-            for (const [task, status] of Object.entries(data)) {
-                const el = document.getElementById("status-" + task);
-                if (!el) continue;
-                el.innerHTML = (status.toLowerCase() === "running") ?
-                    '<i class="fas fa-spinner fa-spin" title="Running" style="color:#00e676;"></i>' :
-                    '<i class="fas fa-circle" title="Idle" style="color:#888;"></i>';
-            }
-        });
-}
-setInterval(updateStatuses, 5000);
-window.addEventListener('load', updateStatuses);
-</script>
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1rem;
+    }
+
+    th,
+    td {
+        border: 1px solid #444;
+        padding: 0.5rem;
+        text-align: left;
+    }
+
+    th {
+        background-color: #222;
+    }
+
+    tr:nth-child(even) {
+        background-color: #2a2a2a;
+    }
+
+    tr:hover {
+        background-color: #333;
+    }
+
+    .actions button {
+        background-color: #333;
+        border: none;
+        padding: 0.4rem 0.6rem;
+        color: white;
+        cursor: pointer;
+        margin-right: 0.2rem;
+    }
+    </style>
+</head>
+
+<body>
+    <h1>Task List</h1>
+
+    <?php if ($error): ?>
+    <div style="color: red;"><?= htmlspecialchars($error) ?></div>
+    <?php endif; ?>
+    <?php if ($success): ?>
+    <div style="color: green;"><?= htmlspecialchars($success) ?></div>
+    <?php endif; ?>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Schedule</th>
+                <th>Command</th>
+                <th>Status</th>
+                <th>Last Run</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php foreach ($tasks as $task): ?>
+            <tr>
+                <td><?= htmlspecialchars($task['display_name']) ?></td>
+                <td><?= htmlspecialchars($task['schedule']) ?></td>
+                <td><?= htmlspecialchars($task['command']) ?></td>
+                <td id="status-<?= htmlspecialchars($task['name']) ?>">
+                    <?php if ($task['status'] === 'Running'): ?>
+                    <i class="fas fa-spinner fa-spin" title="Running" style="color:#00e676;"></i>
+                    <?php else: ?>
+                    <i class="fas fa-circle" title="Idle" style="color:#888;"></i>
+                    <?php endif; ?>
+                </td>
+                <td id="lastrun-<?= htmlspecialchars($task['name']) ?>"><?= htmlspecialchars($task['last_run']) ?></td>
+                <td class="actions">
+                    <form method="POST" action="" style="display:inline;">
+                        <input type="hidden" name="task_name" value="<?= htmlspecialchars($task['name']) ?>">
+                        <input type="hidden" name="run_task" value="1">
+                        <button type="submit">Run</button>
+                    </form>
+                    <form method="POST" action="" style="display:inline;">
+                        <input type="hidden" name="task_name" value="<?= htmlspecialchars($task['name']) ?>">
+                        <input type="hidden" name="pause_toggle" value="1">
+                        <button type="submit"><?= $task['is_paused'] ? 'Resume' : 'Pause' ?></button>
+                    </form>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+
+    <script>
+    function updateStatuses() {
+        fetch('task-statuses.php')
+            .then(res => res.json())
+            .then(data => {
+                for (const [taskName, values] of Object.entries(data)) {
+                    const statusEl = document.getElementById("status-" + taskName);
+                    const runEl = document.getElementById("lastrun-" + taskName);
+
+                    if (statusEl) {
+                        statusEl.innerHTML = (values.status.toLowerCase() === 'running') ?
+                            '<i class="fas fa-spinner fa-spin" title="Running" style="color:#00e676;"></i>' :
+                            '<i class="fas fa-circle" title="Idle" style="color:#888;"></i>';
+                    }
+
+                    if (runEl) {
+                        runEl.textContent = values.last_run || '-';
+                    }
+                }
+            });
+    }
+    setInterval(updateStatuses, 5000);
+    window.addEventListener('load', updateStatuses);
+    </script>
+</body>
+
+</html>
