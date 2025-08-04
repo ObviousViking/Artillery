@@ -480,7 +480,13 @@ if (is_dir($task_dir)) {
                         <pre id="cmd-<?= htmlspecialchars($task['name']) ?>"
                             class="command-preview"><?= htmlspecialchars($task['command']) ?></pre>
                     </td>
-                    <td><?= htmlspecialchars($task['status']) ?></td>
+                    <td>
+                        <?php if (strtolower($task['status']) === 'running'): ?>
+                            <i class="fas fa-spinner fa-spin" title="Running" style="color:#00e676;"></i>
+                        <?php else: ?>
+                            <i class="fas fa-circle" title="Idle" style="color:#888;"></i>
+                        <?php endif; ?>
+                    </td>
                     <td><?= htmlspecialchars($task['last_run']) ?></td>
                     <td>
                         <?php if ($task['has_log']): ?>
@@ -557,5 +563,6 @@ if (is_dir($task_dir)) {
     }
     </script>
 </body>
+
 
 </html>
