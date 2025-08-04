@@ -121,17 +121,16 @@ if (is_dir($task_dir)) {
         }
 
         $command_file = "$task_dir/$subfolder/command.txt";
-        $schedule_file = "$task_dir/$subfolder/schedule.txt";
+        $interval_file = "$task_dir/$subfolder/interval.txt";
         $last_run_file = "$task_dir/$subfolder/last_run.txt";
         $lockfile = "$task_dir/$subfolder/lockfile";
-        $interval_file = "$task_dir/$subfolder/interval.txt";
 
         $display_name = str_replace('_', ' ', $subfolder);
 
         $task = [
             'name' => $subfolder,
             'display_name' => $display_name,
-            'schedule' => '',
+            'schedule' => file_exists($interval_file) ? trim(file_get_contents($interval_file)) . ' minutes' : '-',
             'command' => '',
             'status' => file_exists($lockfile) ? 'Running' : 'Idle',
             'last_run' => file_exists($last_run_file) ? date('d M Y H:i', strtotime(trim(file_get_contents($last_run_file)))) : '-',
@@ -148,15 +147,11 @@ if (is_dir($task_dir)) {
             $task['next_run'] = date('d M Y H:i', $next_run_time);
         }
 
-        if (file_exists($schedule_file)) {
-            $task['schedule'] = trim(file_get_contents($schedule_file));
-        }
-
         if (file_exists($command_file)) {
             $task['command'] = trim(file_get_contents($command_file));
         }
 
-        if ($task['schedule'] !== '' || $task['command'] !== '') {
+        if ($task['schedule'] !== '-' || $task['command'] !== '') {
             $tasks[] = $task;
         }
     }
