@@ -10,6 +10,9 @@ $output = "";
 $error = "";
 $success = "";
 
+// Set server timezone to UTC for consistency
+date_default_timezone_set('UTC');
+
 // Check if this is an AJAX request for task status
 if (isset($_GET['action']) && $_GET['action'] === 'get_task_status') {
     $tasks = [];
@@ -21,20 +24,22 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_task_status') {
             $last_run_file = "$task_dir/$subfolder/last_run.txt";
             $lockfile = "$task_dir/$subfolder/lockfile";
             $interval_file = "$task_dir/$subfolder/interval.txt";
+            $pause_file = "$task_dir/$subfolder/paused.txt";
             
             $task = [
                 'name' => $subfolder,
                 'status' => file_exists($lockfile) ? 'Running' : 'Idle',
-                'last_run' => file_exists($last_run_file) ? date('d M Y H:i', strtotime(trim(file_get_contents($last_run_file)))) : '-',
-                'interval' => file_exists($interval_file) ? trim(file_get_contents($interval_file)) : '0'
+                'last_run' => file_exists($last_run_file) ? trim(file_get_contents($last_run_file)) : '-',
+                'interval' => file_exists($interval_file) ? trim(file_get_contents($interval_file)) : '0',
+                'is_paused' => file_exists($pause_file)
             ];
             
-            // Calculate next run if last run and interval are available
-            if ($task['last_run'] !== '-' && $task['interval'] !== '0') {
-                $last_run_time = strtotime(trim(file_get_contents($last_run_file)));
+            // Calculate next run if last run and interval are available and task is not paused
+            if ($task['last_run'] !== '-' && $task['interval'] !== '0' && !$task['is_paused']) {
+                $last_run_time = strtotime($task['last_run']);
                 $interval_minutes = (int)$task['interval'];
                 $next_run_time = $last_run_time + ($interval_minutes * 60);
-                $task['next_run'] = date('d M Y H:i', $next_run_time);
+                $task['next_run'] = date('Y-m-d H:i:s', $next_run_time);
             } else {
                 $task['next_run'] = '-';
             }
@@ -124,6 +129,7 @@ if (is_dir($task_dir)) {
         $interval_file = "$task_dir/$subfolder/interval.txt";
         $last_run_file = "$task_dir/$subfolder/last_run.txt";
         $lockfile = "$task_dir/$subfolder/lockfile";
+        $pause_file = "$task_dir/$subfolder/paused.txt";
 
         $display_name = str_replace('_', ' ', $subfolder);
 
@@ -133,18 +139,18 @@ if (is_dir($task_dir)) {
             'schedule' => file_exists($interval_file) ? trim(file_get_contents($interval_file)) . ' minutes' : '-',
             'command' => '',
             'status' => file_exists($lockfile) ? 'Running' : 'Idle',
-            'last_run' => file_exists($last_run_file) ? date('d M Y H:i', strtotime(trim(file_get_contents($last_run_file)))) : '-',
+            'last_run' => file_exists($last_run_file) ? trim(file_get_contents($last_run_file)) : '-',
             'has_log' => file_exists("$task_dir/$subfolder/log.txt"),
-            'is_paused' => file_exists("$task_dir/$subfolder/paused.txt"),
+            'is_paused' => file_exists($pause_file),
             'interval' => file_exists($interval_file) ? trim(file_get_contents($interval_file)) : '0',
             'next_run' => '-'
         ];
 
-        if ($task['last_run'] !== '-' && $task['interval'] !== '0') {
-            $last_run_time = strtotime(trim(file_get_contents($last_run_file)));
+        if ($task['last_run'] !== '-' && $task['interval'] !== '0' && !$task['is_paused']) {
+            $last_run_time = strtotime($task['last_run']);
             $interval_minutes = (int)$task['interval'];
             $next_run_time = $last_run_time + ($interval_minutes * 60);
-            $task['next_run'] = date('d M Y H:i', $next_run_time);
+            $task['next_run'] = date('Y-m-d H:i:s', $next_run_time);
         }
 
         if (file_exists($command_file)) {
@@ -326,7 +332,7 @@ if (is_dir($task_dir)) {
         align-items: center;
         justify-content: center;
         transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         position: relative;
     }
 
@@ -520,8 +526,10 @@ if (is_dir($task_dir)) {
                         <i class="fas fa-circle" title="Idle" style="color:#888;"></i>
                         <?php endif; ?>
                     </td>
-                    <td class="last-run-cell"><?= htmlspecialchars($task['last_run']) ?></td>
-                    <td class="next-run-cell"><?= htmlspecialchars($task['next_run']) ?></td>
+                    <td class="last-run-cell" data-utc-time="<?= htmlspecialchars($task['last_run']) ?>">
+                        <?= htmlspecialchars($task['last_run']) ?></td>
+                    <td class="next-run-cell" data-utc-time="<?= htmlspecialchars($task['next_run']) ?>">
+                        <?= htmlspecialchars($task['next_run']) ?></td>
                     <td>
                         <?php if ($task['has_log']): ?>
                         <a class="log-link" href="download-log.php?task=<?= urlencode($task['name']) ?>">Download</a>
@@ -596,11 +604,34 @@ if (is_dir($task_dir)) {
         );
     }
 
+    // Format UTC date to local timezone in "d M Y H:i" format
+    function formatDateToLocal(utcDate) {
+        if (utcDate === '-') return '-';
+        const date = new Date(utcDate + 'Z'); // Append 'Z' to treat as UTC
+        const options = {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        };
+        const parts = new Intl.DateTimeFormat('en-GB', options).formatToParts(date);
+        return `${parts[0].value} ${parts[2].value} ${parts[4].value} ${parts[6].value}:${parts[8].value}`;
+    }
+
     // Auto-update status, last run, and next run
     function updateTaskStatus() {
         fetch('?action=get_task_status')
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    console.error('Fetch error: HTTP status', response.status);
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
             .then(tasks => {
+                console.log('Fetched tasks:', tasks); // Debug: Log fetched data
                 tasks.forEach(task => {
                     const row = document.querySelector(`tr[data-task-name="${task.name}"]`);
                     if (row) {
@@ -613,16 +644,27 @@ if (is_dir($task_dir)) {
                                 '<i class="fas fa-circle" title="Idle" style="color:#888;"></i>';
                         }
                         if (lastRunCell) {
-                            lastRunCell.textContent = task.last_run;
+                            lastRunCell.setAttribute('data-utc-time', task.last_run);
+                            lastRunCell.textContent = formatDateToLocal(task.last_run);
                         }
                         if (nextRunCell) {
-                            nextRunCell.textContent = task.next_run;
+                            nextRunCell.setAttribute('data-utc-time', task.next_run);
+                            nextRunCell.textContent = formatDateToLocal(task.next_run);
                         }
+                    } else {
+                        console.warn(
+                        `Row for task ${task.name} not found in table`); // Debug: Log missing rows
                     }
                 });
             })
             .catch(error => console.error('Error fetching task status:', error));
     }
+
+    // Convert initial UTC times to local timezone on page load
+    document.querySelectorAll('.last-run-cell, .next-run-cell').forEach(cell => {
+        const utcTime = cell.getAttribute('data-utc-time');
+        cell.textContent = formatDateToLocal(utcTime);
+    });
 
     // Poll every 5 seconds
     setInterval(updateTaskStatus, 5000);
