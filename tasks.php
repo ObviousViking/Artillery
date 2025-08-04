@@ -10,6 +10,43 @@ $output = "";
 $error = "";
 $success = "";
 
+// Check if this is an AJAX request for task status
+if (isset($_GET['action']) && $_GET['action'] === 'get_task_status') {
+    $tasks = [];
+    if (is_dir($task_dir)) {
+        foreach (scandir($task_dir) as $subfolder) {
+            if ($subfolder === '.' || $subfolder === '..' || !is_dir("$task_dir/$subfolder")) {
+                continue;
+            }
+            $last_run_file = "$task_dir/$subfolder/last_run.txt";
+            $lockfile = "$task_dir/$subfolder/lockfile";
+            $interval_file = "$task_dir/$subfolder/interval.txt";
+            
+            $task = [
+                'name' => $subfolder,
+                'status' => file_exists($lockfile) ? 'Running' : 'Idle',
+                'last_run' => file_exists($last_run_file) ? date('d M Y H:i', strtotime(trim(file_get_contents($last_run_file)))) : '-',
+                'interval' => file_exists($interval_file) ? trim(file_get_contents($interval_file)) : '0'
+            ];
+            
+            // Calculate next run if last run and interval are available
+            if ($task['last_run'] !== '-' && $task['interval'] !== '0') {
+                $last_run_time = strtotime(trim(file_get_contents($last_run_file)));
+                $interval_minutes = (int)$task['interval'];
+                $next_run_time = $last_run_time + ($interval_minutes * 60);
+                $task['next_run'] = date('d M Y H:i', $next_run_time);
+            } else {
+                $task['next_run'] = '-';
+            }
+            
+            $tasks[] = $task;
+        }
+    }
+    header('Content-Type: application/json');
+    echo json_encode($tasks);
+    exit;
+}
+
 // Retrieve and clear session messages
 if (isset($_SESSION['error'])) {
     $error = $_SESSION['error'];
@@ -87,6 +124,7 @@ if (is_dir($task_dir)) {
         $schedule_file = "$task_dir/$subfolder/schedule.txt";
         $last_run_file = "$task_dir/$subfolder/last_run.txt";
         $lockfile = "$task_dir/$subfolder/lockfile";
+        $interval_file = "$task_dir/$subfolder/interval.txt";
 
         $display_name = str_replace('_', ' ', $subfolder);
 
@@ -98,8 +136,17 @@ if (is_dir($task_dir)) {
             'status' => file_exists($lockfile) ? 'Running' : 'Idle',
             'last_run' => file_exists($last_run_file) ? date('d M Y H:i', strtotime(trim(file_get_contents($last_run_file)))) : '-',
             'has_log' => file_exists("$task_dir/$subfolder/log.txt"),
-            'is_paused' => file_exists("$task_dir/$subfolder/paused.txt")
+            'is_paused' => file_exists("$task_dir/$subfolder/paused.txt"),
+            'interval' => file_exists($interval_file) ? trim(file_get_contents($interval_file)) : '0',
+            'next_run' => '-'
         ];
+
+        if ($task['last_run'] !== '-' && $task['interval'] !== '0') {
+            $last_run_time = strtotime(trim(file_get_contents($last_run_file)));
+            $interval_minutes = (int)$task['interval'];
+            $next_run_time = $last_run_time + ($interval_minutes * 60);
+            $task['next_run'] = date('d M Y H:i', $next_run_time);
+        }
 
         if (file_exists($schedule_file)) {
             $task['schedule'] = trim(file_get_contents($schedule_file));
@@ -115,7 +162,6 @@ if (is_dir($task_dir)) {
     }
 }
 ?>
-
 
 <!DOCTYPE html>
 <html lang="en">
@@ -171,7 +217,6 @@ if (is_dir($task_dir)) {
 
     .content {
         max-width: 1200px;
-        /* Increased from 960px to give table more room */
         margin: 2rem auto;
         padding: 2rem;
         background-color: #252525;
@@ -220,57 +265,51 @@ if (is_dir($task_dir)) {
         background-color: #2e2e2e;
     }
 
-    /* Set specific column widths to balance layout */
     th:nth-child(1),
     td:nth-child(1) {
-        /* Task Name */
         width: 20%;
     }
 
     th:nth-child(2),
     td:nth-child(2) {
-        /* Schedule */
         width: 15%;
     }
 
     th:nth-child(3),
     td:nth-child(3) {
-        /* Command */
-        width: 25%;
+        width: 20%;
     }
 
     th:nth-child(4),
     td:nth-child(4) {
-        /* Status */
         width: 10%;
     }
 
     th:nth-child(5),
     td:nth-child(5) {
-        /* Last Run */
         width: 15%;
     }
 
     th:nth-child(6),
     td:nth-child(6) {
-        /* Log */
-        width: 10%;
+        width: 15%;
     }
 
     th:nth-child(7),
     td:nth-child(7) {
-        /* Actions */
+        width: 10%;
+    }
+
+    th:nth-child(8),
+    td:nth-child(8) {
         width: 25%;
         min-width: 180px;
-        /* Ensure enough space for 5 buttons */
     }
 
     .actions {
         display: flex;
         flex-wrap: nowrap;
-        /* Prevent wrapping on larger screens */
         gap: 0.3rem;
-        /* Reduced from 0.5rem to save space */
         align-items: center;
     }
 
@@ -285,7 +324,6 @@ if (is_dir($task_dir)) {
         color: #fff;
         cursor: pointer;
         font-size: 0.9rem;
-        /* For icons */
         line-height: 1;
         width: 2rem;
         height: 2rem;
@@ -425,7 +463,6 @@ if (is_dir($task_dir)) {
 
         .actions {
             flex-direction: column;
-            /* Stack buttons vertically on small screens */
             align-items: flex-start;
         }
 
@@ -465,13 +502,14 @@ if (is_dir($task_dir)) {
                     <th scope="col">Command</th>
                     <th scope="col">Status</th>
                     <th scope="col">Last Run</th>
+                    <th scope="col">Next Run</th>
                     <th scope="col">Log</th>
                     <th scope="col">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($tasks as $task): ?>
-                <tr>
+                <tr data-task-name="<?= htmlspecialchars($task['name']) ?>">
                     <td><?= htmlspecialchars($task['display_name']) ?></td>
                     <td><?= htmlspecialchars($task['schedule']) ?></td>
                     <td>
@@ -480,14 +518,15 @@ if (is_dir($task_dir)) {
                         <pre id="cmd-<?= htmlspecialchars($task['name']) ?>"
                             class="command-preview"><?= htmlspecialchars($task['command']) ?></pre>
                     </td>
-                    <td>
+                    <td class="status-cell">
                         <?php if (strtolower($task['status']) === 'running'): ?>
                         <i class="fas fa-spinner fa-spin" title="Running" style="color:#00e676;"></i>
                         <?php else: ?>
                         <i class="fas fa-circle" title="Idle" style="color:#888;"></i>
                         <?php endif; ?>
                     </td>
-                    <td><?= htmlspecialchars($task['last_run']) ?></td>
+                    <td class="last-run-cell"><?= htmlspecialchars($task['last_run']) ?></td>
+                    <td class="next-run-cell"><?= htmlspecialchars($task['next_run']) ?></td>
                     <td>
                         <?php if ($task['has_log']): ?>
                         <a class="log-link" href="download-log.php?task=<?= urlencode($task['name']) ?>">Download</a>
@@ -561,8 +600,40 @@ if (is_dir($task_dir)) {
             `Are you sure you want to delete the download archive for "${taskName}"?\nThis will cause files to be re-downloaded.`
         );
     }
+
+    // Auto-update status, last run, and next run
+    function updateTaskStatus() {
+        fetch('?action=get_task_status')
+            .then(response => response.json())
+            .then(tasks => {
+                tasks.forEach(task => {
+                    const row = document.querySelector(`tr[data-task-name="${task.name}"]`);
+                    if (row) {
+                        const statusCell = row.querySelector('.status-cell');
+                        const lastRunCell = row.querySelector('.last-run-cell');
+                        const nextRunCell = row.querySelector('.next-run-cell');
+                        if (statusCell) {
+                            statusCell.innerHTML = task.status.toLowerCase() === 'running' ?
+                                '<i class="fas fa-spinner fa-spin" title="Running" style="color:#00e676;"></i>' :
+                                '<i class="fas fa-circle" title="Idle" style="color:#888;"></i>';
+                        }
+                        if (lastRunCell) {
+                            lastRunCell.textContent = task.last_run;
+                        }
+                        if (nextRunCell) {
+                            nextRunCell.textContent = task.next_run;
+                        }
+                    }
+                });
+            })
+            .catch(error => console.error('Error fetching task status:', error));
+    }
+
+    // Poll every 5 seconds
+    setInterval(updateTaskStatus, 5000);
+    // Initial update
+    updateTaskStatus();
     </script>
 </body>
-
 
 </html>
