@@ -186,6 +186,9 @@ if (is_dir($task_dir)) {
         margin: 0;
         padding: 0;
         line-height: 1.5;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
     }
 
     .banner {
@@ -223,6 +226,7 @@ if (is_dir($task_dir)) {
         background-color: #252525;
         border-radius: 8px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        flex: 1;
     }
 
     h1 {
@@ -452,10 +456,19 @@ if (is_dir($task_dir)) {
         border-radius: 6px;
     }
 
+    footer {
+        position: fixed;
+        bottom: 0;
+        width: 100%;
+        z-index: 1000;
+    }
+
     @media (max-width: 600px) {
         .content {
             margin: 1rem;
             padding: 1.5rem;
+            padding-bottom: 4rem;
+            /* Space for footer */
         }
 
         table {
@@ -616,20 +629,29 @@ if (is_dir($task_dir)) {
             return '-';
         }
         try {
-            // Parse UTC date (e.g., "2025-08-05 09:33:00")
-            const date = new Date(Date.parse(utcDate.replace(' ', 'T') + 'Z'));
-            if (isNaN(date.getTime())) {
+            // Parse UTC date (e.g., "2025-08-05 09:44:00")
+            const [datePart, timePart] = utcDate.split(' ');
+            const [year, month, day] = datePart.split('-').map(Number);
+            const [hours, minutes, seconds] = timePart.split(':').map(Number);
+            const utc = new Date(Date.UTC(year, month - 1, day, hours, minutes, seconds));
+            if (isNaN(utc.getTime())) {
                 console.error(`Invalid date parsed: ${utcDate}`);
                 return '-';
             }
+            const local = new Date(utc.getTime() - (utc.getTimezoneOffset() * 60000));
             const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            const day = String(date.getDate()).padStart(2, '0');
-            const month = months[date.getMonth()];
-            const year = date.getFullYear();
-            const hours = String(date.getHours()).padStart(2, '0');
-            const minutes = String(date.getMinutes()).padStart(2, '0');
-            console.log(`Converted UTC ${utcDate} to local: ${day} ${month} ${year} ${hours}:${minutes}`);
-            return `${day} ${month} ${year} ${hours}:${minutes}`;
+            const localDay = String(local.getDate()).padStart(2, '0');
+            const localMonth = months[local.getMonth()];
+            const localYear = local.getFullYear();
+            const localHours = String(local.getHours()).padStart(2, '0');
+            const localMinutes = String(local.getMinutes()).padStart(2, '0');
+            const offsetMinutes = -local.getTimezoneOffset();
+            const offsetHours = Math.floor(Math.abs(offsetMinutes) / 60);
+            const offsetSign = offsetMinutes >= 0 ? '+' : '-';
+            console.log(
+                `UTC ${utcDate} -> Local: ${localDay} ${localMonth} ${localYear} ${localHours}:${localMinutes}, Offset: ${offsetSign}${offsetHours}h`
+                );
+            return `${localDay} ${localMonth} ${localYear} ${localHours}:${localMinutes}`;
         } catch (e) {
             console.error(`Error formatting date ${utcDate}:`, e);
             return '-';
@@ -638,6 +660,7 @@ if (is_dir($task_dir)) {
 
     // Auto-update status, last run, and next run
     function updateTaskStatus() {
+        console.log('Fetching task status...');
         fetch('?action=get_task_status')
             .then(response => {
                 if (!response.ok) {
@@ -666,9 +689,9 @@ if (is_dir($task_dir)) {
                         }
                         if (nextRunCell) {
                             nextRunCell.setAttribute('data-utc-time', task.next_run);
-                            const nextRunTime = task.next_run !== '-' ? new Date(Date.parse(task.next_run
-                                .replace(' ', 'T') + 'Z')).getTime() : null;
-                            const now = new Date().getTime();
+                            const nextRunTime = task.next_run !== '-' ? Date.parse(task.next_run.replace(
+                                ' ', 'T') + 'Z') : null;
+                            const now = Date.now();
                             const isOverdue = nextRunTime && nextRunTime < now && task.status
                             .toLowerCase() !== 'running' && !task.is_paused;
                             nextRunCell.textContent = formatDateToLocal(task.next_run);
@@ -694,6 +717,12 @@ if (is_dir($task_dir)) {
                 }
             });
     }
+
+    // Log browser timezone offset on load
+    const offsetMinutes = new Date().getTimezoneOffset();
+    const offsetHours = Math.floor(Math.abs(offsetMinutes) / 60);
+    const offsetSign = offsetMinutes <= 0 ? '+' : '-';
+    console.log(`Browser timezone offset: ${offsetSign}${offsetHours}h`);
 
     // Convert initial UTC times to local timezone on page load
     document.querySelectorAll('.last-run-cell, .next-run-cell').forEach(cell => {

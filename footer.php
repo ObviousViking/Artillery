@@ -1,4 +1,5 @@
-<footer class="banner" style="border-top: 1px solid #333; border-bottom: none;">
+<footer class="banner"
+    style="position: fixed; bottom: 0; width: 100%; border-top: 1px solid #333; border-bottom: none; z-index: 1000;">
     <div id="current-time" style="color: #00b7c3; font-weight: 500;"></div>
 </footer>
 
@@ -20,7 +21,7 @@ function updateCurrentTime() {
     console.log(`Footer time updated: ${timeString}`);
 }
 
-// Update time on load and every minute
+// Update time on load and every second
 updateCurrentTime();
-setInterval(updateCurrentTime, 60000);
+setInterval(updateCurrentTime, 1000);
 </script>
