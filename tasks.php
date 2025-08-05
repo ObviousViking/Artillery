@@ -266,6 +266,11 @@ if (is_dir($task_dir)) {
         background-color: #2e2e2e;
     }
 
+    .overdue {
+        color: #ff5555;
+        font-weight: 600;
+    }
+
     th:nth-child(1),
     td:nth-child(1) {
         width: 20%;
@@ -604,22 +609,26 @@ if (is_dir($task_dir)) {
 
     // Format UTC date to local timezone in "d M Y H:i" format
     function formatDateToLocal(utcDate) {
-        if (utcDate === '-' || !utcDate) return '-';
+        if (utcDate === '-' || !utcDate) {
+            console.log(`No valid UTC date provided: ${utcDate}`);
+            return '-';
+        }
         try {
-            const date = new Date(utcDate + 'Z'); // Append 'Z' to treat as UTC
-            if (isNaN(date.getTime())) return '-'; // Handle invalid dates
-            const options = {
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false
-            };
-            const parts = new Intl.DateTimeFormat('en-GB', options).formatToParts(date);
-            return `${parts[0].value} ${parts[2].value} ${parts[4].value} ${parts[6].value}:${parts[8].value}`;
+            const date = new Date(utcDate + 'Z'); // Treat as UTC
+            if (isNaN(date.getTime())) {
+                console.error(`Invalid date parsed: ${utcDate}`);
+                return '-';
+            }
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = months[date.getMonth()];
+            const year = date.getFullYear();
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            console.log(`Converted ${utcDate} to local: ${day} ${month} ${year} ${hours}:${minutes}`);
+            return `${day} ${month} ${year} ${hours}:${minutes}`;
         } catch (e) {
-            console.error('Error formatting date:', utcDate, e);
+            console.error(`Error formatting date ${utcDate}:`, e);
             return '-';
         }
     }
@@ -629,7 +638,7 @@ if (is_dir($task_dir)) {
         fetch('?action=get_task_status')
             .then(response => {
                 if (!response.ok) {
-                    console.error('Fetch error: HTTP status', response.status, response.statusText);
+                    console.error(`Fetch error: HTTP status ${response.status} ${response.statusText}`);
                     throw new Error('Network response was not ok');
                 }
                 return response.json();
@@ -654,7 +663,13 @@ if (is_dir($task_dir)) {
                         }
                         if (nextRunCell) {
                             nextRunCell.setAttribute('data-utc-time', task.next_run);
+                            const nextRunTime = task.next_run !== '-' ? new Date(task.next_run + 'Z')
+                                .getTime() : null;
+                            const now = new Date().getTime();
+                            const isOverdue = nextRunTime && nextRunTime < now && task.status
+                            .toLowerCase() !== 'running' && !task.is_paused;
                             nextRunCell.textContent = formatDateToLocal(task.next_run);
+                            nextRunCell.classList.toggle('overdue', isOverdue);
                         }
                         if (nameCell) {
                             nameCell.textContent = task.is_paused ?
@@ -662,12 +677,20 @@ if (is_dir($task_dir)) {
                                 task.name.replace(/_/g, ' ');
                         }
                     } else {
-                        console.warn(
-                        `Row for task ${task.name} not found in table`); // Debug: Log missing rows
+                        console.warn(`Row for task ${task.name} not found in table`);
                     }
                 });
             })
-            .catch(error => console.error('Error fetching task status:', error));
+            .catch(error => {
+                console.error('Error fetching task status:', error);
+                // Fallback: Reload page after 3 failed attempts (15 seconds)
+                if (!window.fetchRetryCount) window.fetchRetryCount = 0;
+                window.fetchRetryCount++;
+                if (window.fetchRetryCount >= 3) {
+                    console.log('Too many failed fetches, reloading page');
+                    window.location.reload();
+                }
+            });
     }
 
     // Convert initial UTC times to local timezone on page load
