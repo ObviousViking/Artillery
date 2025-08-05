@@ -179,16 +179,20 @@ if (is_dir($task_dir)) {
         box-sizing: border-box;
     }
 
+    html,
     body {
+        margin: 0;
+        padding: 0;
         background-color: #181818;
         color: #e0e0e0;
         font-family: 'Inter', system-ui, -apple-system, sans-serif;
-        margin: 0;
-        padding: 0;
         line-height: 1.5;
+        min-height: 100vh;
+    }
+
+    body {
         display: flex;
         flex-direction: column;
-        min-height: 100vh;
     }
 
     .banner {
@@ -226,7 +230,6 @@ if (is_dir($task_dir)) {
         background-color: #252525;
         border-radius: 8px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        flex: 1;
     }
 
     h1 {
@@ -629,7 +632,7 @@ if (is_dir($task_dir)) {
             return '-';
         }
         try {
-            // Parse UTC date (e.g., "2025-08-05 09:44:00")
+            // Parse UTC date (e.g., "2025-08-05 09:58:00")
             const [datePart, timePart] = utcDate.split(' ');
             const [year, month, day] = datePart.split('-').map(Number);
             const [hours, minutes, seconds] = timePart.split(':').map(Number);
@@ -728,6 +731,12 @@ if (is_dir($task_dir)) {
     document.querySelectorAll('.last-run-cell, .next-run-cell').forEach(cell => {
         const utcTime = cell.getAttribute('data-utc-time');
         cell.textContent = formatDateToLocal(utcTime);
+    });
+
+    // Log content height for debugging
+    window.addEventListener('load', () => {
+        const content = document.querySelector('.content');
+        console.log(`Content height: ${content.offsetHeight}px`);
     });
 
     // Poll every 5 seconds
