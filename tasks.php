@@ -511,7 +511,7 @@ if (is_dir($task_dir)) {
             <tbody>
                 <?php foreach ($tasks as $task): ?>
                 <tr data-task-name="<?= htmlspecialchars($task['name']) ?>">
-                    <td><?= htmlspecialchars($task['display_name']) ?></td>
+                    <td><?= htmlspecialchars($task['display_name']) ?><?= $task['is_paused'] ? ' (Paused)' : '' ?></td>
                     <td><?= htmlspecialchars($task['schedule']) ?></td>
                     <td>
                         <a href="javascript:void(0);" class="toggle-command-link"
@@ -526,10 +526,8 @@ if (is_dir($task_dir)) {
                         <i class="fas fa-circle" title="Idle" style="color:#888;"></i>
                         <?php endif; ?>
                     </td>
-                    <td class="last-run-cell" data-utc-time="<?= htmlspecialchars($task['last_run']) ?>">
-                        <?= htmlspecialchars($task['last_run']) ?></td>
-                    <td class="next-run-cell" data-utc-time="<?= htmlspecialchars($task['next_run']) ?>">
-                        <?= htmlspecialchars($task['next_run']) ?></td>
+                    <td class="last-run-cell" data-utc-time="<?= htmlspecialchars($task['last_run']) ?>"></td>
+                    <td class="next-run-cell" data-utc-time="<?= htmlspecialchars($task['next_run']) ?>"></td>
                     <td>
                         <?php if ($task['has_log']): ?>
                         <a class="log-link" href="download-log.php?task=<?= urlencode($task['name']) ?>">Download</a>
@@ -606,18 +604,24 @@ if (is_dir($task_dir)) {
 
     // Format UTC date to local timezone in "d M Y H:i" format
     function formatDateToLocal(utcDate) {
-        if (utcDate === '-') return '-';
-        const date = new Date(utcDate + 'Z'); // Append 'Z' to treat as UTC
-        const options = {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-        };
-        const parts = new Intl.DateTimeFormat('en-GB', options).formatToParts(date);
-        return `${parts[0].value} ${parts[2].value} ${parts[4].value} ${parts[6].value}:${parts[8].value}`;
+        if (utcDate === '-' || !utcDate) return '-';
+        try {
+            const date = new Date(utcDate + 'Z'); // Append 'Z' to treat as UTC
+            if (isNaN(date.getTime())) return '-'; // Handle invalid dates
+            const options = {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            };
+            const parts = new Intl.DateTimeFormat('en-GB', options).formatToParts(date);
+            return `${parts[0].value} ${parts[2].value} ${parts[4].value} ${parts[6].value}:${parts[8].value}`;
+        } catch (e) {
+            console.error('Error formatting date:', utcDate, e);
+            return '-';
+        }
     }
 
     // Auto-update status, last run, and next run
@@ -625,7 +629,7 @@ if (is_dir($task_dir)) {
         fetch('?action=get_task_status')
             .then(response => {
                 if (!response.ok) {
-                    console.error('Fetch error: HTTP status', response.status);
+                    console.error('Fetch error: HTTP status', response.status, response.statusText);
                     throw new Error('Network response was not ok');
                 }
                 return response.json();
@@ -638,6 +642,7 @@ if (is_dir($task_dir)) {
                         const statusCell = row.querySelector('.status-cell');
                         const lastRunCell = row.querySelector('.last-run-cell');
                         const nextRunCell = row.querySelector('.next-run-cell');
+                        const nameCell = row.querySelector('td:first-child');
                         if (statusCell) {
                             statusCell.innerHTML = task.status.toLowerCase() === 'running' ?
                                 '<i class="fas fa-spinner fa-spin" title="Running" style="color:#00e676;"></i>' :
@@ -650,6 +655,11 @@ if (is_dir($task_dir)) {
                         if (nextRunCell) {
                             nextRunCell.setAttribute('data-utc-time', task.next_run);
                             nextRunCell.textContent = formatDateToLocal(task.next_run);
+                        }
+                        if (nameCell) {
+                            nameCell.textContent = task.is_paused ?
+                                `${task.name.replace(/_/g, ' ')} (Paused)` :
+                                task.name.replace(/_/g, ' ');
                         }
                     } else {
                         console.warn(
