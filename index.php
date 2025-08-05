@@ -28,30 +28,25 @@ foreach ([$logDir, $downloadsDir] as $dir) {
     }
 }
 
-// Function to get recent images recursively
+// Simplified function to avoid recursive scanning
 function getRecentImages($downloadsDir, $cacheFile, $cacheTTL, $limit) {
     $cache = file_exists($cacheFile) ? json_decode(file_get_contents($cacheFile), true) : [];
     $cacheTime = $cache['time'] ?? 0;
     $dirMtime = filemtime($downloadsDir);
 
-    // Use cache if valid and directory hasn't changed
+    // Use cache if valid
     if (isset($cache['dir_mtime']) && $cache['dir_mtime'] >= $dirMtime && time() - $cacheTime < $cacheTTL && !empty($cache['images'])) {
         return array_slice($cache['images'], 0, $limit);
     }
 
-    // Recursively scan for images
+    // Fallback: scan only top-level directory
+    $files = glob($downloadsDir . '/*.{jpg,jpeg,png,gif}', GLOB_BRACE);
     $images = [];
-    $extensions = ['jpg', 'jpeg', 'png', 'gif'];
-    $iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($downloadsDir, RecursiveDirectoryIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::SELF_FIRST
-    );
-
-    foreach ($iterator as $file) {
-        if ($file->isFile() && in_array(strtolower($file->getExtension()), $extensions)) {
+    foreach ($files as $file) {
+        if (is_file($file)) {
             $images[] = [
-                'path' => $file->getPathname(),
-                'mtime' => $file->getMTime()
+                'path' => $file,
+                'mtime' => filemtime($file)
             ];
         }
     }
@@ -95,6 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($output === null) {
                 $_SESSION['error'] = "Failed to execute the download script.";
             } else {
+                touch($downloadsDir); // Update directory mtime
                 file_put_contents("$logDir/homepage-run.log", "[" . date('Y-m-d H:i:s') . "] $command\n$output\n\n", FILE_APPEND);
                 $_SESSION['success'] = "Download started successfully. Check recent images below.";
                 $_SESSION['output'] = $output;
