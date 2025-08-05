@@ -360,6 +360,8 @@ if (isset($_SESSION['output'])) {
         </form>
     </main>
 
+    <?php include 'footer.php'; ?>
+
     <h2>Recently Downloaded Images</h2>
 
     <div class="scroll-wall">

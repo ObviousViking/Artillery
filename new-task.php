@@ -277,6 +277,9 @@
         </form>
     </main>
 
+
+    <?php include 'footer.php'; ?>
+
     <script>
     function updateCommand() {
         let base = "gallery-dl -i url_list.txt -f /O --no-input --verbose --write-log log.txt --no-part";

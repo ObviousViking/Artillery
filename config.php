@@ -266,6 +266,7 @@ if (!empty($_SESSION['flash_messages'])) {
             </div>
         </form>
     </main>
+    <?php include 'footer.php'; ?>
 </body>
 
 </html>

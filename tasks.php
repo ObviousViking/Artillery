@@ -589,6 +589,8 @@ if (is_dir($task_dir)) {
         <?php endif; ?>
     </main>
 
+    <?php include 'footer.php'; ?>
+
     <script>
     function toggleCommand(taskName) {
         const el = document.getElementById("cmd-" + taskName);
@@ -614,7 +616,8 @@ if (is_dir($task_dir)) {
             return '-';
         }
         try {
-            const date = new Date(utcDate + 'Z'); // Treat as UTC
+            // Parse UTC date (e.g., "2025-08-05 09:33:00")
+            const date = new Date(Date.parse(utcDate.replace(' ', 'T') + 'Z'));
             if (isNaN(date.getTime())) {
                 console.error(`Invalid date parsed: ${utcDate}`);
                 return '-';
@@ -625,7 +628,7 @@ if (is_dir($task_dir)) {
             const year = date.getFullYear();
             const hours = String(date.getHours()).padStart(2, '0');
             const minutes = String(date.getMinutes()).padStart(2, '0');
-            console.log(`Converted ${utcDate} to local: ${day} ${month} ${year} ${hours}:${minutes}`);
+            console.log(`Converted UTC ${utcDate} to local: ${day} ${month} ${year} ${hours}:${minutes}`);
             return `${day} ${month} ${year} ${hours}:${minutes}`;
         } catch (e) {
             console.error(`Error formatting date ${utcDate}:`, e);
@@ -644,7 +647,7 @@ if (is_dir($task_dir)) {
                 return response.json();
             })
             .then(tasks => {
-                console.log('Fetched tasks:', tasks); // Debug: Log fetched data
+                console.log('Fetched tasks:', tasks);
                 tasks.forEach(task => {
                     const row = document.querySelector(`tr[data-task-name="${task.name}"]`);
                     if (row) {
@@ -663,8 +666,8 @@ if (is_dir($task_dir)) {
                         }
                         if (nextRunCell) {
                             nextRunCell.setAttribute('data-utc-time', task.next_run);
-                            const nextRunTime = task.next_run !== '-' ? new Date(task.next_run + 'Z')
-                                .getTime() : null;
+                            const nextRunTime = task.next_run !== '-' ? new Date(Date.parse(task.next_run
+                                .replace(' ', 'T') + 'Z')).getTime() : null;
                             const now = new Date().getTime();
                             const isOverdue = nextRunTime && nextRunTime < now && task.status
                             .toLowerCase() !== 'running' && !task.is_paused;
@@ -683,7 +686,6 @@ if (is_dir($task_dir)) {
             })
             .catch(error => {
                 console.error('Error fetching task status:', error);
-                // Fallback: Reload page after 3 failed attempts (15 seconds)
                 if (!window.fetchRetryCount) window.fetchRetryCount = 0;
                 window.fetchRetryCount++;
                 if (window.fetchRetryCount >= 3) {
