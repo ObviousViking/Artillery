@@ -625,7 +625,7 @@ if (is_dir($task_dir)) {
         );
     }
 
-    // Format UTC date to BST (Europe/London) in "d M Y H:i" format
+    // Format UTC date to local timezone in "d M Y H:i" format
     function formatDateToLocal(utcDate) {
         if (utcDate === '-' || !utcDate) {
             console.log(`No valid UTC date provided: ${utcDate}`);
@@ -638,9 +638,8 @@ if (is_dir($task_dir)) {
                 console.error(`Invalid date parsed: ${utcDate}`);
                 return '-';
             }
-            // Convert to BST using toLocaleString
+            // Convert to local timezone using toLocaleString
             const options = {
-                timeZone: 'Europe/London',
                 day: '2-digit',
                 month: 'short',
                 year: 'numeric',
@@ -652,7 +651,7 @@ if (is_dir($task_dir)) {
             const [day, month, year, time] = local.split(/[\s,]+/);
             const formatted = `${day} ${month} ${year} ${time}`;
             console.log(
-                `UTC ${utcDate} -> BST: ${formatted}, Browser TZ: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`
+                `UTC ${utcDate} -> Local: ${formatted}, Browser TZ: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`
                 );
             return formatted;
         } catch (e) {
