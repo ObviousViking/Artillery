@@ -625,36 +625,36 @@ if (is_dir($task_dir)) {
         );
     }
 
-    // Format UTC date to local timezone in "d M Y H:i" format
+    // Format UTC date to BST (Europe/London) in "d M Y H:i" format
     function formatDateToLocal(utcDate) {
         if (utcDate === '-' || !utcDate) {
             console.log(`No valid UTC date provided: ${utcDate}`);
             return '-';
         }
         try {
-            // Parse UTC date (e.g., "2025-08-05 09:58:00")
-            const [datePart, timePart] = utcDate.split(' ');
-            const [year, month, day] = datePart.split('-').map(Number);
-            const [hours, minutes, seconds] = timePart.split(':').map(Number);
-            const utc = new Date(Date.UTC(year, month - 1, day, hours, minutes, seconds));
+            // Parse UTC date (e.g., "2025-08-05 10:00:00")
+            const utc = new Date(utcDate.replace(' ', 'T') + 'Z');
             if (isNaN(utc.getTime())) {
                 console.error(`Invalid date parsed: ${utcDate}`);
                 return '-';
             }
-            const local = new Date(utc.getTime() - (utc.getTimezoneOffset() * 60000));
-            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            const localDay = String(local.getDate()).padStart(2, '0');
-            const localMonth = months[local.getMonth()];
-            const localYear = local.getFullYear();
-            const localHours = String(local.getHours()).padStart(2, '0');
-            const localMinutes = String(local.getMinutes()).padStart(2, '0');
-            const offsetMinutes = -local.getTimezoneOffset();
-            const offsetHours = Math.floor(Math.abs(offsetMinutes) / 60);
-            const offsetSign = offsetMinutes >= 0 ? '+' : '-';
+            // Convert to BST using toLocaleString
+            const options = {
+                timeZone: 'Europe/London',
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            };
+            const local = utc.toLocaleString('en-GB', options);
+            const [day, month, year, time] = local.split(/[\s,]+/);
+            const formatted = `${day} ${month} ${year} ${time}`;
             console.log(
-                `UTC ${utcDate} -> Local: ${localDay} ${localMonth} ${localYear} ${localHours}:${localMinutes}, Offset: ${offsetSign}${offsetHours}h`
+                `UTC ${utcDate} -> BST: ${formatted}, Browser TZ: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`
                 );
-            return `${localDay} ${localMonth} ${localYear} ${localHours}:${localMinutes}`;
+            return formatted;
         } catch (e) {
             console.error(`Error formatting date ${utcDate}:`, e);
             return '-';
@@ -721,7 +721,8 @@ if (is_dir($task_dir)) {
             });
     }
 
-    // Log browser timezone offset on load
+    // Log browser timezone on load
+    console.log(`Browser timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
     const offsetMinutes = new Date().getTimezoneOffset();
     const offsetHours = Math.floor(Math.abs(offsetMinutes) / 60);
     const offsetSign = offsetMinutes <= 0 ? '+' : '-';
