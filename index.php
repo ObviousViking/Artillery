@@ -19,7 +19,7 @@ $logDir = '/logs';
 $downloadsDir = '/downloads';
 $cacheFile = "$logDir/image_cache.json";
 $cacheTTL = 120; // seconds
-$imageLimit = 30; // Max images to process
+$imageLimit = 120; // Max images to retrieve
 
 // Ensure directories exist
 foreach ([$logDir, $downloadsDir] as $dir) {
@@ -28,7 +28,7 @@ foreach ([$logDir, $downloadsDir] as $dir) {
     }
 }
 
-// Function to get recent images with caching
+// Function to get recent images recursively
 function getRecentImages($downloadsDir, $cacheFile, $cacheTTL, $limit) {
     $cache = file_exists($cacheFile) ? json_decode(file_get_contents($cacheFile), true) : [];
     $cacheTime = $cache['time'] ?? 0;
@@ -39,14 +39,21 @@ function getRecentImages($downloadsDir, $cacheFile, $cacheTTL, $limit) {
         return array_slice($cache['images'], 0, $limit);
     }
 
-    // Scan directory for images
-    $files = glob($downloadsDir . '/*.{jpg,jpeg,png,gif}', GLOB_BRACE);
+    // Recursively scan for images
     $images = [];
-    foreach ($files as $file) {
-        $images[] = [
-            'path' => $file,
-            'mtime' => filemtime($file)
-        ];
+    $extensions = ['jpg', 'jpeg', 'png', 'gif'];
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($downloadsDir, RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST
+    );
+
+    foreach ($iterator as $file) {
+        if ($file->isFile() && in_array(strtolower($file->getExtension()), $extensions)) {
+            $images[] = [
+                'path' => $file->getPathname(),
+                'mtime' => $file->getMTime()
+            ];
+        }
     }
 
     // Sort by modification time (newest first)
@@ -422,7 +429,7 @@ $recent_images = getRecentImages($downloadsDir, $cacheFile, $cacheTTL, $imageLim
         ?>
         <div class="scroll-row <?= $dir ?>">
             <div class="scroll-track">
-                <?php foreach (array_slice(array_merge($row, $row), 0, 20) as $img): ?>
+                <?php foreach (array_slice(array_merge($row, $row), 0, 40) as $img): ?>
                 <a href="<?= htmlspecialchars($img) ?>" target="_blank">
                     <img src="<?= htmlspecialchars($img) ?>" alt="Downloaded image" loading="lazy">
                 </a>
