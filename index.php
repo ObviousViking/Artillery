@@ -19,11 +19,53 @@ $logDir = '/logs';
 $downloadsDir = '/downloads';
 $cacheFile = "$logDir/image_cache.json";
 $cacheTTL = 120; // seconds
+$imageLimit = 30; // Max images to process
 
+// Ensure directories exist
 foreach ([$logDir, $downloadsDir] as $dir) {
     if (!is_dir($dir)) {
         mkdir($dir, 0755, true);
     }
+}
+
+// Function to get recent images with caching
+function getRecentImages($downloadsDir, $cacheFile, $cacheTTL, $limit) {
+    $cache = file_exists($cacheFile) ? json_decode(file_get_contents($cacheFile), true) : [];
+    $cacheTime = $cache['time'] ?? 0;
+    $dirMtime = filemtime($downloadsDir);
+
+    // Use cache if valid and directory hasn't changed
+    if (isset($cache['dir_mtime']) && $cache['dir_mtime'] >= $dirMtime && time() - $cacheTime < $cacheTTL && !empty($cache['images'])) {
+        return array_slice($cache['images'], 0, $limit);
+    }
+
+    // Scan directory for images
+    $files = glob($downloadsDir . '/*.{jpg,jpeg,png,gif}', GLOB_BRACE);
+    $images = [];
+    foreach ($files as $file) {
+        $images[] = [
+            'path' => $file,
+            'mtime' => filemtime($file)
+        ];
+    }
+
+    // Sort by modification time (newest first)
+    usort($images, function($a, $b) {
+        return $b['mtime'] <=> $a['mtime'];
+    });
+
+    // Limit to the most recent images
+    $images = array_slice($images, 0, $limit);
+    $imagePaths = array_column($images, 'path');
+
+    // Update cache
+    file_put_contents($cacheFile, json_encode([
+        'time' => time(),
+        'dir_mtime' => $dirMtime,
+        'images' => $imagePaths
+    ]), LOCK_EX);
+
+    return $imagePaths;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -61,8 +103,10 @@ if (isset($_SESSION['output'])) {
     unset($_SESSION['output']);
 }
 
-?>
+// Load recent images
+$recent_images = getRecentImages($downloadsDir, $cacheFile, $cacheTTL, $imageLimit);
 
+?>
 
 <!DOCTYPE html>
 <html lang="en">
@@ -120,7 +164,6 @@ if (isset($_SESSION['output'])) {
 
     .content {
         max-width: 800px;
-        /* Reduced from 1200px for a more compact form */
         margin: 2rem auto;
         padding: 2rem;
         background-color: #252525;
@@ -178,7 +221,6 @@ if (isset($_SESSION['output'])) {
 
     .btn-fire {
         padding: 0.5rem 1rem;
-        /* Slightly larger for text */
         border: none;
         border-radius: 6px;
         color: #fff;
@@ -321,7 +363,6 @@ if (isset($_SESSION['output'])) {
 
         .btn-fire {
             padding: 0.4rem 0.8rem;
-            /* Slightly smaller for mobile */
             font-size: 0.85rem;
         }
 
@@ -370,7 +411,8 @@ if (isset($_SESSION['output'])) {
         <?php else: ?>
         <?php
         $numRows = 3;
-        $chunks = array_chunk($recent_images, ceil(count($recent_images) / $numRows));
+        $imagesPerRow = ceil(count($recent_images) / $numRows);
+        $chunks = array_chunk($recent_images, $imagesPerRow);
         $directions = ['left', 'right', 'left'];
 
         for ($i = 0; $i < $numRows; $i++):
@@ -380,9 +422,9 @@ if (isset($_SESSION['output'])) {
         ?>
         <div class="scroll-row <?= $dir ?>">
             <div class="scroll-track">
-                <?php foreach (array_merge($row, $row) as $img): ?>
+                <?php foreach (array_slice(array_merge($row, $row), 0, 20) as $img): ?>
                 <a href="<?= htmlspecialchars($img) ?>" target="_blank">
-                    <img src="<?= htmlspecialchars($img) ?>" alt="Downloaded image">
+                    <img src="<?= htmlspecialchars($img) ?>" alt="Downloaded image" loading="lazy">
                 </a>
                 <?php endforeach; ?>
             </div>
