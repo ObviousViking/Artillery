@@ -625,37 +625,32 @@ if (is_dir($task_dir)) {
         );
     }
 
-    // Format UTC date to local timezone in "d M Y H:i" format
-    function formatDateToLocal(utcDate) {
-        if (utcDate === '-' || !utcDate) {
-            console.log(`No valid UTC date provided: ${utcDate}`);
+    // Format date as-is in "d M Y H:i" format, no timezone conversion
+    function formatDate(rawDate) {
+        if (rawDate === '-' || !rawDate) {
+            console.log(`No valid date provided: ${rawDate}`);
             return '-';
         }
         try {
-            // Parse UTC date (e.g., "2025-08-05 10:00:00")
-            const utc = new Date(Date.parse(utcDate + ' UTC'));
-            if (isNaN(utc.getTime())) {
-                console.error(`Invalid date parsed: ${utcDate}`);
+            // Parse raw date (e.g., "2025-08-05 10:00:00")
+            const [datePart, timePart] = rawDate.split(' ');
+            const [year, monthNum, day] = datePart.split('-').map(Number);
+            const [hours, minutes, seconds] = timePart.split(':').map(Number);
+            const date = new Date(year, monthNum - 1, day, hours, minutes, seconds);
+            if (isNaN(date.getTime())) {
+                console.error(`Invalid date parsed: ${rawDate}`);
                 return '-';
             }
-            // Convert to local timezone using toLocaleString
-            const options = {
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false
-            };
-            const local = utc.toLocaleString('en-GB', options);
-            const [dayStr, monthStr, yearStr, time] = local.split(/[\s,]+/);
-            const formatted = `${dayStr} ${monthStr} ${yearStr} ${time}`;
+            // Format manually to d M Y H:i
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const formatted =
+                `${String(day).padStart(2, '0')} ${months[monthNum - 1]} ${year} ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
             console.log(
-                `UTC ${utcDate} -> Local: ${formatted}, Browser TZ: ${Intl.DateTimeFormat().resolvedOptions().timeZone}, UTC time: ${utc.toISOString()}`
+                `Raw ${rawDate} -> Formatted: ${formatted}, Browser TZ: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`
                 );
             return formatted;
         } catch (e) {
-            console.error(`Error formatting date ${utcDate}:`, e);
+            console.error(`Error formatting date ${rawDate}:`, e);
             return '-';
         }
     }
@@ -687,7 +682,7 @@ if (is_dir($task_dir)) {
                         }
                         if (lastRunCell) {
                             lastRunCell.setAttribute('data-utc-time', task.last_run);
-                            lastRunCell.textContent = formatDateToLocal(task.last_run);
+                            lastRunCell.textContent = formatDate(task.last_run);
                         }
                         if (nextRunCell) {
                             nextRunCell.setAttribute('data-utc-time', task.next_run);
@@ -696,7 +691,7 @@ if (is_dir($task_dir)) {
                             const now = Date.now();
                             const isOverdue = nextRunTime && nextRunTime < now && task.status
                             .toLowerCase() !== 'running' && !task.is_paused;
-                            nextRunCell.textContent = formatDateToLocal(task.next_run);
+                            nextRunCell.textContent = formatDate(task.next_run);
                             nextRunCell.classList.toggle('overdue', isOverdue);
                         }
                         if (nameCell) {
@@ -727,10 +722,10 @@ if (is_dir($task_dir)) {
     const offsetSign = offsetMinutes <= 0 ? '+' : '-';
     console.log(`Browser timezone offset: ${offsetSign}${offsetHours}h`);
 
-    // Convert initial UTC times to local timezone on page load
+    // Convert initial times on page load
     document.querySelectorAll('.last-run-cell, .next-run-cell').forEach(cell => {
-        const utcTime = cell.getAttribute('data-utc-time');
-        cell.textContent = formatDateToLocal(utcTime);
+        const rawTime = cell.getAttribute('data-utc-time');
+        cell.textContent = formatDate(rawTime);
     });
 
     // Log content height for debugging
