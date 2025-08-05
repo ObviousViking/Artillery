@@ -633,7 +633,7 @@ if (is_dir($task_dir)) {
         }
         try {
             // Parse UTC date (e.g., "2025-08-05 10:00:00")
-            const utc = new Date(utcDate.replace(' ', 'T') + 'Z');
+            const utc = new Date(Date.parse(utcDate + ' UTC'));
             if (isNaN(utc.getTime())) {
                 console.error(`Invalid date parsed: ${utcDate}`);
                 return '-';
@@ -648,10 +648,10 @@ if (is_dir($task_dir)) {
                 hour12: false
             };
             const local = utc.toLocaleString('en-GB', options);
-            const [day, month, year, time] = local.split(/[\s,]+/);
-            const formatted = `${day} ${month} ${year} ${time}`;
+            const [dayStr, monthStr, yearStr, time] = local.split(/[\s,]+/);
+            const formatted = `${dayStr} ${monthStr} ${yearStr} ${time}`;
             console.log(
-                `UTC ${utcDate} -> Local: ${formatted}, Browser TZ: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`
+                `UTC ${utcDate} -> Local: ${formatted}, Browser TZ: ${Intl.DateTimeFormat().resolvedOptions().timeZone}, UTC time: ${utc.toISOString()}`
                 );
             return formatted;
         } catch (e) {
@@ -691,8 +691,8 @@ if (is_dir($task_dir)) {
                         }
                         if (nextRunCell) {
                             nextRunCell.setAttribute('data-utc-time', task.next_run);
-                            const nextRunTime = task.next_run !== '-' ? Date.parse(task.next_run.replace(
-                                ' ', 'T') + 'Z') : null;
+                            const nextRunTime = task.next_run !== '-' ? Date.parse(task.next_run + ' UTC') :
+                                null;
                             const now = Date.now();
                             const isOverdue = nextRunTime && nextRunTime < now && task.status
                             .toLowerCase() !== 'running' && !task.is_paused;
