@@ -1,67 +1,129 @@
-<footer class="banner"
-    style="position: fixed; bottom: 0; width: 100%; border-top: 1px solid #333; border-bottom: none; z-index: 1000;">
-    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 0 1.5rem;">
-        <div id="current-time" style="color: #00b7c3; font-weight: 500;"></div>
-        <div id="kofi-widget"></div>
-    </div>
-</footer>
+<!DOCTYPE html>
+<html lang="en">
 
-<script type='text/javascript' src='https://storage.ko-fi.com/cdn/widget/Widget_2.js'></script>
-<script type='text/javascript'>
-kofiwidget2.init('Buy me a coffee', '#72a4f2', 'P5P61JA9LQ');
-kofiwidget2.draw();
+<head>
+    <meta charset="UTF-8">
+    <title>Footer with Ko-fi Widget</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
 
-function updateCurrentTime() {
-    const now = new Date();
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const dayName = days[now.getDay()];
-    const day = String(now.getDate()).padStart(2, '0');
-    const month = months[now.getMonth()];
-    const year = now.getFullYear();
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const seconds = String(now.getSeconds()).padStart(2, '0');
-    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const timeString = `${dayName}, ${day} ${month} ${year} ${hours}:${minutes}:${seconds} ${timeZone}`;
-    document.getElementById('current-time').textContent = timeString;
-    console.log(`Footer time updated: ${timeString}`);
-}
+    <style>
+    :root {
+        --bg: #121212;
+        --card-bg: #1e1e1e;
+        --text: #e5e5e5;
+        --muted: #888;
+        --accent: #e5be01;
+        --accent-2: #d4ab01;
+    }
 
-// Update time on load and every second
-updateCurrentTime();
-setInterval(updateCurrentTime, 1000);
+    body {
+        margin: 0;
+        padding-bottom: 70px;
+        /* Space for fixed footer */
+        background-color: var(--bg);
+        color: var(--text);
+        font-family: Arial, sans-serif;
+    }
 
-// Log Ko-fi widget load
-console.log('Ko-fi widget initialized');
-</script>
+    .banner {
+        background-color: #252525;
+        padding: 1rem 1.5rem;
+        position: fixed;
+        bottom: 0;
+        width: 100%;
+        border-top: 1px solid #333;
+        z-index: 1000;
+    }
 
-<style>
-.banner {
-    background-color: #252525;
-    padding: 1rem 1.5rem;
-}
-
-#kofi-widget {
-    display: inline-block;
-}
-
-@media (max-width: 600px) {
-    .banner>div {
-        flex-direction: row;
-        /* Keep time and Ko-fi side by side */
+    .banner-inner {
+        display: flex;
+        justify-content: space-between;
         align-items: center;
-        gap: 1rem;
+        width: 100%;
     }
 
     #current-time {
-        font-size: 0.85rem;
-        /* Slightly smaller font for mobile */
+        color: #00b7c3;
+        font-weight: 500;
+        font-size: 0.95rem;
     }
 
     #kofi-widget {
-        transform: scale(0.9);
-        /* Slightly scale down Ko-fi button for mobile */
+        display: inline-block;
+        transform: scale(0.85);
+        transform-origin: right;
     }
-}
-</style>
+
+    #kofi-widget>div,
+    #kofi-widget iframe {
+        position: static !important;
+        float: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        display: inline-block !important;
+    }
+
+    @media (max-width: 600px) {
+        .banner-inner {
+            flex-direction: column;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        #current-time {
+            font-size: 0.85rem;
+        }
+
+        #kofi-widget {
+            transform: scale(0.9);
+            transform-origin: center;
+        }
+    }
+    </style>
+</head>
+
+<body>
+
+    <!-- Your main content here -->
+    <div style="padding: 2rem;">
+        <h1>Sample Page</h1>
+        <p>This is just a demo page to test Ko-fi widget placement inside a sticky footer.</p>
+    </div>
+
+    <!-- Footer -->
+    <footer class="banner">
+        <div class="banner-inner">
+            <div id="current-time"></div>
+            <div id="kofi-widget"></div>
+        </div>
+    </footer>
+
+    <!-- Ko-fi Script -->
+    <script type='text/javascript' src='https://storage.ko-fi.com/cdn/widget/Widget_2.js'></script>
+    <script type='text/javascript'>
+    kofiwidget2.init('Buy me a coffee', '#72a4f2', 'P5P61JA9LQ');
+    kofiwidget2.draw('kofi-widget');
+
+    function updateCurrentTime() {
+        const now = new Date();
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const dayName = days[now.getDay()];
+        const day = String(now.getDate()).padStart(2, '0');
+        const month = months[now.getMonth()];
+        const year = now.getFullYear();
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const timeString = `${dayName}, ${day} ${month} ${year} ${hours}:${minutes}:${seconds} ${timeZone}`;
+        document.getElementById('current-time').textContent = timeString;
+    }
+
+    updateCurrentTime();
+    setInterval(updateCurrentTime, 1000);
+    </script>
+
+</body>
+
+</html>
