@@ -33,11 +33,11 @@ IMAGE_EXTENSIONS = {
 
 
 def get_recent_files(directory: Path, limit: int = 200) -> List[Path]:
-    """Return up to ``limit`` files in ``directory`` sorted by mtime desc."""
+    """Return up to ``limit`` files in ``directory`` and subdirs sorted by mtime."""
     if not directory.exists():
         return []
 
-    files = [f for f in directory.iterdir() if f.is_file()]
+    files = [f for f in directory.rglob("*") if f.is_file()]
     files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
     return files[:limit]
 
@@ -45,7 +45,7 @@ def get_recent_files(directory: Path, limit: int = 200) -> List[Path]:
 def main() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     recent_files = get_recent_files(DOWNLOAD_DIR)
-    images = [f.name for f in recent_files if f.suffix.lower() in IMAGE_EXTENSIONS]
+    images = [str(f.relative_to(DOWNLOAD_DIR)) for f in recent_files if f.suffix.lower() in IMAGE_EXTENSIONS]
 
     with CACHE_FILE.open("w", encoding="utf-8") as fh:
         json.dump(images, fh, indent=2)
