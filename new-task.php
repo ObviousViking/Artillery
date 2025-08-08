@@ -11,7 +11,7 @@
     }
 
     body {
-        background-color: #181818;
+        background: #181818;
         color: #e0e0e0;
         font-family: 'Inter', system-ui, -apple-system, sans-serif;
         margin: 0;
@@ -20,7 +20,7 @@
     }
 
     .banner {
-        background-color: #252525;
+        background: #252525;
         padding: 1rem 1.5rem;
         display: flex;
         justify-content: space-between;
@@ -39,11 +39,11 @@
         margin-left: 1.5rem;
         text-decoration: none;
         font-weight: 500;
-        transition: color 0.2s ease, opacity 0.2s ease;
+        transition: color .2s, opacity .2s;
     }
 
     nav.nav a:hover {
-        opacity: 0.8;
+        opacity: .8;
         text-decoration: underline;
     }
 
@@ -51,12 +51,12 @@
     input[type="submit"] {
         background: linear-gradient(135deg, #00b7c3, #008c95);
         color: #fff;
-        border: none;
-        padding: 0.75rem 1.5rem;
+        border: 0;
+        padding: .75rem 1.5rem;
         border-radius: 6px;
         font-weight: 500;
         cursor: pointer;
-        transition: transform 0.2s ease, background 0.2s ease;
+        transition: transform .2s, background .2s;
     }
 
     button:hover,
@@ -69,9 +69,9 @@
         max-width: 960px;
         margin: 2rem auto;
         padding: 2rem;
-        background-color: #252525;
+        background: #252525;
         border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, .3);
     }
 
     h1 {
@@ -92,25 +92,25 @@
     textarea,
     input[type="number"] {
         width: 100%;
-        padding: 0.75rem;
-        background-color: #2e2e2e;
+        padding: .75rem;
+        background: #2e2e2e;
         color: #e0e0e0;
         border: 1px solid #444;
         border-radius: 6px;
-        margin-top: 0.25rem;
-        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        margin-top: .25rem;
+        transition: border-color .2s, box-shadow .2s;
     }
 
     input[type="text"]:focus,
     input[type="number"]:focus,
     textarea:focus {
         border-color: #00b7c3;
-        box-shadow: 0 0 0 2px rgba(0, 183, 195, 0.3);
+        box-shadow: 0 0 0 2px rgba(0, 183, 195, .3);
         outline: none;
     }
 
     pre.command-preview {
-        background-color: #2e2e2e;
+        background: #2e2e2e;
         border: 1px solid #444;
         padding: 1rem;
         color: #00b7c3;
@@ -126,19 +126,19 @@
         border-bottom: 1px solid #333;
         margin-top: 2rem;
         flex-wrap: wrap;
-        gap: 0.25rem;
+        gap: .25rem;
     }
 
     .tabs button {
         background: none;
         border: none;
-        padding: 0.75rem 1.5rem;
+        padding: .75rem 1.5rem;
         cursor: pointer;
         color: #a0a0a0;
         font-weight: 500;
         border-bottom: 2px solid transparent;
         border-radius: 6px 6px 0 0;
-        transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+        transition: color .2s, border-color .2s, background .2s;
     }
 
     .tabs button:hover {
@@ -162,16 +162,11 @@
     }
 
     .flag-group {
-        margin: 0.75rem 0;
+        margin: .75rem 0;
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: .5rem;
         min-height: 28px;
-    }
-
-    .flag-group input[type="checkbox"],
-    .flag-group input[type="radio"] {
-        flex-shrink: 0;
     }
 
     .flag-group label {
@@ -179,25 +174,51 @@
         color: #e0e0e0;
         cursor: pointer;
         user-select: none;
+        margin: 0;
     }
 
-    .hint,
-    .note {
+    .hint {
         display: block;
-        margin-top: 0.25rem;
+        margin-top: .25rem;
         color: #a0a0a0;
-        font-size: 0.875rem;
+        font-size: .875rem;
     }
 
-    /* Visible checkboxes/radios on dark backgrounds */
+    /* Unified square style for checkboxes + radios */
     input[type="checkbox"],
     input[type="radio"] {
-        appearance: auto !important;
+        -webkit-appearance: none;
+        appearance: none;
         width: 18px;
         height: 18px;
         margin: 0 .5rem 0 0;
-        vertical-align: middle;
-        accent-color: #00b7c3;
+        border: 2px solid #666;
+        border-radius: 4px;
+        background: #2e2e2e;
+        position: relative;
+        outline: none;
+        cursor: pointer;
+    }
+
+    input[type="checkbox"]:focus,
+    input[type="radio"]:focus {
+        box-shadow: 0 0 0 2px rgba(0, 183, 195, .35);
+        border-color: #00b7c3;
+    }
+
+    input[type="checkbox"]::after,
+    input[type="radio"]::after {
+        content: "";
+        position: absolute;
+        inset: 3px;
+        background: #00b7c3;
+        display: none;
+        border-radius: 2px;
+    }
+
+    input[type="checkbox"]:checked::after,
+    input[type="radio"]:checked::after {
+        display: block;
     }
     </style>
 </head>
@@ -221,7 +242,6 @@
             <label>Command Preview</label>
             <pre id="command_preview" class="command-preview">Generating...</pre>
 
-            <!-- Tabs -->
             <div class="tabs">
                 <button type="button">Input Options</button>
                 <button type="button">Output</button>
@@ -234,18 +254,15 @@
             <!-- Input Options -->
             <div class="tab-content">
                 <h3 style="margin:0 0 .5rem;">Input Options</h3>
-
                 <div class="flag-group">
                     <input type="radio" name="input_mode" id="mode_i" value="i" checked />
                     <label for="mode_i">Read-only list (<code>-i url_list.txt</code>)</label>
                 </div>
-
                 <div class="flag-group">
                     <input type="radio" name="input_mode" id="mode_I" value="I" />
                     <label for="mode_I">Consumptive list (<code>-I url_list.txt</code>, comments processed
                         lines)</label>
                 </div>
-
                 <small class="hint">Both modes use <code>url_list.txt</code> in the task folder.</small>
             </div>
 
@@ -322,13 +339,11 @@
         const inputPart = `-${mode} url_list.txt`;
 
         // Checkboxes
-        document.querySelectorAll("input[type=checkbox]:checked").forEach(el => {
+        document.querySelectorAll('input[type="checkbox"]:checked').forEach(el => {
             if (el.name.startsWith("flag_")) {
                 flags.push("--" + el.name.replace("flag_", "").replace(/_/g, "-"));
             }
-            if (el.name === "use_cookies") {
-                flags.push("-C cookies.txt");
-            }
+            if (el.name === "use_cookies") flags.push("-C cookies.txt");
             if (el.name === "use_download_archive") {
                 const taskName = document.querySelector('[name="task_name"]').value || "taskname";
                 flags.push(`--download-archive ${taskName}.sqlite`);
@@ -360,7 +375,10 @@
                 contents[i].classList.add("active");
             });
         });
-        buttons[0].click(); // default to "Input Options"
+        if (buttons.length && contents.length) {
+            buttons[0].classList.add("active");
+            contents[0].classList.add("active");
+        }
     }
 
     document.addEventListener("DOMContentLoaded", () => {
