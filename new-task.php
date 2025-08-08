@@ -190,25 +190,13 @@
     input[type="checkbox"],
     input[type="radio"] {
         appearance: auto !important;
-        /* reset any weird resets */
         width: 18px;
         height: 18px;
         margin: 0 .5rem 0 0;
         vertical-align: middle;
         accent-color: #00b7c3;
-        /* modern browsers */
-    }
-
-    .flag-group {
-        display: flex;
-        align-items: center;
-    }
-
-    .flag-group label {
-        margin-left: .25rem;
     }
     </style>
-
 </head>
 
 <body>
@@ -222,14 +210,10 @@
 
             <label>Gallery URLs (one per line)</label>
             <textarea name="url_list" id="gallery_url" rows="5" required></textarea>
-            <small class="hint">When using <code>-I</code>, the first non-empty line will be used as the target
-                URL.</small>
 
             <label for="interval">Run Every (Minutes)</label>
             <input type="number" name="interval" id="interval" min="1" required placeholder="e.g. 60">
-            <small class="hint">
-                This task will run every X minutes, starting from its last run time.
-            </small>
+            <small class="hint">This task will run every X minutes, starting from its last run time.</small>
 
             <label>Command Preview</label>
             <pre id="command_preview" class="command-preview">Generating...</pre>
@@ -250,17 +234,16 @@
 
                 <div class="flag-group">
                     <input type="radio" name="input_mode" id="mode_i" value="i" checked>
-                    <label for="mode_i">Read-only list (-i url_list.txt)</label>
+                    <label for="mode_i">Read-only list (<code>-i url_list.txt</code>)</label>
                 </div>
 
                 <div class="flag-group" style="margin-top:.5rem;">
                     <input type="radio" name="input_mode" id="mode_I" value="I">
-                    <label for="mode_I">Consumptive list (-I url_list.txt, comments done lines)</label>
+                    <label for="mode_I">Consumptive list (<code>-I url_list.txt</code>, comments done lines)</label>
                 </div>
 
                 <small class="hint">Both modes use <code>url_list.txt</code> in the task folder.</small>
             </div>
-
 
             <!-- Output -->
             <div class="tab-content">
@@ -311,14 +294,12 @@
             </div>
 
             <!-- Cookies -->
-            <div class="flag-group">
-                <label class="input-check">
-                    <input type="checkbox" id="use_cookies" name="use_cookies">
-                    <span class="tick"></span>
-                </label>
-                <label for="use_cookies">Use cookies.txt (place it manually in the task folder)</label>
+            <div class="tab-content">
+                <div class="flag-group">
+                    <input type="checkbox" name="use_cookies" id="use_cookies">
+                    <label for="use_cookies">Use cookies.txt (place it manually in the task folder)</label>
+                </div>
             </div>
-
 
             <button type="submit">Create Task</button>
         </form>
@@ -327,12 +308,6 @@
     <?php include 'footer.php'; ?>
 
     <script>
-    function firstNonEmptyLine(text) {
-        if (!text) return "";
-        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-        return lines[0] || "";
-    }
-
     function updateCommand() {
         let base = "gallery-dl -f /O --no-input --verbose --write-log log.txt --no-part";
         let flags = [];
@@ -369,7 +344,6 @@
             `${base} ${inputPart} ${flags.join(" ")}`.trim();
     }
 
-
     function setupTabs() {
         const buttons = document.querySelectorAll(".tabs button");
         const contents = document.querySelectorAll(".tab-content");
@@ -384,52 +358,13 @@
         buttons[0].click(); // Open "Input Options" by default
     }
 
-    function setupInputModeToggle() {
-        const radios = document.querySelectorAll('input[name="input_mode"]');
-        const fileOpts = document.getElementById('file-options');
-        const filterOpts = document.getElementById('filter-options');
-
-        radios.forEach(r => {
-            r.addEventListener('change', () => {
-                const mode = document.querySelector('input[name="input_mode"]:checked')?.value ||
-                    'file';
-                fileOpts.style.display = (mode === 'file') ? '' : 'none';
-                filterOpts.style.display = (mode === 'filter') ? '' : 'none';
-                updateCommand();
-            });
-        });
-    }
-
     document.addEventListener("DOMContentLoaded", () => {
         document.querySelectorAll("input, textarea").forEach(el => {
             el.addEventListener("input", updateCommand);
             el.addEventListener("change", updateCommand);
         });
         setupTabs();
-        setupInputModeToggle();
         updateCommand();
-
-        // Optional client-side validation on submit for -I mode
-        const form = document.getElementById('new-task-form');
-        form.addEventListener('submit', (e) => {
-            const mode = document.querySelector('input[name="input_mode"]:checked')?.value || 'file';
-            if (mode === 'filter') {
-                const url = firstNonEmptyLine(document.getElementById('gallery_url')?.value || "");
-                const filter = (document.getElementById('input_filter')?.value || "").trim();
-                if (!url) {
-                    e.preventDefault();
-                    alert(
-                        "When using -I, please enter at least one URL in the textarea (first non-empty line will be used)."
-                    );
-                    return;
-                }
-                if (!filter) {
-                    e.preventDefault();
-                    alert("Please provide a filter expression for -I.");
-                    return;
-                }
-            }
-        });
     });
     </script>
 </body>
