@@ -9,7 +9,7 @@ function log_debug($msg) {
 log_debug("==== Incoming POST ====");
 log_debug(print_r($_POST, true));
 
-// --- BASIC CHECK ---
+// --- REQUEST METHOD CHECK ---
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     log_debug("❌ Invalid request method.");
     die("Invalid request method.");
@@ -20,16 +20,20 @@ $taskName = preg_replace('/[^\w\-]/', '_', trim($_POST['task_name'] ?? ''));
 $urlList  = trim($_POST['url_list'] ?? '');
 $interval = intval($_POST['interval'] ?? 0);
 
-// Input options
-$inputMode   = $_POST['input_mode'] ?? 'file'; // 'file' | 'filter'
-$inputFile   = trim($_POST['input_file'] ?? 'url_list.txt'); // used when mode=file
-$inputFilter = trim($_POST['input_filter'] ?? '');           // used when mode=filter
+// --- INPUT MODE: 'i' or 'I' (default to 'i') ---
+$inputModeRaw = $_POST['input_mode'] ?? 'i';
+$inputMode    = ($inputModeRaw === 'I') ? 'I' : 'i';
 
-log_debug("Parsed: task_name = $taskName, interval = $interval, input_mode = $inputMode, input_file = $inputFile");
+log_debug("Parsed: task_name = $taskName, interval = $interval, input_mode = $inputMode");
 
-if (!$taskName || !$urlList || $interval < 1) {
-    log_debug("❌ Missing required fields. Aborting.");
-    die("Missing task name, URL list, or invalid interval.");
+// --- VALIDATE REQUIRED FIELDS BEFORE TOUCHING DISK ---
+if ($taskName === '' || $interval < 1) {
+    log_debug("❌ Missing task name or invalid interval.");
+    die("Missing task name or invalid interval.");
+}
+if ($urlList === '') {
+    log_debug("❌ URL list is empty.");
+    die("URL list cannot be empty.");
 }
 
 // --- CREATE TASK DIR ---
@@ -38,58 +42,22 @@ if (file_exists($taskDir)) {
     log_debug("❌ Task already exists: $taskDir");
     die("Task already exists.");
 }
-
 if (!mkdir($taskDir, 0777, true)) {
     log_debug("❌ Failed to create task directory: $taskDir");
     die("Failed to create task directory.");
 }
 
 // --- WRITE BASIC FILES ---
-// Always save the textarea content (handy for reference even when using -I)
 file_put_contents("$taskDir/url_list.txt", $urlList);
 file_put_contents("$taskDir/interval.txt", $interval);
-
-// If user chose a custom list filename for -i mode, also write it
-if ($inputMode === 'file') {
-    if ($inputFile === '') { $inputFile = 'url_list.txt'; }
-    // If the custom filename differs, mirror the content
-    if ($inputFile !== 'url_list.txt') {
-        file_put_contents("$taskDir/$inputFile", $urlList);
-    }
-}
 
 // --- COMMAND BASE (no hard-coded -i here) ---
 $cmd = "gallery-dl -f /O --no-input --verbose --write-log log.txt --no-part";
 $flags = [];
 
-// --- BUILD INPUT PART ---
-$inputMode = ($_POST['input_mode'] ?? 'i'); // Expecting 'i' or 'I'
-if ($inputMode !== 'I') {
-    $inputMode = 'i'; // Default to -i if invalid or missing
-} else {
-    // -I <filter> <URL>; use first non-empty line from textarea
-    $lines = preg_split('/\r\n|\r|\n/', $urlList);
-    $firstUrl = '';
-    foreach ($lines as $line) {
-        $line = trim($line);
-        if ($line !== '') { $firstUrl = $line; break; }
-    }
-
-    if ($firstUrl === '') {
-        log_debug("❌ -I selected but no non-empty URL line found in textarea.");
-        die("When using -I, the first non-empty line of the URL textarea must be a URL.");
-    }
-    if ($inputFilter === '') {
-        log_debug("❌ -I selected but filter expression is empty.");
-        die("Please provide a filter expression for -I.");
-    }
-
-    $inputPart = "-I " . escapeshellarg($inputFilter) . " " . escapeshellarg($firstUrl);
-    // For convenience, also write out what URL/filter were used
-    file_put_contents("$taskDir/target_url.txt", $firstUrl . PHP_EOL);
-    file_put_contents("$taskDir/filter.txt", $inputFilter . PHP_EOL);
-    log_debug("Input: using -I with filter and URL '$firstUrl'");
-}
+// --- BUILD INPUT PART (simple toggle) ---
+$inputPart = "-{$inputMode} url_list.txt";
+log_debug("Input: using $inputPart");
 
 // --- FLAG HELPERS ---
 function addFlag($key, $val = null) {
@@ -131,4 +99,3 @@ log_debug("Command: $fullCmd");
 
 header("Location: index.php");
 exit;
-?>

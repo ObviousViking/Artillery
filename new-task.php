@@ -185,6 +185,28 @@
         align-items: center;
         flex-wrap: wrap;
     }
+
+    /* Make checkboxes/radios visible on dark background */
+    input[type="checkbox"],
+    input[type="radio"] {
+        appearance: auto !important;
+        /* reset any weird resets */
+        width: 18px;
+        height: 18px;
+        margin: 0 .5rem 0 0;
+        vertical-align: middle;
+        accent-color: #00b7c3;
+        /* modern browsers */
+    }
+
+    .flag-group {
+        display: flex;
+        align-items: center;
+    }
+
+    .flag-group label {
+        margin-left: .25rem;
+    }
     </style>
 
 </head>
@@ -289,12 +311,14 @@
             </div>
 
             <!-- Cookies -->
-            <div class="tab-content">
-                <div class="flag-group">
-                    <input type="checkbox" name="use_cookies" id="use_cookies">
-                    <label for="use_cookies">Use cookies.txt (place it manually in the task folder)</label>
-                </div>
+            <div class="flag-group">
+                <label class="input-check">
+                    <input type="checkbox" id="use_cookies" name="use_cookies">
+                    <span class="tick"></span>
+                </label>
+                <label for="use_cookies">Use cookies.txt (place it manually in the task folder)</label>
             </div>
+
 
             <button type="submit">Create Task</button>
         </form>
