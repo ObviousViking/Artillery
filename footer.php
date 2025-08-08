@@ -2,15 +2,16 @@
     style="position: fixed; bottom: 0; width: 100%; border-top: 1px solid #333; border-bottom: none; z-index: 1000;">
     <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 0 1.5rem;">
         <div id="current-time" style="color: #00b7c3; font-weight: 500;"></div>
-        <div id="kofi-widget" style="display: inline-block;"></div>
+        <div id="kofi-widget">
+            <a href='https://ko-fi.com/P5P61JA9LQ' target='_blank'>
+                <img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi6.png?v=6'
+                    border='0' alt='Buy Me a Coffee at ko-fi.com' />
+            </a>
+        </div>
     </div>
 </footer>
 
-<script type='text/javascript' src='https://storage.ko-fi.com/cdn/widget/Widget_2.js'></script>
-<script type='text/javascript'>
-kofiwidget2.init('Buy me a coffee', '#72a4f2', 'P5P61JA9LQ');
-kofiwidget2.draw();
-
+<script>
 function updateCurrentTime() {
     const now = new Date();
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -33,7 +34,7 @@ updateCurrentTime();
 setInterval(updateCurrentTime, 1000);
 
 // Log Ko-fi widget load
-console.log('Ko-fi widget initialized');
+console.log('Ko-fi image widget loaded');
 </script>
 
 <style>
@@ -47,21 +48,16 @@ console.log('Ko-fi widget initialized');
     line-height: 1;
 }
 
-/* Override Ko-fi widget styles to ensure it stays in place */
-#kofi-widget>div,
-#kofi-widget iframe {
-    position: static !important;
-    float: none !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    display: inline-block !important;
+#kofi-widget img {
+    vertical-align: middle;
+    max-height: 36px;
 }
 
 @media (max-width: 600px) {
     .footer-banner>div {
         flex-direction: row;
         align-items: center;
-        gap: 0.75rem;
+        gap: 0.5rem;
     }
 
     #current-time {
@@ -70,6 +66,10 @@ console.log('Ko-fi widget initialized');
 
     #kofi-widget {
         font-size: 0.9rem;
+    }
+
+    #kofi-widget img {
+        height: 32px;
     }
 }
 </style>
