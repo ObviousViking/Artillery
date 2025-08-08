@@ -184,27 +184,28 @@
         font-size: .875rem;
     }
 
-    /* Unified square style for checkboxes + radios */
+    /* Visible, consistent controls (no custom pseudo-elements) */
     input[type="checkbox"],
     input[type="radio"] {
-        -webkit-appearance: none;
-        appearance: none;
+        appearance: auto !important;
+        /* use native control */
         width: 18px;
         height: 18px;
         margin: 0 .5rem 0 0;
-        border: 2px solid #666;
-        border-radius: 4px;
-        background: #2e2e2e;
-        position: relative;
-        outline: none;
+        vertical-align: middle;
+        accent-color: #00b7c3;
+        /* tint */
         cursor: pointer;
+        outline: none;
     }
 
+    /* optional: focus ring for accessibility */
     input[type="checkbox"]:focus,
     input[type="radio"]:focus {
         box-shadow: 0 0 0 2px rgba(0, 183, 195, .35);
-        border-color: #00b7c3;
+        border-radius: 3px;
     }
+
 
     input[type="checkbox"]::after,
     input[type="radio"]::after {
