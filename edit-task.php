@@ -7,31 +7,46 @@ if (!$task || !is_dir($task_path)) {
 }
 
 // Load files
-$urls = file_exists("$task_path/url_list.txt") ? file_get_contents("$task_path/url_list.txt") : '';
-$interval = file_exists("$task_path/interval.txt") ? intval(trim(file_get_contents("$task_path/interval.txt"))) : '';
-$command_raw = file_exists("$task_path/command.txt") ? file_get_contents("$task_path/command.txt") : '';
-$flags = preg_split('/\s+/', $command_raw);
+$urls        = file_exists("$task_path/url_list.txt")   ? file_get_contents("$task_path/url_list.txt") : '';
+$interval    = file_exists("$task_path/interval.txt")   ? intval(trim(file_get_contents("$task_path/interval.txt"))) : '';
+$command_raw = file_exists("$task_path/command.txt")    ? file_get_contents("$task_path/command.txt") : '';
 
+$flags = preg_split('/\s+/', trim($command_raw));
 
 // Parse flags
 $enabled_flags = [];
-$values = [];
-foreach ($flags as $i => $flag) {
-    if ($flag === "--write-unsupported" || $flag === "--write-metadata" || $flag === "--write-info-json" || $flag === "--write-tags" || $flag === "--no-skip") {
+$values        = [];
+$input_mode    = 'i'; // default
+
+for ($i = 0; $i < count($flags); $i++) {
+    $flag = $flags[$i];
+
+    // Detect input mode
+    if ($flag === '-I') $input_mode = 'I';
+    if ($flag === '-i') $input_mode = 'i';
+
+    // Simple boolean flags
+    if (in_array($flag, ["--write-unsupported","--write-metadata","--write-info-json","--write-tags","--no-skip"])) {
         $enabled_flags[] = $flag;
     }
-    if ($flag === "--download-archive") {
+
+    // Archive flag (has a value)
+    if ($flag === '--download-archive') {
         $enabled_flags[] = $flag;
+        // (value is $flags[$i+1], not needed here, but captured if you want later)
     }
-    if (in_array($flag, ["--retries", "--limit-rate", "--sleep", "--sleep-request", "--sleep-429", "--sleep-extractor", "--rename", "--rename-to"])) {
+
+    // Text flags that take a value
+    if (in_array($flag, ["--retries","--limit-rate","--sleep","--sleep-request","--sleep-429","--sleep-extractor","--rename","--rename-to"])) {
         $values[$flag] = $flags[$i + 1] ?? '';
     }
-    if ($flag === "-C" && $flags[$i + 1] === "cookies.txt") {
+
+    // Cookies
+    if ($flag === '-C' && isset($flags[$i+1]) && $flags[$i+1] === 'cookies.txt') {
         $enabled_flags[] = 'use_cookies';
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 
@@ -123,7 +138,8 @@ foreach ($flags as $i => $flag) {
     }
 
     input[type="text"],
-    textarea {
+    textarea,
+    input[type="number"] {
         width: 100%;
         padding: 0.75rem;
         background-color: #2e2e2e;
@@ -135,6 +151,7 @@ foreach ($flags as $i => $flag) {
     }
 
     input[type="text"]:focus,
+    input[type="number"]:focus,
     textarea:focus {
         border-color: #00b7c3;
         box-shadow: 0 0 0 2px rgba(0, 183, 195, 0.3);
@@ -158,6 +175,7 @@ foreach ($flags as $i => $flag) {
         border-bottom: 1px solid #333;
         margin-top: 2rem;
         flex-wrap: wrap;
+        gap: .25rem;
     }
 
     .tabs button {
@@ -168,6 +186,7 @@ foreach ($flags as $i => $flag) {
         color: #a0a0a0;
         font-weight: 500;
         border-bottom: 2px solid transparent;
+        border-radius: 6px 6px 0 0;
         transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
     }
 
@@ -184,7 +203,7 @@ foreach ($flags as $i => $flag) {
 
     .tab-content {
         display: none;
-        padding: 1.5rem 0;
+        padding: 1.25rem 0;
     }
 
     .tab-content.active {
@@ -192,32 +211,31 @@ foreach ($flags as $i => $flag) {
     }
 
     .flag-group {
-        margin-bottom: 1rem;
+        margin: 0.75rem 0;
         display: flex;
         align-items: center;
+        gap: 0.5rem;
+        min-height: 28px;
     }
 
     .flag-group label {
         font-weight: 400;
-        margin-left: 0.5rem;
         color: #e0e0e0;
+        cursor: pointer;
+        user-select: none;
+        margin: 0;
     }
 
-    small {
-        display: block;
-        margin-top: 0.25rem;
-        color: #a0a0a0;
-        font-size: 0.875rem;
-    }
-
-    small a {
-        color: #00b7c3;
-        text-decoration: none;
-    }
-
-    small a:hover {
-        text-decoration: underline;
-        opacity: 0.8;
+    /* Keep native controls visible, with a tint */
+    input[type="checkbox"],
+    input[type="radio"] {
+        appearance: auto !important;
+        width: 18px;
+        height: 18px;
+        margin: 0 .5rem 0 0;
+        vertical-align: middle;
+        accent-color: #00b7c3;
+        cursor: pointer;
     }
     </style>
 </head>
@@ -227,7 +245,7 @@ foreach ($flags as $i => $flag) {
 
     <main class="content">
         <h1>Edit Task: <?= htmlspecialchars(str_replace('_', ' ', $task)) ?></h1>
-        <form method="post" action="update-task.php">
+        <form id="edit-task-form" method="post" action="update-task.php">
             <input type="hidden" name="task_name" value="<?= htmlspecialchars($task) ?>">
 
             <label>Gallery URLs (one per line)</label>
@@ -236,15 +254,15 @@ foreach ($flags as $i => $flag) {
             <label for="interval">Run Every (Minutes)</label>
             <input type="number" name="interval" id="interval" min="1" required placeholder="e.g. 60"
                 value="<?= htmlspecialchars($interval) ?>">
-            <small style="display: block; margin-top: 0.25rem; color: #ccc;">
-                This task will run every X minutes, starting from its last run time.
-            </small>
-
+            <small style="display:block; margin-top:.25rem; color:#ccc;">This task will run every X minutes, starting
+                from its last run time.</small>
 
             <label>Command Preview</label>
             <pre id="command_preview" class="command-preview">Generating...</pre>
 
+            <!-- Tabs -->
             <div class="tabs">
+                <button type="button">Input Options</button>
                 <button type="button">Output</button>
                 <button type="button">Networking</button>
                 <button type="button">Downloader</button>
@@ -252,11 +270,29 @@ foreach ($flags as $i => $flag) {
                 <button type="button">Cookies</button>
             </div>
 
+            <!-- Input Options -->
+            <div class="tab-content">
+                <h3 style="margin:0 0 .5rem;">Input Options</h3>
+                <div class="flag-group">
+                    <input type="radio" name="input_mode" id="mode_i" value="i"
+                        <?= $input_mode === 'i' ? 'checked' : '' ?>>
+                    <label for="mode_i">Read-only list (<code>-i url_list.txt</code>)</label>
+                </div>
+                <div class="flag-group">
+                    <input type="radio" name="input_mode" id="mode_I" value="I"
+                        <?= $input_mode === 'I' ? 'checked' : '' ?>>
+                    <label for="mode_I">Consumptive list (<code>-I url_list.txt</code>, comments processed
+                        lines)</label>
+                </div>
+                <small class="hint">Both modes use <code>url_list.txt</code> in the task folder.</small>
+            </div>
+
+            <!-- Output -->
             <div class="tab-content">
                 <div class="flag-group">
-                    <input type="checkbox" name="flag_write_unsupported"
+                    <input type="checkbox" name="flag_write_unsupported" id="flag_write_unsupported"
                         <?= in_array('--write-unsupported', $enabled_flags) ? 'checked' : '' ?>>
-                    <label>--write-unsupported</label>
+                    <label for="flag_write_unsupported">--write-unsupported</label>
                 </div>
                 <div class="flag-group">
                     <input type="checkbox" name="use_download_archive" id="use_download_archive"
@@ -265,11 +301,13 @@ foreach ($flags as $i => $flag) {
                 </div>
             </div>
 
+            <!-- Networking -->
             <div class="tab-content">
                 <input type="text" name="retries" placeholder="--retries"
                     value="<?= htmlspecialchars($values['--retries'] ?? '') ?>">
             </div>
 
+            <!-- Downloader -->
             <div class="tab-content">
                 <input type="text" name="limit_rate" placeholder="--limit-rate"
                     value="<?= htmlspecialchars($values['--limit-rate'] ?? '') ?>">
@@ -282,27 +320,28 @@ foreach ($flags as $i => $flag) {
                 <input type="text" name="sleep_extractor" placeholder="--sleep-extractor"
                     value="<?= htmlspecialchars($values['--sleep-extractor'] ?? '') ?>">
                 <div class="flag-group">
-                    <input type="checkbox" name="flag_no_skip"
+                    <input type="checkbox" name="flag_no_skip" id="flag_no_skip"
                         <?= in_array('--no-skip', $enabled_flags) ? 'checked' : '' ?>>
-                    <label>--no-skip</label>
+                    <label for="flag_no_skip">--no-skip</label>
                 </div>
             </div>
 
+            <!-- Post-processing -->
             <div class="tab-content">
                 <div class="flag-group">
-                    <input type="checkbox" name="flag_write_metadata"
+                    <input type="checkbox" name="flag_write_metadata" id="flag_write_metadata"
                         <?= in_array('--write-metadata', $enabled_flags) ? 'checked' : '' ?>>
-                    <label>--write-metadata</label>
+                    <label for="flag_write_metadata">--write-metadata</label>
                 </div>
                 <div class="flag-group">
-                    <input type="checkbox" name="flag_write_info_json"
+                    <input type="checkbox" name="flag_write_info_json" id="flag_write_info_json"
                         <?= in_array('--write-info-json', $enabled_flags) ? 'checked' : '' ?>>
-                    <label>--write-info-json</label>
+                    <label for="flag_write_info_json">--write-info-json</label>
                 </div>
                 <div class="flag-group">
-                    <input type="checkbox" name="flag_write_tags"
+                    <input type="checkbox" name="flag_write_tags" id="flag_write_tags"
                         <?= in_array('--write-tags', $enabled_flags) ? 'checked' : '' ?>>
-                    <label>--write-tags</label>
+                    <label for="flag_write_tags">--write-tags</label>
                 </div>
                 <input type="text" name="rename" placeholder="--rename FORMAT"
                     value="<?= htmlspecialchars($values['--rename'] ?? '') ?>">
@@ -310,11 +349,12 @@ foreach ($flags as $i => $flag) {
                     value="<?= htmlspecialchars($values['--rename-to'] ?? '') ?>">
             </div>
 
+            <!-- Cookies -->
             <div class="tab-content">
                 <div class="flag-group">
-                    <input type="checkbox" name="use_cookies"
+                    <input type="checkbox" name="use_cookies" id="use_cookies"
                         <?= in_array('use_cookies', $enabled_flags) ? 'checked' : '' ?>>
-                    <label>Use cookies.txt (place it manually in the task folder)</label>
+                    <label for="use_cookies">Use cookies.txt (place it manually in the task folder)</label>
                 </div>
             </div>
 
@@ -326,10 +366,17 @@ foreach ($flags as $i => $flag) {
 
     <script>
     function updateCommand() {
-        let base = "gallery-dl -i url_list.txt -f /O --no-input --verbose --write-log log.txt --no-part";
+        // Base matches new-task: include -d and --config
+        let base =
+            "gallery-dl -f /O -d /downloads --config /config/config.json --no-input --verbose --write-log log.txt --no-part";
         let flags = [];
 
-        document.querySelectorAll("input[type=checkbox]:checked").forEach(el => {
+        // Input mode => -i url_list.txt OR -I url_list.txt
+        const mode = document.querySelector('input[name="input_mode"]:checked')?.value || 'i';
+        const inputPart = `-${mode} url_list.txt`;
+
+        // Checkboxes
+        document.querySelectorAll('input[type="checkbox"]:checked').forEach(el => {
             if (el.name.startsWith("flag_")) {
                 flags.push("--" + el.name.replace("flag_", "").replace(/_/g, "-"));
             }
@@ -342,6 +389,7 @@ foreach ($flags as $i => $flag) {
             }
         });
 
+        // Text inputs -> flags
         ["retries", "limit_rate", "sleep", "sleep_request", "sleep_429", "sleep_extractor", "rename", "rename_to"]
         .forEach(name => {
             const el = document.querySelector(`[name="${name}"]`);
@@ -351,7 +399,8 @@ foreach ($flags as $i => $flag) {
             }
         });
 
-        document.getElementById("command_preview").textContent = base + " " + flags.join(" ");
+        document.getElementById("command_preview").textContent =
+            `${base} ${inputPart} ${flags.join(" ")}`.trim();
     }
 
     function setupTabs() {
@@ -365,7 +414,10 @@ foreach ($flags as $i => $flag) {
                 contents[i].classList.add("active");
             });
         });
-        buttons[0].click();
+        if (buttons.length && contents.length) {
+            buttons[0].classList.add("active");
+            contents[0].classList.add("active");
+        }
     }
 
     document.addEventListener("DOMContentLoaded", () => {
