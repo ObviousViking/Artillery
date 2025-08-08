@@ -89,7 +89,8 @@
     }
 
     input[type="text"],
-    textarea {
+    textarea,
+    input[type="number"] {
         width: 100%;
         padding: 0.75rem;
         background-color: #2e2e2e;
@@ -101,6 +102,7 @@
     }
 
     input[type="text"]:focus,
+    input[type="number"]:focus,
     textarea:focus {
         border-color: #00b7c3;
         box-shadow: 0 0 0 2px rgba(0, 183, 195, 0.3);
@@ -169,21 +171,19 @@
         color: #e0e0e0;
     }
 
-    small {
+    .hint,
+    .note {
         display: block;
         margin-top: 0.25rem;
         color: #a0a0a0;
         font-size: 0.875rem;
     }
 
-    small a {
-        color: #00b7c3;
-        text-decoration: none;
-    }
-
-    small a:hover {
-        text-decoration: underline;
-        opacity: 0.8;
+    .inline {
+        display: flex;
+        gap: .75rem;
+        align-items: center;
+        flex-wrap: wrap;
     }
     </style>
 
@@ -192,29 +192,29 @@
 <body>
     <?php include 'header.php'; ?>
 
-
-
     <main class="content">
         <h1>Create New Task</h1>
-        <form method="post" action="save-task.php">
+        <form id="new-task-form" method="post" action="save-task.php">
             <label>Task Name</label>
             <input type="text" name="task_name" required>
 
             <label>Gallery URLs (one per line)</label>
-            <textarea name="url_list" rows="5" required></textarea>
+            <textarea name="url_list" id="gallery_url" rows="5" required></textarea>
+            <small class="hint">When using <code>-I</code>, the first non-empty line will be used as the target
+                URL.</small>
 
             <label for="interval">Run Every (Minutes)</label>
             <input type="number" name="interval" id="interval" min="1" required placeholder="e.g. 60">
-            <small style="display: block; margin-top: 0.25rem; color: #ccc;">
+            <small class="hint">
                 This task will run every X minutes, starting from its last run time.
             </small>
-
 
             <label>Command Preview</label>
             <pre id="command_preview" class="command-preview">Generating...</pre>
 
             <!-- Tabbed Settings -->
             <div class="tabs">
+                <button type="button">Input Options</button>
                 <button type="button">Output</button>
                 <button type="button">Networking</button>
                 <button type="button">Downloader</button>
@@ -222,10 +222,40 @@
                 <button type="button">Cookies</button>
             </div>
 
+            <!-- Input Options -->
+            <div class="tab-content">
+                <h3 style="margin-top:0;">Input Options</h3>
+
+                <div class="flag-group">
+                    <input type="radio" name="input_mode" id="mode_file" value="file" checked>
+                    <label for="mode_file">Use URL list file (<code>-i</code>)</label>
+                </div>
+                <div id="file-options" style="margin: .25rem 0 1rem 1.9rem;">
+                    <label for="input_file">Input file path</label>
+                    <input type="text" id="input_file" name="input_file" value="url_list.txt">
+                    <small class="hint">Gallery URLs textarea is saved to this file by the backend; gallery-dl reads
+                        from it.</small>
+                </div>
+
+                <div class="flag-group" style="margin-top:1rem;">
+                    <input type="radio" name="input_mode" id="mode_filter" value="filter">
+                    <label for="mode_filter">Use filter expression (<code>-I</code>)</label>
+                </div>
+                <div id="filter-options" style="display:none; margin: .25rem 0 0 1.9rem;">
+                    <label for="input_filter">Filter expression</label>
+                    <input type="text" id="input_filter" name="input_filter"
+                        placeholder="e.g. extension in ('jpg','png') and num >= 5">
+                    <small class="hint">The first URL from the textarea above will be used as the target URL.</small>
+                    <small class="hint">Examples: <code>num &gt;= 5</code> · <code>extension == 'jpg'</code> ·
+                        <code>date &gt;= datetime(2024,1,1)</code></small>
+                </div>
+            </div>
+
+            <!-- Output -->
             <div class="tab-content">
                 <div class="flag-group">
-                    <input type="checkbox" name="flag_write_unsupported">
-                    <label>--write-unsupported</label>
+                    <input type="checkbox" name="flag_write_unsupported" id="flag_write_unsupported">
+                    <label for="flag_write_unsupported">--write-unsupported</label>
                 </div>
                 <div class="flag-group">
                     <input type="checkbox" name="use_download_archive" id="use_download_archive">
@@ -233,10 +263,12 @@
                 </div>
             </div>
 
+            <!-- Networking -->
             <div class="tab-content">
                 <input type="text" name="retries" placeholder="--retries">
             </div>
 
+            <!-- Downloader -->
             <div class="tab-content">
                 <input type="text" name="limit_rate" placeholder="--limit-rate">
                 <input type="text" name="sleep" placeholder="--sleep">
@@ -244,32 +276,34 @@
                 <input type="text" name="sleep_429" placeholder="--sleep-429">
                 <input type="text" name="sleep_extractor" placeholder="--sleep-extractor">
                 <div class="flag-group">
-                    <input type="checkbox" name="flag_no_skip">
-                    <label>--no-skip</label>
+                    <input type="checkbox" name="flag_no_skip" id="flag_no_skip">
+                    <label for="flag_no_skip">--no-skip</label>
                 </div>
             </div>
 
+            <!-- Post-processing -->
             <div class="tab-content">
                 <div class="flag-group">
-                    <input type="checkbox" name="flag_write_metadata">
-                    <label>--write-metadata</label>
+                    <input type="checkbox" name="flag_write_metadata" id="flag_write_metadata">
+                    <label for="flag_write_metadata">--write-metadata</label>
                 </div>
                 <div class="flag-group">
-                    <input type="checkbox" name="flag_write_info_json">
-                    <label>--write-info-json</label>
+                    <input type="checkbox" name="flag_write_info_json" id="flag_write_info_json">
+                    <label for="flag_write_info_json">--write-info-json</label>
                 </div>
                 <div class="flag-group">
-                    <input type="checkbox" name="flag_write_tags">
-                    <label>--write-tags</label>
+                    <input type="checkbox" name="flag_write_tags" id="flag_write_tags">
+                    <label for="flag_write_tags">--write-tags</label>
                 </div>
                 <input type="text" name="rename" placeholder="--rename FORMAT">
                 <input type="text" name="rename_to" placeholder="--rename-to FORMAT">
             </div>
 
+            <!-- Cookies -->
             <div class="tab-content">
                 <div class="flag-group">
-                    <input type="checkbox" name="use_cookies">
-                    <label>Use cookies.txt (place it manually in the task folder)</label>
+                    <input type="checkbox" name="use_cookies" id="use_cookies">
+                    <label for="use_cookies">Use cookies.txt (place it manually in the task folder)</label>
                 </div>
             </div>
 
@@ -277,14 +311,36 @@
         </form>
     </main>
 
-
     <?php include 'footer.php'; ?>
 
     <script>
+    function firstNonEmptyLine(text) {
+        if (!text) return "";
+        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        return lines[0] || "";
+    }
+
     function updateCommand() {
-        let base = "gallery-dl -i url_list.txt -f /O --no-input --verbose --write-log log.txt --no-part";
+        // Base flags (no hard-coded -i here anymore)
+        let base = "gallery-dl -f /O --no-input --verbose --write-log log.txt --no-part";
         let flags = [];
 
+        // Input mode
+        const mode = document.querySelector('input[name="input_mode"]:checked')?.value || 'file';
+        const urlTextarea = document.getElementById('gallery_url')?.value || "";
+        let inputPart = "";
+
+        if (mode === 'file') {
+            const inputFile = (document.getElementById('input_file')?.value || "url_list.txt").trim();
+            inputPart = `-i ${inputFile}`;
+        } else {
+            const filter = (document.getElementById('input_filter')?.value || "").trim();
+            const url = firstNonEmptyLine(urlTextarea);
+            const urlDisplay = url ? url : "<URL_REQUIRED>";
+            inputPart = `-I ${filter ? filter : "<FILTER_REQUIRED>"} ${urlDisplay}`;
+        }
+
+        // Checkboxes
         document.querySelectorAll("input[type=checkbox]:checked").forEach(el => {
             if (el.name.startsWith("flag_")) {
                 flags.push("--" + el.name.replace("flag_", "").replace(/_/g, "-"));
@@ -298,6 +354,7 @@
             }
         });
 
+        // Text inputs to flags
         ["retries", "limit_rate", "sleep", "sleep_request", "sleep_429", "sleep_extractor", "rename", "rename_to"]
         .forEach(name => {
             const el = document.querySelector(`[name="${name}"]`);
@@ -307,7 +364,7 @@
             }
         });
 
-        document.getElementById("command_preview").textContent = base + " " + flags.join(" ");
+        document.getElementById("command_preview").textContent = `${base} ${inputPart} ${flags.join(" ")}`.trim();
     }
 
     function setupTabs() {
@@ -321,9 +378,24 @@
                 contents[i].classList.add("active");
             });
         });
-        buttons[0].click();
+        buttons[0].click(); // Open "Input Options" by default
     }
 
+    function setupInputModeToggle() {
+        const radios = document.querySelectorAll('input[name="input_mode"]');
+        const fileOpts = document.getElementById('file-options');
+        const filterOpts = document.getElementById('filter-options');
+
+        radios.forEach(r => {
+            r.addEventListener('change', () => {
+                const mode = document.querySelector('input[name="input_mode"]:checked')?.value ||
+                'file';
+                fileOpts.style.display = (mode === 'file') ? '' : 'none';
+                filterOpts.style.display = (mode === 'filter') ? '' : 'none';
+                updateCommand();
+            });
+        });
+    }
 
     document.addEventListener("DOMContentLoaded", () => {
         document.querySelectorAll("input, textarea").forEach(el => {
@@ -331,9 +403,29 @@
             el.addEventListener("change", updateCommand);
         });
         setupTabs();
+        setupInputModeToggle();
         updateCommand();
 
-
+        // Optional client-side validation on submit for -I mode
+        const form = document.getElementById('new-task-form');
+        form.addEventListener('submit', (e) => {
+            const mode = document.querySelector('input[name="input_mode"]:checked')?.value || 'file';
+            if (mode === 'filter') {
+                const url = firstNonEmptyLine(document.getElementById('gallery_url')?.value || "");
+                const filter = (document.getElementById('input_filter')?.value || "").trim();
+                if (!url) {
+                    e.preventDefault();
+                    alert(
+                        "When using -I, please enter at least one URL in the textarea (first non-empty line will be used).");
+                    return;
+                }
+                if (!filter) {
+                    e.preventDefault();
+                    alert("Please provide a filter expression for -I.");
+                    return;
+                }
+            }
+        });
     });
     </script>
 </body>
