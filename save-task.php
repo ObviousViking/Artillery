@@ -63,11 +63,9 @@ $cmd = "gallery-dl -f /O --no-input --verbose --write-log log.txt --no-part";
 $flags = [];
 
 // --- BUILD INPUT PART ---
-$inputPart = '';
-if ($inputMode === 'file') {
-    // Use -i <file>; command runs from $taskDir so we reference relative filename
-    $inputPart = "-i " . escapeshellarg($inputFile ?: 'url_list.txt');
-    log_debug("Input: using -i with file '$inputFile'");
+$inputMode = ($_POST['input_mode'] ?? 'i'); // Expecting 'i' or 'I'
+if ($inputMode !== 'I') {
+    $inputMode = 'i'; // Default to -i if invalid or missing
 } else {
     // -I <filter> <URL>; use first non-empty line from textarea
     $lines = preg_split('/\r\n|\r|\n/', $urlList);

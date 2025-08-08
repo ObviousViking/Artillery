@@ -227,29 +227,18 @@
                 <h3 style="margin-top:0;">Input Options</h3>
 
                 <div class="flag-group">
-                    <input type="radio" name="input_mode" id="mode_file" value="file" checked>
-                    <label for="mode_file">Use URL list file (<code>-i</code>)</label>
-                </div>
-                <div id="file-options" style="margin: .25rem 0 1rem 1.9rem;">
-                    <label for="input_file">Input file path</label>
-                    <input type="text" id="input_file" name="input_file" value="url_list.txt">
-                    <small class="hint">Gallery URLs textarea is saved to this file by the backend; gallery-dl reads
-                        from it.</small>
+                    <input type="radio" name="input_mode" id="mode_i" value="i" checked>
+                    <label for="mode_i">Read-only list (-i url_list.txt)</label>
                 </div>
 
-                <div class="flag-group" style="margin-top:1rem;">
-                    <input type="radio" name="input_mode" id="mode_filter" value="filter">
-                    <label for="mode_filter">Use filter expression (<code>-I</code>)</label>
+                <div class="flag-group" style="margin-top:.5rem;">
+                    <input type="radio" name="input_mode" id="mode_I" value="I">
+                    <label for="mode_I">Consumptive list (-I url_list.txt, comments done lines)</label>
                 </div>
-                <div id="filter-options" style="display:none; margin: .25rem 0 0 1.9rem;">
-                    <label for="input_filter">Filter expression</label>
-                    <input type="text" id="input_filter" name="input_filter"
-                        placeholder="e.g. extension in ('jpg','png') and num >= 5">
-                    <small class="hint">The first URL from the textarea above will be used as the target URL.</small>
-                    <small class="hint">Examples: <code>num &gt;= 5</code> · <code>extension == 'jpg'</code> ·
-                        <code>date &gt;= datetime(2024,1,1)</code></small>
-                </div>
+
+                <small class="hint">Both modes use <code>url_list.txt</code> in the task folder.</small>
             </div>
+
 
             <!-- Output -->
             <div class="tab-content">
@@ -321,24 +310,12 @@
     }
 
     function updateCommand() {
-        // Base flags (no hard-coded -i here anymore)
         let base = "gallery-dl -f /O --no-input --verbose --write-log log.txt --no-part";
         let flags = [];
 
-        // Input mode
-        const mode = document.querySelector('input[name="input_mode"]:checked')?.value || 'file';
-        const urlTextarea = document.getElementById('gallery_url')?.value || "";
-        let inputPart = "";
-
-        if (mode === 'file') {
-            const inputFile = (document.getElementById('input_file')?.value || "url_list.txt").trim();
-            inputPart = `-i ${inputFile}`;
-        } else {
-            const filter = (document.getElementById('input_filter')?.value || "").trim();
-            const url = firstNonEmptyLine(urlTextarea);
-            const urlDisplay = url ? url : "<URL_REQUIRED>";
-            inputPart = `-I ${filter ? filter : "<FILTER_REQUIRED>"} ${urlDisplay}`;
-        }
+        // Input mode => -i url_list.txt OR -I url_list.txt
+        const mode = document.querySelector('input[name="input_mode"]:checked')?.value || 'i';
+        const inputPart = `-${mode} url_list.txt`;
 
         // Checkboxes
         document.querySelectorAll("input[type=checkbox]:checked").forEach(el => {
@@ -354,7 +331,7 @@
             }
         });
 
-        // Text inputs to flags
+        // Text inputs -> flags
         ["retries", "limit_rate", "sleep", "sleep_request", "sleep_429", "sleep_extractor", "rename", "rename_to"]
         .forEach(name => {
             const el = document.querySelector(`[name="${name}"]`);
@@ -364,8 +341,10 @@
             }
         });
 
-        document.getElementById("command_preview").textContent = `${base} ${inputPart} ${flags.join(" ")}`.trim();
+        document.getElementById("command_preview").textContent =
+            `${base} ${inputPart} ${flags.join(" ")}`.trim();
     }
+
 
     function setupTabs() {
         const buttons = document.querySelectorAll(".tabs button");
@@ -389,7 +368,7 @@
         radios.forEach(r => {
             r.addEventListener('change', () => {
                 const mode = document.querySelector('input[name="input_mode"]:checked')?.value ||
-                'file';
+                    'file';
                 fileOpts.style.display = (mode === 'file') ? '' : 'none';
                 filterOpts.style.display = (mode === 'filter') ? '' : 'none';
                 updateCommand();
@@ -416,7 +395,8 @@
                 if (!url) {
                     e.preventDefault();
                     alert(
-                        "When using -I, please enter at least one URL in the textarea (first non-empty line will be used).");
+                        "When using -I, please enter at least one URL in the textarea (first non-empty line will be used)."
+                    );
                     return;
                 }
                 if (!filter) {
