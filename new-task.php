@@ -2,9 +2,9 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title>Create New Task - Artillery</title>
-    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <link rel="icon" href="favicon.ico" type="image/x-icon" />
     <style>
     * {
         box-sizing: border-box;
@@ -126,6 +126,7 @@
         border-bottom: 1px solid #333;
         margin-top: 2rem;
         flex-wrap: wrap;
+        gap: 0.25rem;
     }
 
     .tabs button {
@@ -136,6 +137,7 @@
         color: #a0a0a0;
         font-weight: 500;
         border-bottom: 2px solid transparent;
+        border-radius: 6px 6px 0 0;
         transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
     }
 
@@ -152,7 +154,7 @@
 
     .tab-content {
         display: none;
-        padding: 1.5rem 0;
+        padding: 1.25rem 0;
     }
 
     .tab-content.active {
@@ -160,15 +162,23 @@
     }
 
     .flag-group {
-        margin-bottom: 1rem;
+        margin: 0.75rem 0;
         display: flex;
         align-items: center;
+        gap: 0.5rem;
+        min-height: 28px;
+    }
+
+    .flag-group input[type="checkbox"],
+    .flag-group input[type="radio"] {
+        flex-shrink: 0;
     }
 
     .flag-group label {
         font-weight: 400;
-        margin-left: 0.5rem;
         color: #e0e0e0;
+        cursor: pointer;
+        user-select: none;
     }
 
     .hint,
@@ -179,14 +189,7 @@
         font-size: 0.875rem;
     }
 
-    .inline {
-        display: flex;
-        gap: .75rem;
-        align-items: center;
-        flex-wrap: wrap;
-    }
-
-    /* Make checkboxes/radios visible on dark background */
+    /* Visible checkboxes/radios on dark backgrounds */
     input[type="checkbox"],
     input[type="radio"] {
         appearance: auto !important;
@@ -206,19 +209,19 @@
         <h1>Create New Task</h1>
         <form id="new-task-form" method="post" action="save-task.php">
             <label>Task Name</label>
-            <input type="text" name="task_name" required>
+            <input type="text" name="task_name" required />
 
             <label>Gallery URLs (one per line)</label>
             <textarea name="url_list" id="gallery_url" rows="5" required></textarea>
 
             <label for="interval">Run Every (Minutes)</label>
-            <input type="number" name="interval" id="interval" min="1" required placeholder="e.g. 60">
+            <input type="number" name="interval" id="interval" min="1" required placeholder="e.g. 60" />
             <small class="hint">This task will run every X minutes, starting from its last run time.</small>
 
             <label>Command Preview</label>
             <pre id="command_preview" class="command-preview">Generating...</pre>
 
-            <!-- Tabbed Settings -->
+            <!-- Tabs -->
             <div class="tabs">
                 <button type="button">Input Options</button>
                 <button type="button">Output</button>
@@ -230,16 +233,17 @@
 
             <!-- Input Options -->
             <div class="tab-content">
-                <h3 style="margin-top:0;">Input Options</h3>
+                <h3 style="margin:0 0 .5rem;">Input Options</h3>
 
                 <div class="flag-group">
-                    <input type="radio" name="input_mode" id="mode_i" value="i" checked>
+                    <input type="radio" name="input_mode" id="mode_i" value="i" checked />
                     <label for="mode_i">Read-only list (<code>-i url_list.txt</code>)</label>
                 </div>
 
-                <div class="flag-group" style="margin-top:.5rem;">
-                    <input type="radio" name="input_mode" id="mode_I" value="I">
-                    <label for="mode_I">Consumptive list (<code>-I url_list.txt</code>, comments done lines)</label>
+                <div class="flag-group">
+                    <input type="radio" name="input_mode" id="mode_I" value="I" />
+                    <label for="mode_I">Consumptive list (<code>-I url_list.txt</code>, comments processed
+                        lines)</label>
                 </div>
 
                 <small class="hint">Both modes use <code>url_list.txt</code> in the task folder.</small>
@@ -248,29 +252,29 @@
             <!-- Output -->
             <div class="tab-content">
                 <div class="flag-group">
-                    <input type="checkbox" name="flag_write_unsupported" id="flag_write_unsupported">
+                    <input type="checkbox" name="flag_write_unsupported" id="flag_write_unsupported" />
                     <label for="flag_write_unsupported">--write-unsupported</label>
                 </div>
                 <div class="flag-group">
-                    <input type="checkbox" name="use_download_archive" id="use_download_archive">
+                    <input type="checkbox" name="use_download_archive" id="use_download_archive" />
                     <label for="use_download_archive">--download-archive</label>
                 </div>
             </div>
 
             <!-- Networking -->
             <div class="tab-content">
-                <input type="text" name="retries" placeholder="--retries">
+                <input type="text" name="retries" placeholder="--retries" />
             </div>
 
             <!-- Downloader -->
             <div class="tab-content">
-                <input type="text" name="limit_rate" placeholder="--limit-rate">
-                <input type="text" name="sleep" placeholder="--sleep">
-                <input type="text" name="sleep_request" placeholder="--sleep-request">
-                <input type="text" name="sleep_429" placeholder="--sleep-429">
-                <input type="text" name="sleep_extractor" placeholder="--sleep-extractor">
+                <input type="text" name="limit_rate" placeholder="--limit-rate" />
+                <input type="text" name="sleep" placeholder="--sleep" />
+                <input type="text" name="sleep_request" placeholder="--sleep-request" />
+                <input type="text" name="sleep_429" placeholder="--sleep-429" />
+                <input type="text" name="sleep_extractor" placeholder="--sleep-extractor" />
                 <div class="flag-group">
-                    <input type="checkbox" name="flag_no_skip" id="flag_no_skip">
+                    <input type="checkbox" name="flag_no_skip" id="flag_no_skip" />
                     <label for="flag_no_skip">--no-skip</label>
                 </div>
             </div>
@@ -278,25 +282,25 @@
             <!-- Post-processing -->
             <div class="tab-content">
                 <div class="flag-group">
-                    <input type="checkbox" name="flag_write_metadata" id="flag_write_metadata">
+                    <input type="checkbox" name="flag_write_metadata" id="flag_write_metadata" />
                     <label for="flag_write_metadata">--write-metadata</label>
                 </div>
                 <div class="flag-group">
-                    <input type="checkbox" name="flag_write_info_json" id="flag_write_info_json">
+                    <input type="checkbox" name="flag_write_info_json" id="flag_write_info_json" />
                     <label for="flag_write_info_json">--write-info-json</label>
                 </div>
                 <div class="flag-group">
-                    <input type="checkbox" name="flag_write_tags" id="flag_write_tags">
+                    <input type="checkbox" name="flag_write_tags" id="flag_write_tags" />
                     <label for="flag_write_tags">--write-tags</label>
                 </div>
-                <input type="text" name="rename" placeholder="--rename FORMAT">
-                <input type="text" name="rename_to" placeholder="--rename-to FORMAT">
+                <input type="text" name="rename" placeholder="--rename FORMAT" />
+                <input type="text" name="rename_to" placeholder="--rename-to FORMAT" />
             </div>
 
             <!-- Cookies -->
             <div class="tab-content">
                 <div class="flag-group">
-                    <input type="checkbox" name="use_cookies" id="use_cookies">
+                    <input type="checkbox" name="use_cookies" id="use_cookies" />
                     <label for="use_cookies">Use cookies.txt (place it manually in the task folder)</label>
                 </div>
             </div>
@@ -311,7 +315,6 @@
     function updateCommand() {
         let base =
             "gallery-dl -f /O -d /downloads --config /config/config.json --no-input --verbose --write-log log.txt --no-part";
-
         let flags = [];
 
         // Input mode => -i url_list.txt OR -I url_list.txt
@@ -357,7 +360,7 @@
                 contents[i].classList.add("active");
             });
         });
-        buttons[0].click(); // Open "Input Options" by default
+        buttons[0].click(); // default to "Input Options"
     }
 
     document.addEventListener("DOMContentLoaded", () => {
