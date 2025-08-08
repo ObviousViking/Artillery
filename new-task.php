@@ -309,7 +309,9 @@
 
     <script>
     function updateCommand() {
-        let base = "gallery-dl -f /O --no-input --verbose --write-log log.txt --no-part";
+        let base =
+            "gallery-dl -f /O -d /downloads --config /config/config.json --no-input --verbose --write-log log.txt --no-part";
+
         let flags = [];
 
         // Input mode => -i url_list.txt OR -I url_list.txt

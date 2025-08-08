@@ -44,27 +44,7 @@ def main():
     command = read_command_file(task_path)
     args = command.strip().split()
 
-    # Clean existing --dest, --config flags and their values
-    cleaned_args = []
-    skip_next = False
-    for arg in args:
-        if skip_next:
-            skip_next = False
-            continue
-        if arg in ("-d", "--dest", "--config"):
-            skip_next = True
-            continue
-        cleaned_args.append(arg)
-
-    args = cleaned_args
-
-    # Insert --dest /downloads
-    args.insert(1, "/downloads")
-    args.insert(1, "--dest")
-
-    # Insert --config /config/config.json
-    args.insert(1, "/config/config.json")
-    args.insert(1, "--config")
+    # REMOVE the whole block that cleans/inserts --dest/--config
 
     print(f"Executing: {' '.join(args)}")
 
@@ -79,6 +59,7 @@ def main():
         if os.path.exists(lockfile):
             os.remove(lockfile)
         update_last_run(task_path)
+
 
 if __name__ == "__main__":
     main()

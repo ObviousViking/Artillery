@@ -52,7 +52,7 @@ file_put_contents("$taskDir/url_list.txt", $urlList);
 file_put_contents("$taskDir/interval.txt", $interval);
 
 // --- COMMAND BASE (no hard-coded -i here) ---
-$cmd = "gallery-dl -f /O --no-input --verbose --write-log log.txt --no-part";
+$cmd = "gallery-dl -f /O -d /downloads --config /config/config.json --no-input --verbose --write-log log.txt --no-part";
 $flags = [];
 
 // --- BUILD INPUT PART (simple toggle) ---
