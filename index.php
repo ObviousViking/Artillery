@@ -19,7 +19,7 @@ $logDir = '/logs';
 $downloadsDir = '/downloads';
 $cacheFile = "$logDir/image_cache.json";
 $cacheTTL = 120; // seconds
-$imageLimit = 120; // Max images to retrieve
+$imageLimit = 200; // Max images to retrieve
 
 // Ensure directories exist
 foreach ([$logDir, $downloadsDir] as $dir) {
@@ -30,13 +30,14 @@ foreach ([$logDir, $downloadsDir] as $dir) {
 
 // Simplified function to avoid recursive scanning
 function getRecentImages($downloadsDir, $cacheFile, $cacheTTL, $limit) {
-    $cache = file_exists($cacheFile) ? json_decode(file_get_contents($cacheFile), true) : [];
-    $cacheTime = $cache['time'] ?? 0;
-    $dirMtime = filemtime($downloadsDir);
+    $cacheMTime    = file_exists($cacheFile) ? filemtime($cacheFile) : 0;
+    $downloadsMTime = file_exists($downloadsDir) ? filemtime($downloadsDir) : 0;
 
     // Use cache if valid
-    if (isset($cache['dir_mtime']) && $cache['dir_mtime'] >= $dirMtime && time() - $cacheTime < $cacheTTL && !empty($cache['images'])) {
-        return array_slice($cache['images'], 0, $limit);
+    if ($cacheMTime && $cacheMTime >= $downloadsMTime && (time() - $cacheMTime) < $cacheTTL) {
+        $cacheData = json_decode(file_get_contents($cacheFile), true) ?: [];
+        $images = $cacheData['images'] ?? $cacheData;
+        return array_slice($images, 0, $limit);
     }
 
     // Fallback: scan only top-level directory
@@ -62,9 +63,9 @@ function getRecentImages($downloadsDir, $cacheFile, $cacheTTL, $limit) {
 
     // Update cache
     file_put_contents($cacheFile, json_encode([
-        'time' => time(),
-        'dir_mtime' => $dirMtime,
-        'images' => $imagePaths
+        'time'      => time(),
+        'dir_mtime' => $downloadsMTime,
+        'images'    => $imagePaths
     ]), LOCK_EX);
 
     return $imagePaths;
