@@ -22,6 +22,18 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy app source
 COPY . /var/www/html/
+RUN set -eux; \
+    mkdir -p /downloads /logs /screenshots /tasks /config; \
+    for dir in downloads logs screenshots tasks config; do \
+        src="/var/www/html/$dir"; \
+        dest="/$dir"; \
+        if [ -d "$src" ] && [ -n "$(ls -A "$src" 2>/dev/null)" ]; then \
+            cp -a "$src/." "$dest/"; \
+        fi; \
+        rm -rf "$src"; \
+        ln -s "$dest" "$src"; \
+    done; \
+    chmod -R 777 /var/www/html /downloads /logs /screenshots /tasks /config
 WORKDIR /var/www/html/
 
 # Copy nginx and supervisor config
