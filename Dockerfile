@@ -22,6 +22,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy app source
 COPY . /var/www/html/
+RUN chmod -R 777 /var/www/html
 WORKDIR /var/www/html/
 
 # Copy nginx and supervisor config
