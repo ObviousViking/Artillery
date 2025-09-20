@@ -24,7 +24,7 @@ $imageLimit = 200; // Max images to retrieve
 // Ensure directories exist
 foreach ([$logDir, $downloadsDir] as $dir) {
     if (!is_dir($dir)) {
-        mkdir($dir, 0755, true);
+        mkdir($dir, 0777, true);
     }
 }
 

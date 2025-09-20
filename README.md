@@ -40,3 +40,7 @@ docker run -d \
   -v /path/to/config:/config \
   --name artillery \
   your-artillery-image
+```
+
+The container entrypoint ensures `/config`, `/logs`, and `/downloads` exist (creating them when necessary) and assigns permissive
+permissions before launching Supervisord, so bind-mounted volumes are ready for PHP-FPM as soon as the services start.
