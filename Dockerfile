@@ -23,16 +23,21 @@ RUN python3 -m venv /opt/venv && \
 ENV PATH="/opt/venv/bin:$PATH" 
 
 # Copy app source
-COPY . /var/www/html/ 
-RUN chmod -R 777 /var/www/html 
-WORKDIR /var/www/html/ 
+COPY . /var/www/html/
+RUN chmod -R 777 /var/www/html
+WORKDIR /var/www/html/
 
-# Copy nginx and supervisor config 
+# Copy nginx and supervisor config
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY supervisord.conf /etc/supervisord.conf
+
+# Copy entrypoint script responsible for directory permissions
+COPY scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Expose HTTP
 EXPOSE 80
 
-# Start services
+# Start services through the entrypoint to ensure permissions are set
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
