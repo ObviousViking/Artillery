@@ -20,4 +20,18 @@ for dir in "${DIRECTORIES[@]}"; do
 
 done
 
+if [ -x /opt/venv/bin/pip ]; then
+    UPDATE_LOG="${LOGS_DIR}/gallery-dl-update.log"
+    echo "Starting background update of gallery-dl; logs at ${UPDATE_LOG}" >&2
+    (
+        set +e
+        echo "$(date --iso-8601=seconds) Updating gallery-dl to the latest version..." >>"${UPDATE_LOG}"
+        if /opt/venv/bin/pip install --no-cache-dir --upgrade gallery-dl >>"${UPDATE_LOG}" 2>&1; then
+            echo "$(date --iso-8601=seconds) gallery-dl update completed successfully." >>"${UPDATE_LOG}"
+        else
+            echo "$(date --iso-8601=seconds) Warning: gallery-dl update failed; continuing with existing version." >>"${UPDATE_LOG}"
+        fi
+    ) &
+fi
+
 exec "$@"
