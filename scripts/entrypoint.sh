@@ -20,4 +20,11 @@ for dir in "${DIRECTORIES[@]}"; do
 
 done
 
+if [ -x /opt/venv/bin/pip ]; then
+    echo "Updating gallery-dl to the latest version..."
+    if ! /opt/venv/bin/pip install --no-cache-dir --upgrade gallery-dl; then
+        echo "Warning: Failed to update gallery-dl; continuing with existing version." >&2
+    fi
+fi
+
 exec "$@"
