@@ -30,6 +30,7 @@ if [ -x /opt/venv/bin/pip ]; then
             echo "$(date --iso-8601=seconds) gallery-dl update completed successfully." >>"${UPDATE_LOG}"
         else
             echo "$(date --iso-8601=seconds) Warning: gallery-dl update failed; continuing with existing version." >>"${UPDATE_LOG}"
+            echo "Warning: gallery-dl update failed; continuing with existing version. See ${UPDATE_LOG} for details." >&2
         fi
     ) &
 fi
