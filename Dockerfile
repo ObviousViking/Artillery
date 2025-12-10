@@ -1,43 +1,22 @@
-FROM php:8.2-fpm 
+FROM python:3.11-slim
 
-# Install system dependencies 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-RUN apt-get update && apt-get install -y \ 
-	nginx \
-	python3 \
-	python3-pip \
-	python3-venv \
-	ffmpeg \
-	curl \
-	git \
-	supervisor \
-	&& apt-get clean 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    supervisor \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set up Python virtual environment and install Python packages
+WORKDIR /app
 
-RUN python3 -m venv /opt/venv && \
-	/opt/venv/bin/pip install --upgrade pip && \
-	/opt/venv/bin/pip install gallery-dl croniter yt-dlp 
-	
-# Ensure shell and subprocess can find gallery-dl in virtualenv
-ENV PATH="/opt/venv/bin:$PATH" 
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app source
-COPY . /var/www/html/
-RUN chmod -R 777 /var/www/html
-WORKDIR /var/www/html/
+COPY . /app
+RUN chmod +x /app/scripts/entrypoint.sh
 
-# Copy nginx and supervisor config
-COPY nginx.conf /etc/nginx/nginx.conf
-COPY supervisord.conf /etc/supervisord.conf
+EXPOSE 8000
 
-# Copy entrypoint script responsible for directory permissions
-COPY scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
-# Expose HTTP
-EXPOSE 80
-
-# Start services through the entrypoint to ensure permissions are set
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+ENTRYPOINT ["/app/scripts/entrypoint.sh"]
+CMD ["supervisord", "-c", "/app/supervisord.conf"]
