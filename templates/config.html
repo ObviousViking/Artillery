@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow-sm border-secondary">
+            <div class="card-body">
+                <h2 class="card-title mb-3">gallery-dl configuration</h2>
+
+                <p class="text-muted small mb-3">
+                    Editing global config at:
+                    <code>{{ config_path }}</code><br>
+                    This config is shared by all Artillery tasks.
+                </p>
+
+                <form method="post" action="{{ url_for('config_page') }}">
+                    <div class="mb-3">
+                        <label class="form-label" for="config_text">Config contents</label>
+                        <textarea id="config_text" name="config_text" class="form-control" rows="20"
+                            spellcheck="false">{{ config_text }}</textarea>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="submit" name="action" value="save" class="btn btn-danger">
+                            Save config
+                        </button>
+                        <button type="submit" name="action" value="reset" class="btn btn-outline-warning">
+                            Load default from GitHub
+                        </button>
+                    </div>
+
+                    <div class="form-text mt-2">
+                        “Load default from GitHub” downloads the example
+                        <code>gallery-dl.conf</code> from the official gallery-dl repository
+                        and overwrites the current file.
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

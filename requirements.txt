@@ -1,4 +1,4 @@
-Flask
-croniter
-gallery-dl
+flask
 gunicorn
+gallery-dl
+croniter

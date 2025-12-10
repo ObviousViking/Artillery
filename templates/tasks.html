@@ -1,0 +1,393 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-secondary">
+            <div class="card-body">
+                <h2 class="card-title mb-3">Tasks</h2>
+
+                {% if tasks %}
+                <div class="table-responsive">
+                    <table class="table table-dark table-striped align-middle">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Status</th>
+                                <th>Cron</th>
+                                <th>Last run</th>
+                                <th style="width: 220px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for task in tasks %}
+                            {% set status = task.status %}
+                            {% set schedule = task.schedule %}
+                            {% set lr = task.last_run %}
+                            <tr>
+                                <td>{{ task.name }}</td>
+                                <td>
+                                    <span class="badge
+                        {% if status == 'running' %} bg-primary
+                        {% elif status == 'error' %} bg-danger
+                        {% elif status == 'complete' %} bg-success
+                        {% elif status == 'paused' %} bg-warning text-dark
+                        {% else %} bg-secondary
+                        {% endif %}
+                      ">
+                                        {{ status }}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if schedule %}
+                                    <code>{{ schedule }}</code>
+                                    {% else %}
+                                    <span class="text-muted">None</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if lr %}
+                                    {{ lr[:19].replace('T', ' ') }} UTC
+                                    {% else %}
+                                    <span class="text-muted">Never</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="d-flex flex-wrap gap-1">
+                                        <!-- Run -->
+                                        <form method="post" action="{{ url_for('task_action', slug=task.slug) }}"
+                                            class="m-0">
+                                            <input type="hidden" name="action" value="run">
+                                            <button type="submit" class="btn btn-sm btn-outline-light" {% if
+                                                status=='running' %}disabled{% endif %}>
+                                                Run
+                                            </button>
+                                        </form>
+
+                                        <!-- Pause / Unpause -->
+                                        <form method="post" action="{{ url_for('task_action', slug=task.slug) }}"
+                                            class="m-0">
+                                            <input type="hidden" name="action" value="pause">
+                                            {% if status == 'paused' %}
+                                            <button type="submit" class="btn btn-sm btn-outline-warning">
+                                                Unpause
+                                            </button>
+                                            {% else %}
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                                Pause
+                                            </button>
+                                            {% endif %}
+                                        </form>
+
+                                        <!-- Edit (pure front-end: loads into the form below) -->
+                                        <button type="button" class="btn btn-sm btn-outline-info btn-edit-task"
+                                            data-name="{{ task.name|e }}" data-urls="{{ (task.urls or '')|e }}"
+                                            data-schedule="{{ (task.schedule or '')|e }}"
+                                            data-command="{{ task.command|e }}">
+                                            Edit
+                                        </button>
+
+                                        <!-- Delete -->
+                                        <form method="post" action="{{ url_for('task_action', slug=task.slug) }}"
+                                            class="m-0"
+                                            onsubmit="return confirm('Delete task {{ task.name }}? This will remove its folder and logs.');">
+                                            <input type="hidden" name="action" value="delete">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">
+                                                Delete
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">No tasks yet. Create one below.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow-sm border-secondary">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2 class="card-title mb-0" id="taskFormTitle">Create / Edit Task</h2>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNewTask">
+                        New task
+                    </button>
+                </div>
+
+                <form method="post" action="{{ url_for('tasks') }}" id="taskForm">
+                    <input type="hidden" id="editingFlag" name="editing_flag" value="0" />
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h5 class="mb-3">Basic info</h5>
+
+                            <div class="mb-3">
+                                <label class="form-label" for="name">Task name</label>
+                                <input type="text" id="name" name="name" class="form-control" required />
+                                <div class="form-text">
+                                    Used for the folder under <code>/data/tasks/&lt;task-name&gt;</code>.
+                                    Editing a task with the same name will overwrite its settings.
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label" for="urls">URLs (one per line)</label>
+                                <textarea id="urls" name="urls" class="form-control" rows="6" placeholder="https://example.com/image1
+https://example.com/image2" required></textarea>
+                                <div class="form-text">
+                                    Stored as <code>urls.txt</code> in the task folder.
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label" for="schedule">Cron schedule (optional)</label>
+                                <input type="text" id="schedule" name="schedule" class="form-control"
+                                    placeholder="e.g. */5 * * * *" />
+                                <div class="form-text">
+                                    <code>* * * * *</code> = every minute,
+                                    <code>*/5 * * * *</code> = every 5 minutes, etc.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <h5 class="mb-3">gallery-dl options</h5>
+
+                            <p class="text-muted small">
+                                For <strong>new</strong> tasks, these checkboxes build the command below.
+                                When <strong>editing</strong> an existing task, the command is treated as
+                                raw text so any custom changes (like a custom <code>--input-file</code>)
+                                are preserved.
+                            </p>
+
+                            <div class="row">
+                                <!-- Left column: files & metadata -->
+                                <div class="col-sm-6">
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input gd-option" type="checkbox" id="opt_metadata"
+                                            data-flag="--write-metadata" />
+                                        <label class="form-check-label" for="opt_metadata">
+                                            Write metadata (<code>--write-metadata</code>)
+                                        </label>
+                                    </div>
+
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input gd-option" type="checkbox" id="opt_metadata_json"
+                                            data-flag="--write-info-json" />
+                                        <label class="form-check-label" for="opt_metadata_json">
+                                            Save info JSON (<code>--write-info-json</code>)
+                                        </label>
+                                    </div>
+
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input gd-option" type="checkbox" id="opt_no_overwrite"
+                                            data-flag="--no-overwrite" />
+                                        <label class="form-check-label" for="opt_no_overwrite">
+                                            Don’t overwrite files (<code>--no-overwrite</code>)
+                                        </label>
+                                    </div>
+
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input gd-option" type="checkbox" id="opt_skip"
+                                            data-flag="--skip" />
+                                        <label class="form-check-label" for="opt_skip">
+                                            Skip existing items (<code>--skip</code>)
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Right column: state, reliability & special -->
+                                <div class="col-sm-6">
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input gd-option" type="checkbox" id="opt_archive"
+                                            data-flag="--download-archive archive.sqlite" />
+                                        <label class="form-check-label" for="opt_archive">
+                                            Use archive (<code>--download-archive archive.sqlite</code>)
+                                        </label>
+                                    </div>
+
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input gd-option" type="checkbox" id="opt_fast_update"
+                                            data-flag="--fast-update" />
+                                        <label class="form-check-label" for="opt_fast_update">
+                                            Fast update (<code>--fast-update</code>)
+                                        </label>
+                                    </div>
+
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input gd-option" type="checkbox" id="opt_ignore_errors"
+                                            data-flag="--ignore-errors" />
+                                        <label class="form-check-label" for="opt_ignore_errors">
+                                            Ignore errors (<code>--ignore-errors</code>)
+                                        </label>
+                                    </div>
+
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input gd-option" type="checkbox" id="opt_ugoira"
+                                            data-flag="--ugoira-conv" />
+                                        <label class="form-check-label" for="opt_ugoira">
+                                            Convert ugoira (<code>--ugoira-conv</code>)
+                                        </label>
+                                    </div>
+
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input gd-option" type="checkbox" id="opt_verbose"
+                                            data-flag="-v" />
+                                        <label class="form-check-label" for="opt_verbose">
+                                            Verbose (<code>-v</code>)
+                                        </label>
+                                    </div>
+
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input gd-option" type="checkbox" id="opt_simulate"
+                                            data-flag="--simulate" />
+                                        <label class="form-check-label" for="opt_simulate">
+                                            Dry run (no downloads) (<code>--simulate</code>)
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mt-3">
+                                <label class="form-label" for="commandPreview">Command</label>
+                                <textarea id="commandPreview" class="form-control" rows="3"
+                                    name="command_display"></textarea>
+                                <div class="form-text">
+                                    For new tasks, this is built from the options above.
+                                    For existing tasks, you can edit this directly. The backend will
+                                    still ensure <code>--config /data/config/gallery-dl.conf</code>
+                                    and <code>--destination /downloads</code> are present.
+                                </div>
+                            </div>
+
+                            <input type="hidden" id="command" name="command" />
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <button type="submit" class="btn btn-danger">
+                            Save task
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        let isEditingExistingTask = false;
+
+        const nameInput = document.getElementById("name");
+        const urlsTextarea = document.getElementById("urls");
+        const scheduleInput = document.getElementById("schedule");
+        const commandPreview = document.getElementById("commandPreview");
+        const commandHidden = document.getElementById("command");
+        const editingFlag = document.getElementById("editingFlag");
+        const taskFormTitle = document.getElementById("taskFormTitle");
+        const btnNewTask = document.getElementById("btnNewTask");
+
+        function buildCommandFromOptions() {
+            const flags = [];
+            document.querySelectorAll(".gd-option:checked").forEach(function (cb) {
+                const flag = cb.getAttribute("data-flag");
+                if (flag) flags.push(flag);
+            });
+
+            let cmd = "gallery-dl";
+            if (flags.length > 0) {
+                cmd += " " + flags.join(" ");
+            }
+            cmd += " --input-file urls.txt";
+            return cmd;
+        }
+
+        function syncHiddenFromPreview() {
+            if (!commandHidden || !commandPreview) return;
+            commandHidden.value = commandPreview.value;
+        }
+
+        function updateCommandPreview() {
+            // For new tasks only – editing existing tasks should not auto-rebuild the command
+            if (isEditingExistingTask) {
+                syncHiddenFromPreview();
+                return;
+            }
+            if (!commandPreview) return;
+            commandPreview.value = buildCommandFromOptions();
+            syncHiddenFromPreview();
+        }
+
+        document.addEventListener("DOMContentLoaded", function () {
+            // Hook options changes
+            document.querySelectorAll(".gd-option").forEach(function (cb) {
+                cb.addEventListener("change", function () {
+                    if (!isEditingExistingTask) {
+                        updateCommandPreview();
+                    }
+                });
+            });
+
+            // Keep hidden command in sync if user types directly
+            if (commandPreview) {
+                commandPreview.addEventListener("input", function () {
+                    syncHiddenFromPreview();
+                });
+            }
+
+            // Edit buttons: load task into form
+            document.querySelectorAll(".btn-edit-task").forEach(function (btn) {
+                btn.addEventListener("click", function () {
+                    const name = this.getAttribute("data-name") || "";
+                    const urls = this.getAttribute("data-urls") || "";
+                    const schedule = this.getAttribute("data-schedule") || "";
+                    const command = this.getAttribute("data-command") || "";
+
+                    nameInput.value = name;
+                    urlsTextarea.value = urls;
+                    scheduleInput.value = schedule;
+                    commandPreview.value = command;
+                    syncHiddenFromPreview();
+
+                    isEditingExistingTask = true;
+                    editingFlag.value = "1";
+                    taskFormTitle.textContent = "Edit Task: " + name;
+
+                    // Optionally scroll to form
+                    document.getElementById("taskForm").scrollIntoView({ behavior: "smooth", block: "start" });
+                });
+            });
+
+            // "New task" button: reset form to builder mode
+            if (btnNewTask) {
+                btnNewTask.addEventListener("click", function () {
+                    document.getElementById("taskForm").reset();
+
+                    isEditingExistingTask = false;
+                    editingFlag.value = "0";
+                    taskFormTitle.textContent = "Create / Edit Task";
+
+                    // Reset command from options
+                    // (reset() clears checkboxes; update from their new state)
+                    updateCommandPreview();
+                });
+            }
+
+            // Initial setup for new task mode
+            isEditingExistingTask = false;
+            editingFlag.value = "0";
+            updateCommandPreview();
+        });
+    })();
+</script>
+
+{% endblock %}

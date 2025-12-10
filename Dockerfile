@@ -1,22 +1,28 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    supervisor \
+# Install system deps: cron for scheduling, gosu for dropping privileges
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends cron gosu \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY requirements.txt ./
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . /app
-RUN chmod +x /app/scripts/entrypoint.sh
+COPY . .
 
-EXPOSE 80
+# Ensure entrypoint is executable
+RUN chmod +x /app/entrypoint.sh
 
-ENTRYPOINT ["/app/scripts/entrypoint.sh"]
-CMD ["supervisord", "-c", "/app/supervisord.conf"]
+# Volumes (Unraid will map these)
+VOLUME ["/config", "/tasks", "/downloads"]
+
+# Default envs; Unraid will override TASKS_DIR / CONFIG_DIR / DOWNLOADS_DIR
+ENV FLASK_APP=app.py \
+    DATA_DIR=/data
+
+EXPOSE 5000
+
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["gunicorn", "-b", "0.0.0.0:5000", "app:app"]

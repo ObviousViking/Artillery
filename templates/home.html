@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h1 class="card-title mb-3">Welcome to Artillery</h1>
+                <p class="mb-3">
+                    Artillery is your lightweight web front-end for
+                    <code>gallery-dl</code>. Create repeatable download tasks, schedule
+                    them with cron, and keep everything isolated per task folder.
+                </p>
+
+                <ul class="mb-3">
+                    <li>Each task has its own folder under <code>/data/tasks/&lt;task-name&gt;</code>.</li>
+                    <li>Downloads go to <code>/downloads</code> using your global <code>gallery-dl.conf</code>.</li>
+                    <li>Tasks can be run manually, paused, or scheduled via cron.</li>
+                    <li>All output is logged to each task’s <code>logs.txt</code> for troubleshooting.</li>
+                </ul>
+
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="{{ url_for('tasks') }}" class="btn btn-danger">
+                        View tasks
+                    </a>
+                    <a href="{{ url_for('config_page') }}" class="btn btn-outline-light">
+                        Edit config
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent downloads / media wall -->
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title mb-3">Recent downloads</h5>
+
+                {% if has_media %}
+                <div class="media-wall">
+                    {% for row in recent_rows %}
+                    {% if row %}
+                    <div class="media-wall-row">
+                        <div class="media-strip
+                      {% if loop.index0 == 1 %}
+                        media-strip-right
+                      {% else %}
+                        media-strip-left
+                      {% endif %}">
+                            {# duplicate items to allow continuous scroll #}
+                            {% for _ in range(2) %}
+                            {% for item in row %}
+                            <div class="media-item">
+                                {% if item.is_image %}
+                                <a href="{{ url_for('media_file', subpath=item.rel_path) }}" target="_blank"
+                                    class="d-block">
+                                    <img src="{{ url_for('media_file', subpath=item.rel_path) }}"
+                                        alt="{{ item.filename }}" class="media-img" />
+                                </a>
+                                {% else %}
+                                <a href="{{ url_for('media_file', subpath=item.rel_path) }}" target="_blank"
+                                    class="d-block text-decoration-none">
+                                    <div class="media-video-placeholder">
+                                        <span class="small text-muted">Video</span>
+                                    </div>
+                                </a>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">
+                    No downloads found in <code>/downloads</code> yet.
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

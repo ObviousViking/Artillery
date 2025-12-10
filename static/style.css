@@ -1,0 +1,204 @@
+body {
+    background: #000000;
+    color: #f8f9fa;
+}
+
+/* Cards */
+.card {
+    background-color: #050505;
+    border-color: #111827;
+}
+
+/* Tables */
+.table {
+    color: #e5e7eb;
+    vertical-align: middle;
+}
+
+.table thead {
+    color: #d1d5db;
+}
+
+/* Inputs / textarea */
+textarea.form-control,
+input.form-control,
+select.form-control,
+.form-control {
+    background-color: #050505;
+    color: #e5e7eb;
+    border-color: #374151;
+}
+
+
+.form-control:focus {
+    background-color: #020617;
+    color: #f9fafb;
+    border-color: #f97316;
+    box-shadow: 0 0 0 0.2rem rgba(249, 115, 22, 0.25);
+}
+
+/* Main text & labels nice and bright */
+.form-label,
+.form-check-label,
+.card-body,
+.card-body p,
+.card-body li {
+    color: #f8f9fa;
+}
+
+/* Helper / muted / small text slightly dimmer but still easy to read */
+.form-text,
+.text-muted,
+small,
+.small {
+    color: #c2c2c2 !important;
+}
+
+/* Code snippets (like --write-metadata) */
+code {
+    color: #f97373;
+}
+
+/* Buttons – optional but nice on dark bg */
+.btn-outline-light {
+    color: #f8f9fa;
+    border-color: #6b7280;
+}
+
+.btn-outline-light:hover {
+    background-color: #f8f9fa;
+    color: #020617;
+}
+
+.btn-outline-secondary {
+    color: #e5e7eb;
+    border-color: #6b7280;
+}
+
+.btn-outline-secondary:hover {
+    background-color: #e5e7eb;
+    color: #020617;
+}
+
+.btn-outline-warning {
+    color: #facc15;
+    border-color: #facc15;
+}
+
+.btn-outline-warning:hover {
+    background-color: #facc15;
+    color: #020617;
+}
+
+.btn-outline-danger {
+    color: #f97373;
+    border-color: #f97373;
+}
+
+.btn-outline-danger:hover {
+    background-color: #f97373;
+    color: #020617;
+}
+
+.btn-danger {
+    background-color: #c53030;
+    border-color: #c53030;
+}
+
+.btn-danger:hover {
+    background-color: #e53e3e;
+    border-color: #e53e3e;
+}
+
+
+/* Media wall */
+
+.media-wall {
+    overflow: hidden;
+}
+
+.media-wall-row {
+    position: relative;
+    overflow: hidden;
+    height: 120px;
+    margin-bottom: 0.75rem;
+}
+
+.media-strip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+/* Each media item is fixed width so the scroll is smooth */
+.media-item {
+    flex: 0 0 auto;
+    width: 180px;
+}
+
+/* Images */
+.media-img {
+    width: 100%;
+    height: 110px;
+    object-fit: cover;
+    border-radius: 0.35rem;
+    opacity: 0;
+    animation: media-fade-in 0.8s ease-out forwards;
+}
+
+/* Placeholder for videos */
+.media-video-placeholder {
+    width: 100%;
+    height: 110px;
+    border-radius: 0.35rem;
+    border: 1px solid #374151;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #020617;
+    opacity: 0;
+    animation: media-fade-in 0.8s ease-out forwards;
+}
+
+/* Scrolling animations */
+@keyframes scroll-left {
+    from {
+        transform: translateX(0);
+    }
+
+    to {
+        transform: translateX(-50%);
+    }
+}
+
+@keyframes scroll-right {
+    from {
+        transform: translateX(-50%);
+    }
+
+    to {
+        transform: translateX(0);
+    }
+}
+
+.media-strip-left {
+    animation: scroll-left 120s linear infinite;
+}
+
+.media-strip-right {
+    animation: scroll-right 120s linear infinite;
+}
+
+/* Fade-in for items */
+@keyframes media-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
