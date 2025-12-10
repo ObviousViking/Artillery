@@ -12,10 +12,8 @@ for dir in "${DIRECTORIES[@]}"; do
     chmod 0777 "$dir" || true
 done
 
-# Optionally update gallery-dl on startup. Disabled by default to avoid slow boots
-# when the container lacks fast internet access. Set GALLERY_DL_AUTOUPDATE=true to
-# opt in.
-if [ "${GALLERY_DL_AUTOUPDATE:-false}" = "true" ] && command -v pip >/dev/null 2>&1; then
+# Keep gallery-dl current if available in the image
+if command -v pip >/dev/null 2>&1; then
     echo "Updating gallery-dl to the latest version..."
     if ! pip install --no-cache-dir --upgrade gallery-dl; then
         echo "Warning: Failed to update gallery-dl; continuing with existing version." >&2

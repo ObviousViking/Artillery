@@ -45,8 +45,6 @@ docker run -d \
 
 The entrypoint ensures `/config`, `/logs`, `/tasks`, and `/downloads` exist (creating them when necessary) before launching Supervisor. Gunicorn serves the Flask UI on port `8000`, while the background watcher handles scheduled tasks and the recent-images refresher keeps homepage thumbnails fresh.
 
-Set `GALLERY_DL_AUTOUPDATE=true` if you want the container to pull the newest `gallery-dl` on startup; it is `false` by default to keep boots fast when network access is slow or unavailable.
-
 ## 🛠️ Local development
 
 ```bash

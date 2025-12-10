@@ -7,7 +7,7 @@ from pathlib import Path
 
 CHECK_INTERVAL = int(os.environ.get("WATCH_INTERVAL", "60"))
 TASKS_DIR = Path(os.environ.get("TASK_DIR", "/tasks"))
-RUNNER_SCRIPT = Path(os.environ.get("RUNNER_TASK", "/app/runner-task.py"))
+RUNNER_SCRIPT = Path(os.environ.get("RUNNER_TASK", "/app/runner_task.py"))
 PYTHON_BIN = os.environ.get("PYTHON_BIN", sys.executable)
 LOG_PATH = Path(os.environ.get("LOG_DIR", "/logs")) / "watcher.log"
 
