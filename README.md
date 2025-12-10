@@ -31,7 +31,7 @@ Configure gallery URLs and fine-tune flags like rate limits, retries, sleep inte
 
 ```bash
 docker run -d \
-  -p 8080:80 \
+  -p 8080:8000 \
   -e PUID=1000 \
   -e PGID=1000 \
   -v /path/to/tasks:/tasks \
