@@ -1,17 +1,17 @@
 # Artillery
 
-**Artillery** is a sleek web UI for managing `gallery-dl` download tasks. It lets you create, edit, schedule, and manually run gallery-dl jobs from a modern, dark-themed interface—complete with logging, archiving, and task control.
+Artillery is a Flask-powered web UI for managing `gallery-dl` download tasks. It lets you create, edit, schedule, and manually run gallery-dl jobs from a modern, dark-themed interface—complete with logging, archiving, and task control.
 
 ![Artillery Banner](screenshots/banner.png)
 
 ## 🚀 Features
 
 - 🔧 Task creation with full gallery-dl command customization
-- 🕓 Interval-based scheduling (every X minutes)
+- 🕓 Interval-based scheduling handled by a Python watcher
 - 📜 Task logging with live command output
 - 📁 Automatic archive handling
 - 🧠 Pause/resume functionality
-- ✅ Docker-ready
+- ✅ Docker-ready with Gunicorn + Supervisor
 
 ## 🖥️ Interface
 
@@ -31,7 +31,7 @@ Configure gallery URLs and fine-tune flags like rate limits, retries, sleep inte
 
 ```bash
 docker run -d \
-  -p 8080:80 \
+  -p 8080:8000 \
   -e PUID=1000 \
   -e PGID=1000 \
   -v /path/to/tasks:/tasks \
@@ -42,5 +42,16 @@ docker run -d \
   your-artillery-image
 ```
 
-The container entrypoint ensures `/config`, `/logs`, and `/downloads` exist (creating them when necessary) and assigns permissive
-permissions before launching Supervisord, so bind-mounted volumes are ready for PHP-FPM as soon as the services start.
+The entrypoint ensures `/config`, `/logs`, `/tasks`, and `/downloads` exist (creating them when necessary) before launching Supervisor. Gunicorn serves the Flask UI on port `8000`, while the background watcher handles scheduled tasks and the recent-images refresher keeps homepage thumbnails fresh.
+
+## 🛠️ Local development
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+export FLASK_APP=app:create_app
+flask run --host=0.0.0.0 --port=8000
+```
+
+Scheduler/watcher helpers use the same directories as the container build (`/tasks`, `/downloads`, `/logs`, `/config`). You can override them with environment variables if you prefer local paths.

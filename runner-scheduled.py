@@ -5,8 +5,8 @@ from datetime import datetime
 from croniter import croniter
 
 TASKS_DIR = "/tasks"
-RUNNER_SCRIPT = "/var/www/html/runner-task.py"
-PYTHON_BIN = "/opt/venv/bin/python3"
+RUNNER_SCRIPT = "/app/runner_task.py"
+PYTHON_BIN = "/usr/local/bin/python3"
 
 def log(msg):
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
