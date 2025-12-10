@@ -1,26 +1,28 @@
 import os
-import time
 import subprocess
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-TASKS_DIR = Path("/tasks")
-RUNNER_SCRIPT = Path("/var/www/html/runner-scheduled.py")
-CHECK_INTERVAL = 60  # seconds
-LOG_PATH = Path("/logs/watcher.log")
+CHECK_INTERVAL = int(os.environ.get("WATCH_INTERVAL", "60"))
+TASKS_DIR = Path(os.environ.get("TASK_DIR", "/tasks"))
+RUNNER_SCRIPT = Path(os.environ.get("RUNNER_TASK", "/app/runner-task.py"))
+PYTHON_BIN = os.environ.get("PYTHON_BIN", sys.executable)
+LOG_PATH = Path(os.environ.get("LOG_DIR", "/logs")) / "watcher.log"
 
-# Ensure /logs directory exists
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-def log(msg):
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+def log(msg: str) -> None:
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     message = f"[Watcher] {msg}"
     print(message)
     with open(LOG_PATH, "a", encoding="utf-8") as log_file:
-        log_file.write(f"{message}\n")
+        log_file.write(f"{timestamp} {message}\n")
 
-def clear_stale_lockfiles():
+
+def clear_stale_lockfiles() -> None:
     log("Clearing stale lockfiles...")
     removed = 0
     for task_dir in TASKS_DIR.iterdir():
@@ -30,31 +32,33 @@ def clear_stale_lockfiles():
                 try:
                     lockfile.unlink()
                     removed += 1
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     log(f"  - Failed to remove lockfile in '{task_dir.name}': {e}")
     log(f"Cleared {removed} stale lockfile(s).\n")
 
-def read_file(path):
+
+def read_file(path: Path) -> str | None:
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    except Exception as e:
+        return path.read_text(encoding="utf-8").strip()
+    except Exception as e:  # noqa: BLE001
         log(f"  - Error reading {path.name}: {e}")
         return None
 
-def parse_last_run(path):
+
+def parse_last_run(path: Path):
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return datetime.strptime(f.read().strip(), "%Y-%m-%d %H:%M:%S")
-    except:
+        return datetime.strptime(path.read_text(encoding="utf-8").strip(), "%Y-%m-%d %H:%M:%S")
+    except Exception:
         return None
 
-def should_run(interval_minutes, last_run, now):
+
+def should_run(interval_minutes: int, last_run, now: datetime) -> bool:
     if last_run is None:
         return True
     return now >= last_run + timedelta(minutes=interval_minutes)
 
-def main():
+
+def main() -> None:
     log("Starting up watcher...")
     clear_stale_lockfiles()
 
@@ -99,10 +103,9 @@ def main():
             if should_run(interval, last_run, now):
                 log("   ✓ Task is scheduled to run - passing to runner")
                 try:
-                    log(f"    > Executing: /opt/venv/bin/python3 /var/www/html/runner-task.py {task_dir}")
-
-                    subprocess.Popen(["/opt/venv/bin/python3", "/var/www/html/runner-task.py", str(task_dir)])
-                except Exception as e:
+                    log(f"    > Executing: {PYTHON_BIN} {RUNNER_SCRIPT} {task_dir}")
+                    subprocess.Popen([PYTHON_BIN, str(RUNNER_SCRIPT), str(task_dir)])
+                except Exception as e:  # noqa: BLE001
                     log(f"   - Error launching task: {e}")
             else:
                 log("   ✗ Task not scheduled to run now")
@@ -113,6 +116,7 @@ def main():
         next_scan = now + timedelta(seconds=CHECK_INTERVAL)
         log(f"Scan complete. Next scan at {next_scan.strftime('%Y-%m-%d %H:%M:%S')}.\n")
         time.sleep(CHECK_INTERVAL)
+
 
 if __name__ == "__main__":
     main()
