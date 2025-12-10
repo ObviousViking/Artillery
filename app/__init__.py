@@ -13,8 +13,8 @@ def create_app() -> Flask:
         LOG_DIR=Path(os.environ.get("LOG_DIR", "/logs")),
         CONFIG_FILE=Path(os.environ.get("CONFIG_FILE", "/config/config.json")),
         PYTHON_BIN=os.environ.get("PYTHON_BIN", sys.executable),
-        RUNNER_TASK=Path(os.environ.get("RUNNER_TASK", "/app/runner_task.py")),
-        RUNNER_SINGLE=Path(os.environ.get("RUNNER_SINGLE", "/app/runner_single.py")),
+        RUNNER_TASK=Path(os.environ.get("RUNNER_TASK", "/app/runner-task.py")),
+        RUNNER_SINGLE=Path(os.environ.get("RUNNER_SINGLE", "/app/runner-single.py")),
     )
 
     for directory in (app.config["TASK_DIR"], app.config["DOWNLOAD_DIR"], app.config["LOG_DIR"], app.config["CONFIG_FILE"].parent):
