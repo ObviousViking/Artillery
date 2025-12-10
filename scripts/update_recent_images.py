@@ -13,10 +13,8 @@ import os
 from pathlib import Path
 from typing import List
 
-# Repository paths
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DOWNLOAD_DIR = REPO_ROOT / "downloads"
-LOG_DIR = REPO_ROOT / "logs"
+DOWNLOAD_DIR = Path(os.environ.get("DOWNLOAD_DIR", "/downloads"))
+LOG_DIR = Path(os.environ.get("LOG_DIR", "/logs"))
 CACHE_FILE = LOG_DIR / "image_cache.json"
 
 # Extensions considered as images

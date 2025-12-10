@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>{{ 'Edit Task' if mode == 'edit' else 'Create Task' }}</h1>
+<form method="post">
+    <label for="task_name">Task Name</label>
+    <input type="text" id="task_name" name="task_name" value="{{ task_name or '' }}" {% if mode == 'edit' %}readonly{% endif %} required>
+
+    <label for="url_list">URL List (one per line)</label>
+    <textarea id="url_list" name="url_list" rows="6" required>{{ task.url_list if task else '' }}</textarea>
+
+    <label for="interval">Interval (minutes)</label>
+    <input type="number" id="interval" name="interval" min="1" value="{{ task.interval if task else 60 }}" required>
+
+    <label>Input Mode</label>
+    <div style="display:flex; gap:1rem;">
+        <label><input type="radio" name="input_mode" value="i" {% if not task or task.input_mode == 'i' %}checked{% endif %}> -i (read list file)</label>
+        <label><input type="radio" name="input_mode" value="I" {% if task and task.input_mode == 'I' %}checked{% endif %}> -I (treat list as JSON)</label>
+    </div>
+
+    <h3>Flags</h3>
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap:0.5rem;">
+        {% set flags = task.flags if task else {} %}
+        <label><input type="checkbox" name="write_unsupported" {% if flags.get('write_unsupported') %}checked{% endif %}> --write-unsupported</label>
+        <label><input type="checkbox" name="no_skip" {% if flags.get('no_skip') %}checked{% endif %}> --no-skip</label>
+        <label><input type="checkbox" name="write_metadata" {% if flags.get('write_metadata') %}checked{% endif %}> --write-metadata</label>
+        <label><input type="checkbox" name="write_info_json" {% if flags.get('write_info_json') %}checked{% endif %}> --write-info-json</label>
+        <label><input type="checkbox" name="write_tags" {% if flags.get('write_tags') %}checked{% endif %}> --write-tags</label>
+        <label><input type="checkbox" name="use_cookies" {% if task and task.use_cookies %}checked{% endif %}> -C cookies.txt</label>
+        <label><input type="checkbox" name="use_download_archive" {% if task and task.use_download_archive %}checked{% endif %}> --download-archive</label>
+    </div>
+
+    {% set values = task.values if task else {} %}
+    <h3>Flag values</h3>
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap:0.75rem;">
+        <div><label>--retries<input type="text" name="retries" value="{{ values.get('retries','') }}"></label></div>
+        <div><label>--limit-rate<input type="text" name="limit_rate" value="{{ values.get('limit_rate','') }}"></label></div>
+        <div><label>--sleep<input type="text" name="sleep" value="{{ values.get('sleep','') }}"></label></div>
+        <div><label>--sleep-request<input type="text" name="sleep_request" value="{{ values.get('sleep_request','') }}"></label></div>
+        <div><label>--sleep-429<input type="text" name="sleep_429" value="{{ values.get('sleep_429','') }}"></label></div>
+        <div><label>--sleep-extractor<input type="text" name="sleep_extractor" value="{{ values.get('sleep_extractor','') }}"></label></div>
+        <div><label>--rename<input type="text" name="rename" value="{{ values.get('rename','') }}"></label></div>
+        <div><label>--rename-to<input type="text" name="rename_to" value="{{ values.get('rename_to','') }}"></label></div>
+    </div>
+
+    <div style="margin-top:1.5rem; display:flex; gap:0.75rem;">
+        <button type="submit">{{ 'Save Changes' if mode == 'edit' else 'Create Task' }}</button>
+        <a class="btn secondary" href="{{ url_for('artillery.list_tasks') }}">Cancel</a>
+    </div>
+</form>
+{% endblock %}

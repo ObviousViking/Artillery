@@ -1,35 +1,31 @@
 #!/usr/bin/env python3
-import sys
-import subprocess
-import os
 import re
-from datetime import datetime
+import subprocess
+import sys
+from pathlib import Path
 
-def main():
-    # Log environment info
-    print(f"Python executable: {sys.executable}")
-    print(f"Working directory: {os.getcwd()}")
 
-    # Ensure URL is passed
+def main() -> None:
     if len(sys.argv) < 2:
         print("Error: No URL provided", file=sys.stderr)
         sys.exit(1)
 
     url = sys.argv[1]
 
-    if not re.match(r'^https?://', url):
+    if not re.match(r"^https?://", url):
         print("Error: Invalid URL format", file=sys.stderr)
         sys.exit(1)
 
-    download_dir = "/downloads"
-    os.makedirs(download_dir, exist_ok=True)
+    download_dir = Path("/downloads")
+    download_dir.mkdir(parents=True, exist_ok=True)
 
     cmd = [
         "gallery-dl",
-        "--dest", download_dir,
+        "--dest",
+        str(download_dir),
         "--verbose",
         "--no-part",
-        url
+        url,
     ]
 
     print(f"Running: {' '.join(cmd)}")
@@ -45,6 +41,7 @@ def main():
     except FileNotFoundError:
         print("Error: gallery-dl not found. Ensure it's installed and in PATH.", file=sys.stderr)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

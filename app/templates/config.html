@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Config</h1>
+<p>Edit <code>/config/config.json</code>. A backup is written beside the file before saving.</p>
+<form method="post">
+    <label for="config_content">Config JSON</label>
+    <textarea id="config_content" name="config_content" rows="20" spellcheck="false">{{ content }}</textarea>
+    <div style="margin-top:1rem; display:flex; gap:0.75rem;">
+        <button type="submit">Save</button>
+        <a class="btn secondary" href="{{ url_for('artillery.home') }}">Cancel</a>
+    </div>
+</form>
+{% endblock %}

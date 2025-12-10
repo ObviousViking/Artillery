@@ -1,51 +1,53 @@
 #!/usr/bin/env python3
-import os
-import sys
 import subprocess
+import sys
 from datetime import datetime
+from pathlib import Path
 
-def read_command_file(task_path):
-    command_path = os.path.join(task_path, "command.txt")
-    if not os.path.isfile(command_path):
-        print(f"Error: command.txt not found in {task_path}", file=sys.stderr)
-        sys.exit(1)
-    with open(command_path, "r", encoding="utf-8") as f:
-        return f.read().strip()
 
-def update_last_run(task_path):
-    timestamp_path = os.path.join(task_path, "last_run.txt")
-    with open(timestamp_path, "w", encoding="utf-8") as f:
-        f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+def read_command_file(task_path: Path) -> str:
+    command_path = task_path / "command.txt"
+    if not command_path.is_file():
+        raise FileNotFoundError(f"command.txt not found in {task_path}")
+    return command_path.read_text(encoding="utf-8").strip()
 
-def main():
+
+def update_last_run(task_path: Path) -> None:
+    timestamp_path = task_path / "last_run.txt"
+    timestamp_path.write_text(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), encoding="utf-8")
+
+
+def resolve_task_path(arg: str) -> Path:
+    candidate = Path(arg)
+    if candidate.is_dir():
+        return candidate
+    task_path = Path("/tasks") / arg
+    if task_path.is_dir():
+        return task_path
+    raise FileNotFoundError(f"Task folder not found: {arg}")
+
+
+def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: runner-task.py <taskname>", file=sys.stderr)
+        print("Usage: runner-task.py <task_path_or_name>", file=sys.stderr)
         sys.exit(1)
 
-    task_name = sys.argv[1]
-    task_path = os.path.join("/tasks", task_name)
+    task_path = resolve_task_path(sys.argv[1])
+    task_name = task_path.name
 
-    if not os.path.isdir(task_path):
-        print(f"Error: Task folder not found: {task_name}", file=sys.stderr)
-        sys.exit(1)
-
-    lockfile = os.path.join(task_path, "lockfile")
-    if os.path.exists(lockfile):
+    lockfile = task_path / "lockfile"
+    if lockfile.exists():
         print(f"Task already running: {task_name}", file=sys.stderr)
         sys.exit(0)
 
     try:
-        with open(lockfile, 'w') as f:
-            f.write("Running")
-    except Exception as e:
+        lockfile.write_text("Running", encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
         print(f"Error creating lockfile: {e}", file=sys.stderr)
         sys.exit(1)
 
     command = read_command_file(task_path)
     args = command.strip().split()
-
-    # REMOVE the whole block that cleans/inserts --dest/--config
-
     print(f"Executing: {' '.join(args)}")
 
     try:
@@ -56,8 +58,8 @@ def main():
     except subprocess.CalledProcessError as e:
         print(f"Error running gallery-dl: {e.stderr}", file=sys.stderr)
     finally:
-        if os.path.exists(lockfile):
-            os.remove(lockfile)
+        if lockfile.exists():
+            lockfile.unlink()
         update_last_run(task_path)
 
 
