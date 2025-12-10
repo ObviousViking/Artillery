@@ -18,6 +18,8 @@ if command -v pip >/dev/null 2>&1; then
     if ! pip install --no-cache-dir --upgrade gallery-dl; then
         echo "Warning: Failed to update gallery-dl; continuing with existing version." >&2
     fi
+else
+    echo "Skipping gallery-dl auto-update; set GALLERY_DL_AUTOUPDATE=true to enable."
 fi
 
 exec "$@"

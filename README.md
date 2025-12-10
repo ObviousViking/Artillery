@@ -38,6 +38,7 @@ docker run -d \
   -v /path/to/downloads:/downloads \
   -v /path/to/logs:/logs \
   -v /path/to/config:/config \
+  -e GALLERY_DL_AUTOUPDATE=false \
   --name artillery \
   your-artillery-image
 ```
