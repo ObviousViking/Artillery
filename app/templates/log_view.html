@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Log: {{ task_name }}</h1>
+<pre style="background:#0f0f0f; color:#e0e0e0; padding:1rem; border-radius:8px; white-space:pre-wrap;">{{ log_contents }}</pre>
+<div style="margin-top:1rem;">
+    <a class="btn" href="{{ url_for('artillery.list_tasks') }}">Back to tasks</a>
+</div>
+{% endblock %}
