@@ -26,9 +26,8 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
 TASKS_ROOT = os.environ.get("TASKS_DIR") or "/tasks"
 CONFIG_ROOT = os.environ.get("CONFIG_DIR") or "/config"   # global gallery-dl config
 DOWNLOADS_ROOT = os.environ.get("DOWNLOADS_DIR") or "/downloads"
-
-# NEW: temp folder for recent media, kept inside /downloads by default
-RECENT_TEMP_ROOT = os.environ.get("RECENT_TEMP_DIR") or os.path.join(DOWNLOADS_ROOT, "_recent")
+# NEW: temp folder for media wall, kept inside /config by default
+RECENT_TEMP_ROOT = os.environ.get("RECENT_TEMP_DIR") or os.path.join(CONFIG_ROOT, "media_wall")
 
 CONFIG_FILE = os.path.join(CONFIG_ROOT, "gallery-dl.conf")
 
@@ -380,7 +379,7 @@ def config_page():
     ensure_data_dirs()
     config_text = read_text(CONFIG_FILE) or ""
 
-    if request.method == "POST__":
+    if request.method == "POST":
         action = request.form.get("action")
         if action == "save":
             config_text = request.form.get("config_text", "")
@@ -533,6 +532,12 @@ def task_action(slug):
 def media_file(subpath):
     """Serve files from the /downloads volume."""
     return send_from_directory(DOWNLOADS_ROOT, subpath)
+
+@app.route("/recent-media/<path:filename>")
+def recent_media_file(filename):
+    """Serve files from the media wall folder in the config volume."""
+    return send_from_directory(RECENT_TEMP_ROOT, filename)
+
 
 
 # Start the background recent-download scanner after everything is configured

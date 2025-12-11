@@ -1,9 +1,15 @@
 import os
 import time
 import shutil
+import random
 from pathlib import Path
 from datetime import datetime
 from flask import current_app
+
+# Define media extensions here so we only sample media-ish files
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
+MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
 # Optional: in-memory cache if you want to read metadata from Python
 recent_cache = {
@@ -14,45 +20,51 @@ recent_cache = {
 
 def get_recent_files(download_root: str, limit: int = 100):
     """
-    Walk the download_root and return the `limit` most recently modified files.
+    RANDOM SAMPLER NOW (name kept for compatibility).
+
+    Walk the download_root and return `limit` random media files.
+    Uses reservoir sampling so memory stays small even if the tree is huge.
     """
     download_root = Path(download_root)
 
-    file_entries = []
+    reservoir = []  # up to `limit` entries
+    seen = 0
+
     for dirpath, dirnames, filenames in os.walk(download_root):
         for name in filenames:
             full_path = Path(dirpath) / name
+
+            ext = full_path.suffix.lower()
+            if ext not in MEDIA_EXTS:
+                continue
+
             try:
                 stat = full_path.stat()
             except FileNotFoundError:
                 # It might be deleted between walk and stat; just skip
                 continue
 
-            file_entries.append(
-                (stat.st_mtime, full_path)
-            )
-
-    # Sort newest first and slice
-    file_entries.sort(key=lambda x: x[0], reverse=True)
-    file_entries = file_entries[:limit]
-
-    # Turn into nice dicts
-    result = []
-    for mtime, path in file_entries:
-        result.append(
-            {
-                "path": str(path),
-                "name": path.name,
-                "mtime": mtime,
+            entry = {
+                "path": str(full_path),
+                "name": full_path.name,
+                "mtime": stat.st_mtime,
             }
-        )
 
-    return result
+            seen += 1
+            if len(reservoir) < limit:
+                reservoir.append(entry)
+            else:
+                # Reservoir sampling: replace existing entry with decreasing probability
+                j = random.randint(0, seen - 1)
+                if j < limit:
+                    reservoir[j] = entry
+
+    return reservoir
 
 
-def sync_temp_folder(recent_files, temp_root: str, use_symlinks: bool = True):
+def sync_temp_folder(recent_files, temp_root: str):
     """
-    Mirror `recent_files` into temp_root as copies or symlinks.
+    Mirror `recent_files` into temp_root as **copies** (no symlinks).
     - Deletes files from temp_root that are no longer in recent_files.
     """
     temp_root = Path(temp_root)
@@ -90,31 +102,26 @@ def sync_temp_folder(recent_files, temp_root: str, use_symlinks: bool = True):
     for final_name, src_path in desired_map.items():
         dst_path = temp_root / final_name
 
-        # If exists, you could check mtime and skip if up-to-date.
         if dst_path.exists():
+            # For now, assume it's fine; we could compare mtimes if we want.
             continue
 
         try:
-            if use_symlinks:
-                # Try symlink; if it fails (e.g. platform restriction), fall back to copy
-                try:
-                    if dst_path.exists() or dst_path.is_symlink():
-                        dst_path.unlink()
-                    os.symlink(src_path, dst_path)
-                except OSError:
-                    shutil.copy2(src_path, dst_path)
-            else:
-                shutil.copy2(src_path, dst_path)
+            shutil.copy2(src_path, dst_path)
         except FileNotFoundError:
             # Source disappeared, skip
+            continue
+        except Exception:
+            # Ignore other failures; this is best-effort eye candy
             continue
 
 
 def recent_scanner_loop(app, interval_seconds: int = 3600, limit: int = 100):
     """
     Background loop that runs forever:
-    - scans the download dir
-    - mirrors 100 most recent files into temp dir
+    - walks the download dir
+    - selects `limit` random media files
+    - mirrors them into the media wall folder
     """
     with app.app_context():
         while True:
@@ -122,30 +129,39 @@ def recent_scanner_loop(app, interval_seconds: int = 3600, limit: int = 100):
                 download_root = current_app.config["DOWNLOAD_DIR"]
                 temp_root = current_app.config["RECENT_TEMP_DIR"]
 
-                current_app.logger.info("Recent scanner: starting scan.")
+                current_app.logger.warning(
+                    "Recent scanner: starting scan (root=%s, temp=%s)",
+                    download_root,
+                    temp_root,
+                )
                 recent_files = get_recent_files(download_root, limit=limit)
+
+                current_app.logger.warning(
+                    "Recent scanner: sampled %d random media files",
+                    len(recent_files),
+                )
 
                 sync_temp_folder(recent_files, temp_root)
 
-                # Update cache (optional, if you want to render from Python)
+                # Update cache (optional)
                 recent_cache["last_run"] = datetime.utcnow().timestamp()
                 recent_cache["files"] = recent_files
 
-                current_app.logger.info(
-                    "Recent scanner: completed. %d files mirrored.",
-                    len(recent_files),
+                current_app.logger.warning(
+                    "Recent scanner: cycle complete for root %s", download_root
                 )
             except Exception as e:
                 current_app.logger.exception("Recent scanner failed: %s", e)
 
-            # Sleep until next run
+            current_app.logger.warning(
+                "Recent scanner: sleeping for %d seconds.", interval_seconds
+            )
             time.sleep(interval_seconds)
 
 
 def start_recent_scanner(app):
     """
     Start the background thread once.
-    Put this in your app factory.
     """
     import threading
 
@@ -154,6 +170,8 @@ def start_recent_scanner(app):
         return
 
     app._recent_scanner_started = True
+
+    app.logger.warning("Recent scanner: starting background thread")
 
     t = threading.Thread(
         target=recent_scanner_loop,
