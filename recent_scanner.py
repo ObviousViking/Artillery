@@ -14,22 +14,27 @@ MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 logger = logging.getLogger("recent_scanner")
 
 
-def get_recent_media_files(
+def get_recent_leaf_media_files(
     download_root: str,
     limit: int = 100,
-    max_top_dirs: int = 200,
+    max_top_dirs: int = 100,
+    max_total_dirs: int = 400,
+    max_leaf_dirs: int = 80,
 ):
     """
-    Scan the downloads root in a *bounded* way:
+    Scan the downloads tree in a *very bounded* way:
 
-      1. Look at media files directly in download_root.
-      2. List top-level subdirectories and sort them by mtime (newest first).
-      3. Walk each directory (recursively) in that order.
-      4. Stop as soon as we've collected `limit` media files.
+      1. Collect media files directly in download_root.
+      2. Collect top-level subdirs and sort by mtime (newest first).
+      3. For each top-level dir (in that order), do a leaf-first DFS:
+         - A directory with no subdirectories is treated as a "leaf".
+         - Only files in leaf dirs are considered.
+         - Stop as soon as:
+             * we have `limit` media files, or
+             * we've looked at `max_total_dirs` dirs total, or
+             * we've looked at `max_leaf_dirs` leaf dirs.
 
-    This means:
-      - On huge trees with recent active folders, we only touch a few dirs.
-      - We never walk the entire 2M-file tree unless it's all cold / empty.
+    This keeps each scan small even on gigantic trees.
     """
     root = Path(download_root)
     if not root.is_dir():
@@ -37,18 +42,22 @@ def get_recent_media_files(
         return []
 
     logger.warning(
-        "Recent scanner: scanning most recent folders (root=%s, limit=%d, max_top_dirs=%d)",
+        "Recent scanner: leaf-first scan (root=%s, limit=%d, max_top_dirs=%d, max_total_dirs=%d, max_leaf_dirs=%d)",
         download_root,
         limit,
         max_top_dirs,
+        max_total_dirs,
+        max_leaf_dirs,
     )
 
     results = []
+    total_dirs = 0
+    leaf_dirs_seen = 0
 
-    # 1) Media files directly in root
+    # 1) Media files directly in /downloads root
+    top_dirs = []
     try:
         with os.scandir(download_root) as it:
-            top_dirs = []
             for entry in it:
                 try:
                     st = entry.stat()
@@ -67,55 +76,97 @@ def get_recent_media_files(
                         )
                         if len(results) >= limit:
                             logger.warning(
-                                "Recent scanner: collected %d files from root, stopping",
+                                "Recent scanner: collected %d files from root, stopping early",
                                 len(results),
                             )
                             return results
                 elif entry.is_dir(follow_symlinks=False):
-                    # collect dirs for later, with their mtime
                     top_dirs.append((st.st_mtime, entry.path))
     except FileNotFoundError:
         return results
 
-    # 2) Sort top-level dirs by mtime (newest first), limit how many we consider
+    # 2) Sort top-level dirs by mtime (newest first), cap count
     top_dirs.sort(key=lambda x: x[0], reverse=True)
     top_dirs = [p for _, p in top_dirs[:max_top_dirs]]
 
-    # 3) Walk each directory in order, stopping as soon as we have `limit` files
-    for dir_path in top_dirs:
-        logger.warning("Recent scanner: walking dir %s", dir_path)
-        for dirpath, dirnames, filenames in os.walk(dir_path):
-            for name in filenames:
-                ext = os.path.splitext(name)[1].lower()
-                if ext not in MEDIA_EXTS:
-                    continue
+    # 3) For each top-level dir, do a bounded leaf-first DFS
+    for top_dir in top_dirs:
+        if len(results) >= limit or total_dirs >= max_total_dirs or leaf_dirs_seen >= max_leaf_dirs:
+            break
 
-                full_path = Path(dirpath) / name
+        logger.warning("Recent scanner: starting DFS at top dir %s", top_dir)
+        stack = [top_dir]
+
+        while stack and len(results) < limit and total_dirs < max_total_dirs and leaf_dirs_seen < max_leaf_dirs:
+            current_dir = stack.pop()
+            total_dirs += 1
+
+            try:
+                entries = list(os.scandir(current_dir))
+            except (FileNotFoundError, NotADirectoryError, PermissionError, OSError):
+                continue
+
+            subdirs = []
+            files = []
+
+            for e in entries:
                 try:
-                    st = full_path.stat()
+                    if e.is_dir(follow_symlinks=False):
+                        subdirs.append(e)
+                    elif e.is_file(follow_symlinks=False):
+                        files.append(e)
                 except OSError:
+                    # just skip weird entries
                     continue
 
-                results.append(
-                    {
-                        "path": str(full_path),
-                        "name": full_path.name,
-                        "mtime": st.st_mtime,
-                    }
-                )
+            if not subdirs:
+                # Leaf directory: only here do we look at files
+                leaf_dirs_seen += 1
 
-                if len(results) >= limit:
-                    logger.warning(
-                        "Recent scanner: collected %d files, stopping at dir %s",
-                        len(results),
-                        dir_path,
+                for f in files:
+                    ext = os.path.splitext(f.name)[1].lower()
+                    if ext not in MEDIA_EXTS:
+                        continue
+
+                    try:
+                        st = f.stat()
+                    except OSError:
+                        continue
+
+                    results.append(
+                        {
+                            "path": f.path,
+                            "name": f.name,
+                            "mtime": st.st_mtime,
+                        }
                     )
-                    return results
+
+                    if len(results) >= limit:
+                        logger.warning(
+                            "Recent scanner: collected %d files, stopping at leaf dir %s",
+                            len(results),
+                            current_dir,
+                        )
+                        return results
+
+                # done with this leaf; continue with next on stack
+            else:
+                # Not a leaf yet: go deeper, most recent subdirs last in stack so they are popped first
+                try:
+                    subdirs.sort(key=lambda e: e.stat().st_mtime, reverse=True)
+                except OSError:
+                    # if stat fails, just leave unsorted
+                    pass
+
+                for sd in subdirs:
+                    stack.append(sd.path)
 
     logger.warning(
-        "Recent scanner: finished scan with %d files total (limit=%d)",
+        "Recent scanner: finished leaf-first scan with %d files (limit=%d, total_dirs=%d, leaf_dirs=%d)",
         len(results),
         limit,
+        total_dirs,
+        leaf_dirs_seen,
     )
     return results
 
@@ -184,10 +235,12 @@ def recent_scanner_loop(download_root: str, temp_root: str, interval_seconds: in
 
     while True:
         try:
-            recent_files = get_recent_media_files(
+            recent_files = get_recent_leaf_media_files(
                 download_root,
                 limit=limit,
-                max_top_dirs=200,
+                max_top_dirs=100,
+                max_total_dirs=400,
+                max_leaf_dirs=80,
             )
 
             sync_temp_folder(recent_files, temp_root)
