@@ -1,7 +1,6 @@
 import os
 import time
 import shutil
-import random
 import logging
 from pathlib import Path
 from multiprocessing import Process
@@ -15,20 +14,22 @@ MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 logger = logging.getLogger("recent_scanner")
 
 
-def get_random_media_files(
+def get_recent_media_files(
     download_root: str,
     limit: int = 100,
-    max_candidates: int = 5000,
-    max_top_dirs: int = 50,
+    max_top_dirs: int = 200,
 ):
     """
-    Fast-ish random sampler over a huge downloads tree.
+    Scan the downloads root in a *bounded* way:
 
-    Strategy:
-      - Look at the most recently modified top-level dirs under download_root.
-      - Walk only those, and stop after seeing at most `max_candidates` media files.
-      - Use reservoir sampling to get up to `limit` random media files from that
-        subset without keeping everything in memory.
+      1. Look at media files directly in download_root.
+      2. List top-level subdirectories and sort them by mtime (newest first).
+      3. Walk each directory (recursively) in that order.
+      4. Stop as soon as we've collected `limit` media files.
+
+    This means:
+      - On huge trees with recent active folders, we only touch a few dirs.
+      - We never walk the entire 2M-file tree unless it's all cold / empty.
     """
     root = Path(download_root)
     if not root.is_dir():
@@ -36,72 +37,54 @@ def get_random_media_files(
         return []
 
     logger.warning(
-        "Recent scanner: sampling random media files (root=%s, limit=%d, max_candidates=%d, max_top_dirs=%d)",
+        "Recent scanner: scanning most recent folders (root=%s, limit=%d, max_top_dirs=%d)",
         download_root,
         limit,
-        max_candidates,
         max_top_dirs,
     )
 
-    # Collect top-level dirs + root files
-    top_dirs = []
-    root_files = []
+    results = []
 
+    # 1) Media files directly in root
     try:
         with os.scandir(download_root) as it:
+            top_dirs = []
             for entry in it:
                 try:
                     st = entry.stat()
                 except OSError:
                     continue
 
-                if entry.is_dir(follow_symlinks=False):
-                    top_dirs.append((st.st_mtime, entry.path))
-                elif entry.is_file(follow_symlinks=False):
-                    # Allow loose media files directly in root
+                if entry.is_file(follow_symlinks=False):
                     ext = os.path.splitext(entry.name)[1].lower()
                     if ext in MEDIA_EXTS:
-                        root_files.append(
+                        results.append(
                             {
                                 "path": os.path.join(download_root, entry.name),
                                 "name": entry.name,
                                 "mtime": st.st_mtime,
                             }
                         )
+                        if len(results) >= limit:
+                            logger.warning(
+                                "Recent scanner: collected %d files from root, stopping",
+                                len(results),
+                            )
+                            return results
+                elif entry.is_dir(follow_symlinks=False):
+                    # collect dirs for later, with their mtime
+                    top_dirs.append((st.st_mtime, entry.path))
     except FileNotFoundError:
-        return []
+        return results
 
-    # Newest top-level dirs first
+    # 2) Sort top-level dirs by mtime (newest first), limit how many we consider
     top_dirs.sort(key=lambda x: x[0], reverse=True)
     top_dirs = [p for _, p in top_dirs[:max_top_dirs]]
 
-    reservoir = []
-    seen = 0
-
-    # First, consider root media files (if any)
-    for f in root_files:
-        seen += 1
-        if len(reservoir) < limit:
-            reservoir.append(f)
-        else:
-            j = random.randint(0, seen - 1)
-            if j < limit:
-                reservoir[j] = f
-
-        if seen >= max_candidates:
-            logger.warning(
-                "Recent scanner: early stop after %d candidates (root files only)",
-                seen,
-            )
-            return reservoir
-
-    # Then, walk selected top-level dirs, but stop after max_candidates media files
-    stop = False
-    for base_dir in top_dirs:
-        if stop:
-            break
-
-        for dirpath, dirnames, filenames in os.walk(base_dir):
+    # 3) Walk each directory in order, stopping as soon as we have `limit` files
+    for dir_path in top_dirs:
+        logger.warning("Recent scanner: walking dir %s", dir_path)
+        for dirpath, dirnames, filenames in os.walk(dir_path):
             for name in filenames:
                 ext = os.path.splitext(name)[1].lower()
                 if ext not in MEDIA_EXTS:
@@ -113,37 +96,28 @@ def get_random_media_files(
                 except OSError:
                     continue
 
-                entry = {
-                    "path": str(full_path),
-                    "name": full_path.name,
-                    "mtime": st.st_mtime,
-                }
+                results.append(
+                    {
+                        "path": str(full_path),
+                        "name": full_path.name,
+                        "mtime": st.st_mtime,
+                    }
+                )
 
-                seen += 1
-                if len(reservoir) < limit:
-                    reservoir.append(entry)
-                else:
-                    j = random.randint(0, seen - 1)
-                    if j < limit:
-                        reservoir[j] = entry
-
-                if seen >= max_candidates:
+                if len(results) >= limit:
                     logger.warning(
-                        "Recent scanner: early stop after %d candidate media files",
-                        seen,
+                        "Recent scanner: collected %d files, stopping at dir %s",
+                        len(results),
+                        dir_path,
                     )
-                    stop = True
-                    break
-
-            if stop:
-                break
+                    return results
 
     logger.warning(
-        "Recent scanner: sampled %d media files from %d candidates",
-        len(reservoir),
-        seen,
+        "Recent scanner: finished scan with %d files total (limit=%d)",
+        len(results),
+        limit,
     )
-    return reservoir
+    return results
 
 
 def sync_temp_folder(recent_files, temp_root: str):
@@ -210,11 +184,10 @@ def recent_scanner_loop(download_root: str, temp_root: str, interval_seconds: in
 
     while True:
         try:
-            recent_files = get_random_media_files(
+            recent_files = get_recent_media_files(
                 download_root,
                 limit=limit,
-                max_candidates=5000,
-                max_top_dirs=50,
+                max_top_dirs=200,
             )
 
             sync_temp_folder(recent_files, temp_root)
