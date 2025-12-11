@@ -79,7 +79,7 @@ All wrapped in a dark, minimal interface designed to live inside Docker/Unraid.
   - Command builder for common flags (input file, archive, metadata, etc.)
   - Raw command text area for advanced users
 
-> _Screenshot: (screenshots/tasks.png)
+![Artillery Tasks](screenshots/tasks.png)
 
 ### Config
 
@@ -88,7 +88,7 @@ All wrapped in a dark, minimal interface designed to live inside Docker/Unraid.
   - **Save** – write your changes
   - **Load default from GitHub** – fetches the example config from the official gallery-dl repo
 
-> _Screenshot: (screenshots/config.png)
+![Artillery Config](screenshots/config.png)
 
 ---
 
