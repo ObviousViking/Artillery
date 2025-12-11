@@ -417,6 +417,7 @@ def config_page():
             if interval_raw:
                 try:
                     minutes = int(interval_raw)
+                    # Clamp between 5 min and 24h
                     minutes = max(5, min(minutes, 1440))
                     write_text(SCAN_INTERVAL_FILE, str(minutes))
                     scan_interval_minutes = minutes
@@ -445,6 +446,7 @@ def config_page():
         config_path=CONFIG_FILE,
         scan_interval_minutes=scan_interval_minutes,
     )
+
 
 
 def run_task_background(task_folder: str):
