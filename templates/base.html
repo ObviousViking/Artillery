@@ -83,6 +83,69 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
         integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
         crossorigin="anonymous"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const wall = document.querySelector('.media-wall');
+            const loader = document.getElementById('media-wall-loader');
+
+            if (!wall) {
+                return; // no wall on this page
+            }
+
+            const images = wall.querySelectorAll('img.media-img');
+
+            // If there are no images, just show wall and hide loader
+            if (!images.length) {
+                wall.classList.add('media-wall-ready');
+                if (loader) {
+                    loader.classList.add('media-wall-loader-hidden');
+                }
+                return;
+            }
+
+            let loaded = 0;
+            const total = images.length;
+
+            function tryShowWall() {
+                if (loaded >= total) {
+                    wall.classList.add('media-wall-ready');
+                    if (loader) {
+                        loader.classList.add('media-wall-loader-hidden');
+                    }
+                }
+            }
+
+            images.forEach(function (img) {
+                // Already loaded from cache?
+                if (img.complete) {
+                    loaded++;
+                    tryShowWall();
+                    return;
+                }
+
+                img.addEventListener('load', function () {
+                    loaded++;
+                    tryShowWall();
+                });
+
+                img.addEventListener('error', function () {
+                    // Count errors too so we don't hang forever
+                    loaded++;
+                    tryShowWall();
+                });
+            });
+
+            // Fallback: if some images are super slow, show after a few seconds anyway
+            setTimeout(function () {
+                wall.classList.add('media-wall-ready');
+                if (loader) {
+                    loader.classList.add('media-wall-loader-hidden');
+                }
+            }, 5000);
+        });
+    </script>
+
 </body>
 
 </html>

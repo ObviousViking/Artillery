@@ -2,78 +2,162 @@ import os
 import time
 import shutil
 import random
+import logging
 from pathlib import Path
-from datetime import datetime
-from flask import current_app
+from multiprocessing import Process
 
-# Define media extensions here so we only sample media-ish files
+# --- media types -------------------------------------------------------------
+
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
-# Optional: in-memory cache if you want to read metadata from Python
-recent_cache = {
-    "last_run": None,
-    "files": [],  # list of dicts: {"path": "...", "name": "...", "mtime": ...}
-}
+logger = logging.getLogger("recent_scanner")
 
 
-def get_recent_files(download_root: str, limit: int = 100):
+def get_random_media_files(
+    download_root: str,
+    limit: int = 100,
+    max_candidates: int = 5000,
+    max_top_dirs: int = 50,
+):
     """
-    RANDOM SAMPLER NOW (name kept for compatibility).
+    Fast-ish random sampler over a huge downloads tree.
 
-    Walk the download_root and return `limit` random media files.
-    Uses reservoir sampling so memory stays small even if the tree is huge.
+    Strategy:
+      - Look at the most recently modified top-level dirs under download_root.
+      - Walk only those, and stop after seeing at most `max_candidates` media files.
+      - Use reservoir sampling to get up to `limit` random media files from that
+        subset without keeping everything in memory.
     """
-    download_root = Path(download_root)
+    root = Path(download_root)
+    if not root.is_dir():
+        logger.warning("Recent scanner: download root %s is not a directory", download_root)
+        return []
 
-    reservoir = []  # up to `limit` entries
+    logger.warning(
+        "Recent scanner: sampling random media files (root=%s, limit=%d, max_candidates=%d, max_top_dirs=%d)",
+        download_root,
+        limit,
+        max_candidates,
+        max_top_dirs,
+    )
+
+    # Collect top-level dirs + root files
+    top_dirs = []
+    root_files = []
+
+    try:
+        with os.scandir(download_root) as it:
+            for entry in it:
+                try:
+                    st = entry.stat()
+                except OSError:
+                    continue
+
+                if entry.is_dir(follow_symlinks=False):
+                    top_dirs.append((st.st_mtime, entry.path))
+                elif entry.is_file(follow_symlinks=False):
+                    # Allow loose media files directly in root
+                    ext = os.path.splitext(entry.name)[1].lower()
+                    if ext in MEDIA_EXTS:
+                        root_files.append(
+                            {
+                                "path": os.path.join(download_root, entry.name),
+                                "name": entry.name,
+                                "mtime": st.st_mtime,
+                            }
+                        )
+    except FileNotFoundError:
+        return []
+
+    # Newest top-level dirs first
+    top_dirs.sort(key=lambda x: x[0], reverse=True)
+    top_dirs = [p for _, p in top_dirs[:max_top_dirs]]
+
+    reservoir = []
     seen = 0
 
-    for dirpath, dirnames, filenames in os.walk(download_root):
-        for name in filenames:
-            full_path = Path(dirpath) / name
+    # First, consider root media files (if any)
+    for f in root_files:
+        seen += 1
+        if len(reservoir) < limit:
+            reservoir.append(f)
+        else:
+            j = random.randint(0, seen - 1)
+            if j < limit:
+                reservoir[j] = f
 
-            ext = full_path.suffix.lower()
-            if ext not in MEDIA_EXTS:
-                continue
+        if seen >= max_candidates:
+            logger.warning(
+                "Recent scanner: early stop after %d candidates (root files only)",
+                seen,
+            )
+            return reservoir
 
-            try:
-                stat = full_path.stat()
-            except FileNotFoundError:
-                # It might be deleted between walk and stat; just skip
-                continue
+    # Then, walk selected top-level dirs, but stop after max_candidates media files
+    stop = False
+    for base_dir in top_dirs:
+        if stop:
+            break
 
-            entry = {
-                "path": str(full_path),
-                "name": full_path.name,
-                "mtime": stat.st_mtime,
-            }
+        for dirpath, dirnames, filenames in os.walk(base_dir):
+            for name in filenames:
+                ext = os.path.splitext(name)[1].lower()
+                if ext not in MEDIA_EXTS:
+                    continue
 
-            seen += 1
-            if len(reservoir) < limit:
-                reservoir.append(entry)
-            else:
-                # Reservoir sampling: replace existing entry with decreasing probability
-                j = random.randint(0, seen - 1)
-                if j < limit:
-                    reservoir[j] = entry
+                full_path = Path(dirpath) / name
+                try:
+                    st = full_path.stat()
+                except OSError:
+                    continue
 
+                entry = {
+                    "path": str(full_path),
+                    "name": full_path.name,
+                    "mtime": st.st_mtime,
+                }
+
+                seen += 1
+                if len(reservoir) < limit:
+                    reservoir.append(entry)
+                else:
+                    j = random.randint(0, seen - 1)
+                    if j < limit:
+                        reservoir[j] = entry
+
+                if seen >= max_candidates:
+                    logger.warning(
+                        "Recent scanner: early stop after %d candidate media files",
+                        seen,
+                    )
+                    stop = True
+                    break
+
+            if stop:
+                break
+
+    logger.warning(
+        "Recent scanner: sampled %d media files from %d candidates",
+        len(reservoir),
+        seen,
+    )
     return reservoir
 
 
 def sync_temp_folder(recent_files, temp_root: str):
     """
-    Mirror `recent_files` into temp_root as **copies** (no symlinks).
+    Mirror `recent_files` into temp_root as **copies**.
     - Deletes files from temp_root that are no longer in recent_files.
     """
-    temp_root = Path(temp_root)
-    temp_root.mkdir(parents=True, exist_ok=True)
+    temp_root_path = Path(temp_root)
+    temp_root_path.mkdir(parents=True, exist_ok=True)
 
     # Target names: just use the basename, but de-duplicate if necessary
     desired_map = {}  # final_name -> source_path
-
     name_counts = {}
+
     for f in recent_files:
         base = f["name"]
         if base not in name_counts:
@@ -90,92 +174,107 @@ def sync_temp_folder(recent_files, temp_root: str):
     desired_names = set(desired_map.keys())
 
     # Remove obsolete files from temp_root
-    for existing in temp_root.iterdir():
+    for existing in temp_root_path.iterdir():
         if existing.is_file() and existing.name not in desired_names:
             try:
                 existing.unlink()
             except Exception:
-                # Ignore failures for now
                 pass
 
-    # Ensure all desired files exist / updated
+    # Ensure all desired files exist
     for final_name, src_path in desired_map.items():
-        dst_path = temp_root / final_name
+        dst_path = temp_root_path / final_name
 
         if dst_path.exists():
-            # For now, assume it's fine; we could compare mtimes if we want.
             continue
 
         try:
             shutil.copy2(src_path, dst_path)
         except FileNotFoundError:
-            # Source disappeared, skip
             continue
         except Exception:
-            # Ignore other failures; this is best-effort eye candy
             continue
 
 
-def recent_scanner_loop(app, interval_seconds: int = 3600, limit: int = 100):
+def recent_scanner_loop(download_root: str, temp_root: str, interval_seconds: int = 3600, limit: int = 100):
     """
-    Background loop that runs forever:
-    - walks the download dir
-    - selects `limit` random media files
-    - mirrors them into the media wall folder
+    Standalone loop: runs in a separate process.
     """
-    with app.app_context():
-        while True:
-            try:
-                download_root = current_app.config["DOWNLOAD_DIR"]
-                temp_root = current_app.config["RECENT_TEMP_DIR"]
+    logger.warning(
+        "Recent scanner: loop started (root=%s, temp=%s, interval=%ds, limit=%d)",
+        download_root,
+        temp_root,
+        interval_seconds,
+        limit,
+    )
 
-                current_app.logger.warning(
-                    "Recent scanner: starting scan (root=%s, temp=%s)",
-                    download_root,
-                    temp_root,
-                )
-                recent_files = get_recent_files(download_root, limit=limit)
-
-                current_app.logger.warning(
-                    "Recent scanner: sampled %d random media files",
-                    len(recent_files),
-                )
-
-                sync_temp_folder(recent_files, temp_root)
-
-                # Update cache (optional)
-                recent_cache["last_run"] = datetime.utcnow().timestamp()
-                recent_cache["files"] = recent_files
-
-                current_app.logger.warning(
-                    "Recent scanner: cycle complete for root %s", download_root
-                )
-            except Exception as e:
-                current_app.logger.exception("Recent scanner failed: %s", e)
-
-            current_app.logger.warning(
-                "Recent scanner: sleeping for %d seconds.", interval_seconds
+    while True:
+        try:
+            recent_files = get_random_media_files(
+                download_root,
+                limit=limit,
+                max_candidates=5000,
+                max_top_dirs=50,
             )
-            time.sleep(interval_seconds)
+
+            sync_temp_folder(recent_files, temp_root)
+
+            logger.warning(
+                "Recent scanner: cycle complete, %d files in temp folder",
+                len(recent_files),
+            )
+        except Exception as exc:
+            logger.exception("Recent scanner: cycle failed: %s", exc)
+
+        logger.warning(
+            "Recent scanner: sleeping for %d seconds",
+            interval_seconds,
+        )
+        time.sleep(interval_seconds)
 
 
 def start_recent_scanner(app):
     """
-    Start the background thread once.
-    """
-    import threading
+    Start the background scanner in a **separate process** so it can't block
+    the Flask/Gunicorn worker, even on huge download trees.
 
-    if getattr(app, "_recent_scanner_started", False):
-        # Avoid starting multiple scanner threads per process
+    We also use a simple lockfile in /tmp to avoid starting multiple scanners
+    if there are several worker processes.
+    """
+    download_root = app.config.get("DOWNLOAD_DIR", "/downloads")
+    temp_root = app.config.get("RECENT_TEMP_DIR")
+
+    if not temp_root:
+        # Fallback, should already be configured in app.py
+        config_root = os.environ.get("CONFIG_DIR", "/config")
+        temp_root = os.path.join(config_root, "media_wall")
+
+    lock_path = os.environ.get("RECENT_SCANNER_LOCK", "/tmp/recent_scanner.lock")
+
+    # Simple "only start once per container" lock
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
+        have_lock = True
+    except FileExistsError:
+        have_lock = False
+
+    if not have_lock:
+        logger.warning("Recent scanner: lock file %s exists, not starting another scanner", lock_path)
         return
 
-    app._recent_scanner_started = True
-
-    app.logger.warning("Recent scanner: starting background thread")
-
-    t = threading.Thread(
-        target=recent_scanner_loop,
-        args=(app,),
-        daemon=True,
-    )
-    t.start()
+    try:
+        proc = Process(
+            target=recent_scanner_loop,
+            args=(download_root, temp_root),
+            daemon=True,
+        )
+        proc.start()
+        logger.warning(
+            "Recent scanner: started subprocess pid=%s (root=%s, temp=%s)",
+            proc.pid,
+            download_root,
+            temp_root,
+        )
+    except Exception as exc:
+        logger.exception("Recent scanner: failed to start subprocess: %s", exc)
