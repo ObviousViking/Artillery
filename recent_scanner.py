@@ -154,9 +154,9 @@ def _entries_to_results(file_entries, limit):
     return result
 
 
-def sync_temp_folder(recent_files, temp_root: str, use_symlinks: bool = True):
+def sync_temp_folder(recent_files, temp_root: str, use_symlinks: bool = False):
     """
-    Mirror `recent_files` into temp_root as copies or symlinks.
+    Mirror `recent_files` into temp_root as plain copies.
     - Deletes files from temp_root that are no longer in recent_files.
     """
     temp_root = Path(temp_root)
@@ -193,32 +193,18 @@ def sync_temp_folder(recent_files, temp_root: str, use_symlinks: bool = True):
             except Exception:
                 pass
 
-    # Ensure all desired files exist / updated
+    # Ensure all desired files exist / updated (as copies)
     for final_name, src_path in desired_map.items():
         dst_path = temp_root / final_name
 
         if dst_path.exists():
-            # You could compare mtimes here if you want, but we skip for now
+            # Could compare mtimes here if needed, but skip for now
             continue
 
         try:
-            if use_symlinks:
-                try:
-                    if dst_path.exists() or dst_path.is_symlink():
-                        dst_path.unlink()
-                    os.symlink(src_path, dst_path)
-                except OSError as e:
-                    msg = (
-                        f"Recent scanner: symlink failed for {src_path} -> {dst_path}: {e}; "
-                        f"falling back to copy"
-                    )
-                    print(msg, flush=True)
-                    current_app.logger.warning(msg)
-                    shutil.copy2(src_path, dst_path)
-            else:
-                shutil.copy2(src_path, dst_path)
+            shutil.copy2(src_path, dst_path)
         except Exception as e:
-            msg = f"Recent scanner: failed to mirror {src_path} -> {dst_path}: {e}"
+            msg = f"Recent scanner: failed to copy {src_path} -> {dst_path}: {e}"
             print(msg, flush=True)
             current_app.logger.warning(msg)
             continue
