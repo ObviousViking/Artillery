@@ -55,13 +55,13 @@
                             {% for item in row %}
                             <div class="media-item">
                                 {% if item.is_image %}
-                                <a href="{{ url_for('media_file', subpath=item.rel_path) }}" target="_blank"
+                                <a href="{{ url_for('recent_media_file', filename=item.filename) }}" target="_blank"
                                     class="d-block">
-                                    <img src="{{ url_for('media_file', subpath=item.rel_path) }}"
+                                    <img src="{{ url_for('recent_media_file', filename=item.filename) }}"
                                         alt="{{ item.filename }}" class="media-img" />
                                 </a>
                                 {% else %}
-                                <a href="{{ url_for('media_file', subpath=item.rel_path) }}" target="_blank"
+                                <a href="{{ url_for('recent_media_file', filename=item.filename) }}" target="_blank"
                                     class="d-block text-decoration-none">
                                     <div class="media-video-placeholder">
                                         <span class="small text-muted">Video</span>
@@ -78,7 +78,7 @@
                 </div>
                 {% else %}
                 <p class="text-muted mb-0">
-                    No downloads found in <code>/downloads</code> yet.
+                    No recent downloads found yet.
                 </p>
                 {% endif %}
             </div>

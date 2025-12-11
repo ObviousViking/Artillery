@@ -28,7 +28,7 @@ CONFIG_ROOT = os.environ.get("CONFIG_DIR") or "/config"   # global gallery-dl co
 DOWNLOADS_ROOT = os.environ.get("DOWNLOADS_DIR") or "/downloads"
 
 # Temp folder for recent media, kept inside /downloads by default
-RECENT_TEMP_ROOT = os.environ.get("RECENT_TEMP_DIR") or os.path.join(DOWNLOADS_ROOT, "_recent")
+RECENT_TEMP_ROOT = os.environ.get("RECENT_TEMP_DIR") or os.path.join(CONFIG_ROOT, "_recent")
 
 CONFIG_FILE = os.path.join(CONFIG_ROOT, "gallery-dl.conf")
 
@@ -583,6 +583,12 @@ def task_action(slug):
 def media_file(subpath):
     """Serve files from the /downloads volume."""
     return send_from_directory(DOWNLOADS_ROOT, subpath)
+
+@app.route("/recent-media/<path:filename>")
+def recent_media_file(filename):
+    """Serve files from the recent-temp folder in the config volume."""
+    return send_from_directory(RECENT_TEMP_ROOT, filename)
+
 
 
 # Start the background recent-download scanner after everything is configured
