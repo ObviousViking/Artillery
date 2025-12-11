@@ -313,3 +313,4 @@ def start_recent_scanner(app):
         daemon=True,
     )
     t.start()
+

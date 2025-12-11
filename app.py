@@ -484,6 +484,7 @@ def task_action(slug):
     return redirect(url_for("tasks"))
 
 
+
 @app.route("/media/<path:subpath>")
 def media_file(subpath):
     """Serve files from the /downloads volume."""
