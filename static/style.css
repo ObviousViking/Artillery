@@ -111,83 +111,93 @@ code {
 }
 
 
-/* Media wall */
-
+/* Outer wall */
 .media-wall {
-    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
 }
 
+/* One horizontal strip */
 .media-wall-row {
-    position: relative;
     overflow: hidden;
-    height: 120px;
-    margin-bottom: 0.75rem;
 }
 
+/* The scrolling strip of items */
 .media-strip {
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    gap: 4px;
-    white-space: nowrap;
+    gap: 0.5rem;
+    animation: media-scroll-left 60s linear infinite;
+    will-change: transform;
 }
 
-/* Each media item is fixed width so the scroll is smooth */
+/* Reverse direction for the middle row */
+.media-strip-right {
+    animation-name: media-scroll-right;
+}
+
+/* Individual item boxes */
 .media-item {
     flex: 0 0 auto;
     width: 180px;
-}
-
-/* Images */
-.media-img {
-    width: 100%;
-    height: 110px;
-    object-fit: cover;
-    border-radius: 0.35rem;
-    opacity: 0;
-    animation: media-fade-in 0.8s ease-out forwards;
-}
-
-/* Placeholder for videos */
-.media-video-placeholder {
-    width: 100%;
-    height: 110px;
-    border-radius: 0.35rem;
-    border: 1px solid #374151;
+    /* tweak as you like */
+    height: 120px;
+    /* tweak as you like */
+    border-radius: 0.5rem;
+    overflow: hidden;
+    background: #111;
     display: flex;
     align-items: center;
     justify-content: center;
-    background-color: #020617;
+
+    /* smooth fade-in */
     opacity: 0;
-    animation: media-fade-in 0.8s ease-out forwards;
+    transform: translateY(4px);
+    animation: media-fade-in 0.5s ease-out forwards;
+}
+
+/* Image: scale to fit without cropping */
+.media-img {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    /* show whole image */
+    display: block;
+}
+
+/* Video placeholder keeps same size as image boxes */
+.media-video-placeholder {
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    border: 1px dashed rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 /* Scrolling animations */
-@keyframes scroll-left {
-    from {
+@keyframes media-scroll-left {
+    0% {
         transform: translateX(0);
     }
 
-    to {
+    100% {
         transform: translateX(-50%);
     }
 }
 
-@keyframes scroll-right {
-    from {
+@keyframes media-scroll-right {
+    0% {
         transform: translateX(-50%);
     }
 
-    to {
+    100% {
         transform: translateX(0);
     }
-}
-
-.media-strip-left {
-    animation: scroll-left 120s linear infinite;
-}
-
-.media-strip-right {
-    animation: scroll-right 120s linear infinite;
 }
 
 /* Fade-in for items */
