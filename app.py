@@ -19,15 +19,12 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
 
 # Base data directories
-# DATA_DIR is kept for backwards-compatibility but not used to create /data
-DATA_DIR = os.environ.get("DATA_DIR", "/data")
+
 
 # Allow overriding with TASKS_DIR / CONFIG_DIR envs (for Unraid-style mappings)
-TASKS_ROOT = os.environ.get("TASKS_DIR") or os.path.join(DATA_DIR, "tasks")
-CONFIG_ROOT = os.environ.get("CONFIG_DIR") or os.path.join(DATA_DIR, "config")  # global gallery-dl config
-
-# Downloads root (separate volume)
-DOWNLOADS_ROOT = os.environ.get("DOWNLOADS_DIR", "/downloads")
+TASKS_ROOT = os.environ.get("TASKS_DIR") or "/tasks"
+CONFIG_ROOT = os.environ.get("CONFIG_DIR") or "/config"   # global gallery-dl config
+DOWNLOADS_ROOT = os.environ.get("DOWNLOADS_DIR") or "/downloads"
 
 CONFIG_FILE = os.path.join(CONFIG_ROOT, "gallery-dl.conf")
 
