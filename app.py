@@ -24,7 +24,7 @@ TASKS_ROOT = os.environ.get("TASKS_DIR") or "/tasks"
 CONFIG_ROOT = os.environ.get("CONFIG_DIR") or "/config"   # global gallery-dl config
 DOWNLOADS_ROOT = os.environ.get("DOWNLOADS_DIR") or "/downloads"
 
-# Temp folder for recent media, now kept inside CONFIG_ROOT by default
+# Temp folder for recent media, kept inside CONFIG_ROOT
 RECENT_TEMP_ROOT = os.environ.get("RECENT_TEMP_DIR") or os.path.join(CONFIG_ROOT, "_recent")
 
 CONFIG_FILE = os.path.join(CONFIG_ROOT, "gallery-dl.conf")
@@ -492,10 +492,12 @@ def media_file(subpath):
 
 @app.route("/recent-media/<path:filename>")
 def recent_media_file(filename):
-    """Serve files from the recent-temp folder in the config volume."""
+    """Serve files from the recent-temp folder in the config volume (/config/_recent)."""
     return send_from_directory(RECENT_TEMP_ROOT, filename)
 
 
+# Make sure base dirs (including /config/_recent) exist before starting scanner
+ensure_data_dirs()
 # Start the background recent-download scanner after everything is configured
 start_recent_scanner(app)
 
