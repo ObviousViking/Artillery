@@ -15,6 +15,8 @@ from flask import (
     redirect, url_for, flash, send_from_directory
 )
 
+from recent_scanner import start_recent_scanner  # NEW: background recent scanner
+
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
 
@@ -24,6 +26,9 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
 TASKS_ROOT = os.environ.get("TASKS_DIR") or "/tasks"
 CONFIG_ROOT = os.environ.get("CONFIG_DIR") or "/config"   # global gallery-dl config
 DOWNLOADS_ROOT = os.environ.get("DOWNLOADS_DIR") or "/downloads"
+
+# NEW: temp folder for recent media, kept inside /downloads by default
+RECENT_TEMP_ROOT = os.environ.get("RECENT_TEMP_DIR") or os.path.join(DOWNLOADS_ROOT, "_recent")
 
 CONFIG_FILE = os.path.join(CONFIG_ROOT, "gallery-dl.conf")
 
@@ -38,6 +43,11 @@ VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
 
+# Expose paths to recent_scanner via app.config
+app.config["DOWNLOAD_DIR"] = DOWNLOADS_ROOT
+app.config["RECENT_TEMP_DIR"] = RECENT_TEMP_ROOT
+
+
 def slugify(name: str) -> str:
     """Very simple slug: lowercase, spaces -> -, remove non-alphanum/-."""
     name = name.strip().lower()
@@ -48,10 +58,11 @@ def slugify(name: str) -> str:
 
 def ensure_data_dirs():
     """Ensure base directories exist."""
-    # Do NOT try to create /data when running as non-root inside the container.
     os.makedirs(TASKS_ROOT, exist_ok=True)
     os.makedirs(CONFIG_ROOT, exist_ok=True)
     os.makedirs(DOWNLOADS_ROOT, exist_ok=True)
+    # NEW: ensure recent-temp folder exists
+    os.makedirs(RECENT_TEMP_ROOT, exist_ok=True)
 
 
 def read_text(path: str):
@@ -118,6 +129,8 @@ def load_tasks():
 
 def get_recent_media(limit: int = 200, max_top_dirs: int = 30, max_age_days: int = 30):
     """
+    OLD SCANNER (kept for reference / potential future use).
+
     Scan DOWNLOADS_ROOT for recent media files and return the newest ones.
 
     To avoid crawling millions of files on every page load:
@@ -201,10 +214,65 @@ def get_recent_media(limit: int = 200, max_top_dirs: int = 30, max_age_days: int
     return items
 
 
+def get_recent_media_from_temp(limit: int = 90):
+    """
+    NEW SCANNER: Read recent media files from the small temp folder under /downloads/_recent.
+    This is fast even when the main downloads tree is huge, because the background
+    scanner keeps this directory small.
+    """
+    items = []
+
+    if not os.path.isdir(RECENT_TEMP_ROOT):
+        return items
+
+    try:
+        entries = list(os.scandir(RECENT_TEMP_ROOT))
+    except FileNotFoundError:
+        return items
+
+    # Sort newest first by mtime
+    entries.sort(key=lambda e: e.stat().st_mtime, reverse=True)
+
+    for entry in entries:
+        if not entry.is_file():
+            continue
+
+        ext = os.path.splitext(entry.name)[1].lower()
+        if ext not in MEDIA_EXTS:
+            continue
+
+        try:
+            mtime = entry.stat().st_mtime
+        except OSError:
+            continue
+
+        full_path = entry.path
+        # rel_path should be relative to DOWNLOADS_ROOT so /media works,
+        # e.g. "_recent/foo.jpg"
+        rel_path = os.path.relpath(full_path, DOWNLOADS_ROOT).replace("\\", "/")
+
+        items.append({
+            "rel_path": rel_path,
+            "filename": entry.name,
+            "mtime": mtime,
+            "is_image": ext in IMAGE_EXTS,
+            "mtime_readable": dt.datetime.fromtimestamp(mtime).isoformat(
+                sep=" ", timespec="seconds"
+            ),
+        })
+
+        if len(items) >= limit:
+            break
+
+    return items
+
+
 @app.route("/")
 def home():
     tasks = load_tasks()
-    recent_media = get_recent_media(limit=90)
+    # Use the small temp folder populated by the background scanner
+    recent_media = get_recent_media_from_temp(limit=90)
+
     # Distribute items across 3 rows: 0,3,6... / 1,4,7... / 2,5,8...
     recent_rows = [
         recent_media[0::3],
@@ -312,7 +380,7 @@ def config_page():
     ensure_data_dirs()
     config_text = read_text(CONFIG_FILE) or ""
 
-    if request.method == "POST":
+    if request.method == "POST__":
         action = request.form.get("action")
         if action == "save":
             config_text = request.form.get("config_text", "")
@@ -465,6 +533,10 @@ def task_action(slug):
 def media_file(subpath):
     """Serve files from the /downloads volume."""
     return send_from_directory(DOWNLOADS_ROOT, subpath)
+
+
+# Start the background recent-download scanner after everything is configured
+start_recent_scanner(app)
 
 
 if __name__ == "__main__":
