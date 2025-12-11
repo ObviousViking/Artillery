@@ -5,6 +5,11 @@ from pathlib import Path
 
 from flask import current_app
 
+# Must match app.py’s sets
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
+MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
+
 
 def get_recent_files(
     download_root: str,
@@ -18,6 +23,7 @@ def get_recent_files(
     - Only looks at the most recently modified top-level dirs under download_root
       (up to max_top_dirs).
     - Within those, prunes subdirs older than max_age_days.
+    - Only considers files with media extensions (jpg/png/gif/webp/mp4/webm/mkv).
     - Stops walking once we've collected `limit` files.
     """
     download_root = Path(download_root)
@@ -51,8 +57,10 @@ def get_recent_files(
             if entry.is_dir(follow_symlinks=False):
                 top_dirs.append((st.st_mtime, entry.path))
             else:
-                # Also consider files directly under /downloads
-                file_entries.append((st.st_mtime, Path(entry.path)))
+                # Files directly under /downloads – filter by media ext
+                ext = os.path.splitext(entry.name)[1].lower()
+                if ext in MEDIA_EXTS:
+                    file_entries.append((st.st_mtime, Path(entry.path)))
     except FileNotFoundError:
         msg = f"Recent scanner: download root {download_root} not found"
         print(msg, flush=True)
@@ -65,7 +73,7 @@ def get_recent_files(
 
     msg = (
         f"Recent scanner: {len(top_dirs)} top-level dirs selected, "
-        f"{len(file_entries)} root files already"
+        f"{len(file_entries)} root media files already"
     )
     print(msg, flush=True)
     current_app.logger.warning(msg)
@@ -97,8 +105,12 @@ def get_recent_files(
                 if d in dirs:
                     dirs.remove(d)
 
-            # Collect files
+            # Collect files – **media only**
             for fname in files:
+                ext = os.path.splitext(fname)[1].lower()
+                if ext not in MEDIA_EXTS:
+                    continue
+
                 full_path = os.path.join(root, fname)
                 try:
                     mtime = os.path.getmtime(full_path)
@@ -117,7 +129,7 @@ def get_recent_files(
         if len(file_entries) >= limit:
             break
 
-    msg = f"Recent scanner: collected {len(file_entries)} candidate files"
+    msg = f"Recent scanner: collected {len(file_entries)} candidate media files"
     print(msg, flush=True)
     current_app.logger.warning(msg)
 
@@ -195,12 +207,20 @@ def sync_temp_folder(recent_files, temp_root: str, use_symlinks: bool = True):
                     if dst_path.exists() or dst_path.is_symlink():
                         dst_path.unlink()
                     os.symlink(src_path, dst_path)
-                except OSError:
+                except OSError as e:
+                    msg = (
+                        f"Recent scanner: symlink failed for {src_path} -> {dst_path}: {e}; "
+                        f"falling back to copy"
+                    )
+                    print(msg, flush=True)
+                    current_app.logger.warning(msg)
                     shutil.copy2(src_path, dst_path)
             else:
                 shutil.copy2(src_path, dst_path)
-        except FileNotFoundError:
-            # Source disappeared, skip
+        except Exception as e:
+            msg = f"Recent scanner: failed to mirror {src_path} -> {dst_path}: {e}"
+            print(msg, flush=True)
+            current_app.logger.warning(msg)
             continue
 
 
@@ -236,7 +256,7 @@ def recent_scanner_loop(app, limit: int = 100):
     """
     Background loop that:
       - scans DOWNLOAD_DIR (but only recent top-level dirs)
-      - mirrors up to `limit` most recent files into RECENT_TEMP_DIR
+      - mirrors up to `limit` most recent media files into RECENT_TEMP_DIR
       - sleeps based on SCAN_INTERVAL_FILE
     """
     with app.app_context():
@@ -261,7 +281,7 @@ def recent_scanner_loop(app, limit: int = 100):
                 if recent_files:
                     sync_temp_folder(recent_files, temp_root)
                 else:
-                    msg = "Recent scanner: no files found to sync."
+                    msg = "Recent scanner: no media files found to sync."
                     print(msg, flush=True)
                     current_app.logger.warning(msg)
 
