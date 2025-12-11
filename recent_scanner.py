@@ -1,32 +1,93 @@
-# recent_scanner.py
 import os
 import time
 import shutil
 from pathlib import Path
-from datetime import datetime
 
 from flask import current_app
 
 
-def get_recent_files(download_root: str, limit: int = 100):
+def get_recent_files(
+    download_root: str,
+    limit: int = 100,
+    max_top_dirs: int = 30,
+    max_age_days: int = 30,
+):
     """
-    Walk the download_root and return the `limit` most recently modified files.
+    Faster scanner:
+
+    - Only looks at the most recently modified top-level dirs under download_root
+      (up to max_top_dirs).
+    - Within those, prunes subdirs older than max_age_days.
+    - Stops walking once we've collected `limit` files.
     """
     download_root = Path(download_root)
-
     file_entries = []
-    for dirpath, dirnames, filenames in os.walk(download_root):
-        for name in filenames:
-            full_path = Path(dirpath) / name
-            try:
-                stat = full_path.stat()
-            except FileNotFoundError:
-                # It might be deleted between walk and stat; just skip
+
+    if not download_root.is_dir():
+        return []
+
+    now = time.time()
+    max_age_seconds = max_age_days * 24 * 60 * 60
+    cutoff = now - max_age_seconds
+
+    # 1) Top-level dirs under /downloads, sorted by mtime (newest first)
+    top_dirs = []
+    try:
+        for entry in os.scandir(download_root):
+            if not entry.is_dir(follow_symlinks=False):
                 continue
+            try:
+                mtime = entry.stat().st_mtime
+            except OSError:
+                continue
+            top_dirs.append((mtime, entry.path))
+    except FileNotFoundError:
+        return []
 
-            file_entries.append((stat.st_mtime, full_path))
+    top_dirs.sort(key=lambda x: x[0], reverse=True)
+    top_dirs = [p for _, p in top_dirs[:max_top_dirs]]
 
-    # Sort newest first and slice
+    # 2) Walk only those recent top-level directories
+    for base_dir in top_dirs:
+        for root, dirs, files in os.walk(base_dir):
+            # Prune subdirectories that haven't been touched in a while
+            pruned_dirs = []
+            for d in list(dirs):
+                d_path = os.path.join(root, d)
+                try:
+                    d_mtime = os.path.getmtime(d_path)
+                except OSError:
+                    pruned_dirs.append(d)
+                    continue
+                if d_mtime < cutoff:
+                    pruned_dirs.append(d)
+
+            # Remove pruned dirs from traversal
+            for d in pruned_dirs:
+                if d in dirs:
+                    dirs.remove(d)
+
+            # Collect files
+            for fname in files:
+                full_path = os.path.join(root, fname)
+                try:
+                    mtime = os.path.getmtime(full_path)
+                except OSError:
+                    continue
+
+                file_entries.append((mtime, Path(full_path)))
+
+                # If we already have limit files, no need to keep going
+                if len(file_entries) >= limit:
+                    break
+
+            if len(file_entries) >= limit:
+                break
+
+        if len(file_entries) >= limit:
+            break
+
+    # Sort newest first and trim to limit
     file_entries.sort(key=lambda x: x[0], reverse=True)
     file_entries = file_entries[:limit]
 
@@ -83,7 +144,7 @@ def sync_temp_folder(recent_files, temp_root: str, use_symlinks: bool = True):
         dst_path = temp_root / final_name
 
         if dst_path.exists():
-            # You *could* compare mtimes here if you want, but for now skip
+            # You could compare mtimes here if you want, but we skip for now
             continue
 
         try:
@@ -109,7 +170,6 @@ def _get_interval_seconds() -> int:
     cfg_path = current_app.config.get("SCAN_INTERVAL_FILE")
     default_minutes = current_app.config.get("DEFAULT_SCAN_INTERVAL_MINUTES", 60)
 
-    # default
     minutes = default_minutes
 
     if cfg_path and os.path.exists(cfg_path):
@@ -127,7 +187,7 @@ def _get_interval_seconds() -> int:
 def recent_scanner_loop(app, limit: int = 100):
     """
     Background loop that:
-      - scans DOWNLOAD_DIR
+      - scans DOWNLOAD_DIR (but only recent top-level dirs)
       - mirrors up to `limit` most recent files into RECENT_TEMP_DIR
       - sleeps based on SCAN_INTERVAL_FILE
     """
@@ -146,7 +206,6 @@ def recent_scanner_loop(app, limit: int = 100):
             except Exception as e:
                 current_app.logger.exception("Recent scanner failed: %s", e)
 
-            # Sleep based on current config file contents
             interval_seconds = _get_interval_seconds()
             current_app.logger.info(
                 "Recent scanner: sleeping for %d seconds.", interval_seconds
