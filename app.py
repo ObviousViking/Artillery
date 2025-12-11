@@ -18,7 +18,8 @@ from flask import (
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
 
-# Base data directories (mount these as volumes in Docker)
+# Base data directories
+# DATA_DIR is kept for backwards-compatibility but not used to create /data
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 
 # Allow overriding with TASKS_DIR / CONFIG_DIR envs (for Unraid-style mappings)
@@ -51,7 +52,7 @@ def slugify(name: str) -> str:
 
 def ensure_data_dirs():
     """Ensure base directories exist."""
-    os.makedirs(DATA_DIR, exist_ok=True)
+    # Do NOT try to create /data when running as non-root inside the container.
     os.makedirs(TASKS_ROOT, exist_ok=True)
     os.makedirs(CONFIG_ROOT, exist_ok=True)
     os.makedirs(DOWNLOADS_ROOT, exist_ok=True)
