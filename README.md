@@ -106,7 +106,6 @@ The app listens on **port 80** inside the container.
 | `DOWNLOADS_DIR`  | `/downloads`| Directory where downloaded files are stored                  |
 | `PUID`           | `0`         | User ID to run as inside the container (for file ownership)  |
 | `PGID`           | `0`         | Group ID to run as inside the container                      |
-| `SECRET_KEY`     | `dev-secret-key` | Flask secret key for sessions (override in production) |
 
 On Unraid, typical values are:
 
