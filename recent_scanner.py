@@ -154,10 +154,11 @@ def _entries_to_results(file_entries, limit):
     return result
 
 
-def sync_temp_folder(recent_files, temp_root: str, use_symlinks: bool = False):
+def sync_temp_folder(recent_files, temp_root: str):
     """
     Mirror `recent_files` into temp_root as plain copies.
     - Deletes files from temp_root that are no longer in recent_files.
+    - Always overwrites existing entries (including old symlinks).
     """
     temp_root = Path(temp_root)
     temp_root.mkdir(parents=True, exist_ok=True)
@@ -168,8 +169,8 @@ def sync_temp_folder(recent_files, temp_root: str, use_symlinks: bool = False):
 
     # Target names: just use the basename, but de-duplicate if necessary
     desired_map = {}  # final_name -> source_path
-
     name_counts = {}
+
     for f in recent_files:
         base = f["name"]
         if base not in name_counts:
@@ -197,9 +198,12 @@ def sync_temp_folder(recent_files, temp_root: str, use_symlinks: bool = False):
     for final_name, src_path in desired_map.items():
         dst_path = temp_root / final_name
 
-        if dst_path.exists():
-            # Could compare mtimes here if needed, but skip for now
-            continue
+        # 🔥 Always replace whatever is there (old symlink or file)
+        if dst_path.exists() or dst_path.is_symlink():
+            try:
+                dst_path.unlink()
+            except Exception:
+                pass
 
         try:
             shutil.copy2(src_path, dst_path)
@@ -208,6 +212,7 @@ def sync_temp_folder(recent_files, temp_root: str, use_symlinks: bool = False):
             print(msg, flush=True)
             current_app.logger.warning(msg)
             continue
+
 
 
 def _get_interval_seconds() -> int:
