@@ -17,9 +17,6 @@ from flask import (
 
 from recent_scanner import start_recent_scanner  # background recent scanner
 
-app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
-
 # Base data directories
 
 # Allow overriding with TASKS_DIR / CONFIG_DIR envs (for Unraid-style mappings)
@@ -27,7 +24,7 @@ TASKS_ROOT = os.environ.get("TASKS_DIR") or "/tasks"
 CONFIG_ROOT = os.environ.get("CONFIG_DIR") or "/config"   # global gallery-dl config
 DOWNLOADS_ROOT = os.environ.get("DOWNLOADS_DIR") or "/downloads"
 
-# Temp folder for recent media, kept inside /downloads by default
+# Temp folder for recent media, now kept inside CONFIG_ROOT by default
 RECENT_TEMP_ROOT = os.environ.get("RECENT_TEMP_DIR") or os.path.join(CONFIG_ROOT, "_recent")
 
 CONFIG_FILE = os.path.join(CONFIG_ROOT, "gallery-dl.conf")
@@ -45,6 +42,9 @@ DEFAULT_CONFIG_URL = os.environ.get(
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
+
+app = Flask(__name__)
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
 
 # Expose paths/configs to recent_scanner via app.config
 app.config["DOWNLOAD_DIR"] = DOWNLOADS_ROOT
@@ -66,7 +66,6 @@ def ensure_data_dirs():
     os.makedirs(TASKS_ROOT, exist_ok=True)
     os.makedirs(CONFIG_ROOT, exist_ok=True)
     os.makedirs(DOWNLOADS_ROOT, exist_ok=True)
-    # ensure recent-temp folder exists
     os.makedirs(RECENT_TEMP_ROOT, exist_ok=True)
 
 
@@ -151,96 +150,9 @@ def load_tasks():
     return tasks
 
 
-def get_recent_media(limit: int = 200, max_top_dirs: int = 30, max_age_days: int = 30):
-    """
-    OLD SCANNER (kept for reference / potential future use).
-
-    Scan DOWNLOADS_ROOT for recent media files and return the newest ones.
-
-    To avoid crawling millions of files on every page load:
-      - We only look at the most recently modified top-level directories.
-      - Within those, we prune subdirectories older than max_age_days.
-    """
-    items = []
-
-    if not os.path.isdir(DOWNLOADS_ROOT):
-        return items
-
-    now = dt.datetime.now().timestamp()
-    max_age_seconds = max_age_days * 24 * 60 * 60
-    cutoff = now - max_age_seconds
-
-    # 1) Find top-level directories under /downloads, sorted by mtime (newest first)
-    top_dirs = []
-    try:
-        for entry in os.scandir(DOWNLOADS_ROOT):
-            if not entry.is_dir(follow_symlinks=False):
-                continue
-            try:
-                mtime = entry.stat().st_mtime
-            except OSError:
-                continue
-            top_dirs.append((mtime, entry.path))
-    except FileNotFoundError:
-        return items
-
-    top_dirs.sort(key=lambda x: x[0], reverse=True)
-    top_dirs = [p for _, p in top_dirs[:max_top_dirs]]
-
-    # 2) Walk only those recent top-level directories
-    for base_dir in top_dirs:
-        for root, dirs, files in os.walk(base_dir):
-            # Prune subdirectories that haven't been touched in a while
-            pruned_dirs = []
-            for d in list(dirs):
-                d_path = os.path.join(root, d)
-                try:
-                    d_mtime = os.path.getmtime(d_path)
-                except OSError:
-                    pruned_dirs.append(d)
-                    continue
-                if d_mtime < cutoff:
-                    pruned_dirs.append(d)
-
-            # Remove pruned dirs from the traversal
-            for d in pruned_dirs:
-                dirs.remove(d)
-
-            for fname in files:
-                ext = os.path.splitext(fname)[1].lower()
-                if ext not in MEDIA_EXTS:
-                    continue
-
-                full_path = os.path.join(root, fname)
-                try:
-                    mtime = os.path.getmtime(full_path)
-                except OSError:
-                    continue
-
-                rel_path = os.path.relpath(full_path, DOWNLOADS_ROOT).replace("\\", "/")
-                items.append({
-                    "rel_path": rel_path,
-                    "filename": fname,
-                    "mtime": mtime,
-                    "is_image": ext in IMAGE_EXTS,
-                })
-
-    # Newest first
-    items.sort(key=lambda x: x["mtime"], reverse=True)
-    items = items[:limit]
-
-    # Optional human-readable timestamp
-    for item in items:
-        item["mtime_readable"] = dt.datetime.fromtimestamp(item["mtime"]).isoformat(
-            sep=" ", timespec="seconds"
-        )
-
-    return items
-
-
 def get_recent_media_from_temp(limit: int = 90):
     """
-    NEW SCANNER: Read recent media files from the small temp folder under /downloads/_recent.
+    Read recent media files from the small temp folder under CONFIG_ROOT/_recent.
     This is fast even when the main downloads tree is huge, because the background
     scanner keeps this directory small.
     """
@@ -270,13 +182,7 @@ def get_recent_media_from_temp(limit: int = 90):
         except OSError:
             continue
 
-        full_path = entry.path
-        # rel_path should be relative to DOWNLOADS_ROOT so /media works,
-        # e.g. "_recent/foo.jpg"
-        rel_path = os.path.relpath(full_path, DOWNLOADS_ROOT).replace("\\", "/")
-
         items.append({
-            "rel_path": rel_path,
             "filename": entry.name,
             "mtime": mtime,
             "is_image": ext in IMAGE_EXTS,
@@ -448,7 +354,6 @@ def config_page():
     )
 
 
-
 def run_task_background(task_folder: str):
     """Background worker to run gallery-dl for a given task folder."""
     lock_path = os.path.join(task_folder, "lock")
@@ -584,11 +489,11 @@ def media_file(subpath):
     """Serve files from the /downloads volume."""
     return send_from_directory(DOWNLOADS_ROOT, subpath)
 
+
 @app.route("/recent-media/<path:filename>")
 def recent_media_file(filename):
     """Serve files from the recent-temp folder in the config volume."""
     return send_from_directory(RECENT_TEMP_ROOT, filename)
-
 
 
 # Start the background recent-download scanner after everything is configured
