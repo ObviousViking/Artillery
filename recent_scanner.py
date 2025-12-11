@@ -49,8 +49,10 @@ def find_newest_leaf_dir(
         f"{current} (max_depth={max_depth}, "
         f"max_dirs_per_level={max_dirs_per_level}, "
         f"max_total_dirs={max_total_dirs}, "
-        f"max_seconds={max_seconds})"
+        f"max_seconds={max_seconds})",
+        flush=True,
     )
+
 
     start_time = time.time()
     total_dirs_seen = 0
@@ -156,25 +158,60 @@ def find_newest_leaf_dir(
 # Collect media files from a single directory
 # ---------------------------------------------------------------------------
 
-def collect_media_files_from_dir(dir_path: str, limit: int = 100):
+def collect_media_files_from_dir(
+    dir_path: str,
+    limit: int = 100,
+    max_entries: int = 2000,
+    max_seconds: int = 10,
+):
     """
     Scan a single directory (non-recursive) for media files.
-    Stop as soon as `limit` files have been collected.
+
+    Limits:
+      - Only look at the first `max_entries` entries in that directory.
+      - Stop if more than `max_seconds` elapse.
+      - Stop once `limit` media files have been collected.
     """
     results = []
     dir_path = Path(dir_path)
 
     if not dir_path.is_dir():
-        print(f"Recent scanner: {dir_path} is not a directory when collecting media")
+        print(f"Recent scanner: {dir_path} is not a directory when collecting media", flush=True)
         return results
 
     print(
-        f"Recent scanner: collecting up to {limit} media files from {dir_path}"
+        f"Recent scanner: collecting up to {limit} media files from {dir_path} "
+        f"(max_entries={max_entries}, max_seconds={max_seconds})",
+        flush=True,
     )
+
+    start_time = time.time()
+    scanned = 0
 
     try:
         with os.scandir(dir_path) as it:
             for entry in it:
+                scanned += 1
+
+                # Time cap
+                elapsed = time.time() - start_time
+                if elapsed > max_seconds:
+                    print(
+                        f"Recent scanner: file-scan time cap reached in {dir_path} "
+                        f"after {elapsed:.1f}s, scanned={scanned}",
+                        flush=True,
+                    )
+                    break
+
+                # Entry-count cap
+                if scanned > max_entries:
+                    print(
+                        f"Recent scanner: file-scan entry cap reached in {dir_path} "
+                        f"(max_entries={max_entries})",
+                        flush=True,
+                    )
+                    break
+
                 try:
                     if not entry.is_file(follow_symlinks=False):
                         continue
@@ -197,20 +234,24 @@ def collect_media_files_from_dir(dir_path: str, limit: int = 100):
                         "mtime": st.st_mtime,
                     }
                 )
-                print(f"Recent scanner: MEDIA file -> {entry.path}")
+                print(f"Recent scanner: MEDIA file -> {entry.path}", flush=True)
 
                 if len(results) >= limit:
                     print(
-                        f"Recent scanner: reached limit {limit} in {dir_path}, stopping"
+                        f"Recent scanner: reached media limit {limit} in {dir_path}, stopping",
+                        flush=True,
                     )
                     break
     except (FileNotFoundError, NotADirectoryError, PermissionError, OSError):
-        print(f"Recent scanner: could not scan files in {dir_path}")
+        print(f"Recent scanner: could not scan files in {dir_path}", flush=True)
 
     print(
-        f"Recent scanner: collected {len(results)} media files from {dir_path}"
+        f"Recent scanner: collected {len(results)} media files from {dir_path} "
+        f"(scanned={scanned} entries)",
+        flush=True,
     )
     return results
+
 
 
 # ---------------------------------------------------------------------------
