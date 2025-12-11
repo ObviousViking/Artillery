@@ -15,8 +15,7 @@ from flask import (
     redirect, url_for, flash, send_from_directory
 )
 
-app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
+from recent_scanner import start_recent_scanner  # background recent scanner
 
 # Base data directories
 
@@ -25,7 +24,14 @@ TASKS_ROOT = os.environ.get("TASKS_DIR") or "/tasks"
 CONFIG_ROOT = os.environ.get("CONFIG_DIR") or "/config"   # global gallery-dl config
 DOWNLOADS_ROOT = os.environ.get("DOWNLOADS_DIR") or "/downloads"
 
+# Temp folder for recent media, kept inside CONFIG_ROOT
+RECENT_TEMP_ROOT = os.environ.get("RECENT_TEMP_DIR") or os.path.join(CONFIG_ROOT, "_recent")
+
 CONFIG_FILE = os.path.join(CONFIG_ROOT, "gallery-dl.conf")
+
+# Scan interval config (in minutes, stored as plain integer)
+SCAN_INTERVAL_FILE = os.path.join(CONFIG_ROOT, "recent_scan_interval.txt")
+DEFAULT_SCAN_INTERVAL_MINUTES = 60  # sensible default
 
 DEFAULT_CONFIG_URL = os.environ.get(
     "GALLERYDL_DEFAULT_CONFIG_URL",
@@ -36,6 +42,15 @@ DEFAULT_CONFIG_URL = os.environ.get(
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
+
+app = Flask(__name__)
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
+
+# Expose paths/configs to recent_scanner via app.config
+app.config["DOWNLOAD_DIR"] = DOWNLOADS_ROOT
+app.config["RECENT_TEMP_DIR"] = RECENT_TEMP_ROOT
+app.config["SCAN_INTERVAL_FILE"] = SCAN_INTERVAL_FILE
+app.config["DEFAULT_SCAN_INTERVAL_MINUTES"] = DEFAULT_SCAN_INTERVAL_MINUTES
 
 
 def slugify(name: str) -> str:
@@ -51,6 +66,7 @@ def ensure_data_dirs():
     os.makedirs(TASKS_ROOT, exist_ok=True)
     os.makedirs(CONFIG_ROOT, exist_ok=True)
     os.makedirs(DOWNLOADS_ROOT, exist_ok=True)
+    os.makedirs(RECENT_TEMP_ROOT, exist_ok=True)
 
 
 def read_text(path: str):
@@ -66,6 +82,25 @@ def write_text(path: str, content: str):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
+
+
+def get_scan_interval_minutes() -> int:
+    """
+    Read the recent-scan interval (in minutes) from SCAN_INTERVAL_FILE.
+    Returns a sane value (5–1440) with DEFAULT_SCAN_INTERVAL_MINUTES as fallback.
+    """
+    raw = read_text(SCAN_INTERVAL_FILE)
+    if raw is None:
+        return DEFAULT_SCAN_INTERVAL_MINUTES
+
+    try:
+        minutes = int(raw.strip())
+    except ValueError:
+        return DEFAULT_SCAN_INTERVAL_MINUTES
+
+    # Clamp between 5 minutes and 24 hours
+    minutes = max(5, min(minutes, 1440))
+    return minutes
 
 
 def load_tasks():
@@ -115,87 +150,49 @@ def load_tasks():
     return tasks
 
 
-def get_recent_media(limit: int = 90, max_top_dirs: int = 30, max_age_days: int = 30):
+def get_recent_media_from_temp(limit: int = 90):
     """
-    Scan DOWNLOADS_ROOT for recent media files and return the newest ones.
-
-    To avoid crawling millions of files on every page load:
-      - We only look at the most recently modified top-level directories.
-      - Within those, we prune subdirectories older than max_age_days.
+    Read recent media files from the small temp folder under CONFIG_ROOT/_recent.
+    This is fast even when the main downloads tree is huge, because the background
+    scanner keeps this directory small.
     """
     items = []
 
-    if not os.path.isdir(DOWNLOADS_ROOT):
+    if not os.path.isdir(RECENT_TEMP_ROOT):
         return items
 
-    now = dt.datetime.now().timestamp()
-    max_age_seconds = max_age_days * 24 * 60 * 60
-    cutoff = now - max_age_seconds
-
-    # 1) Find top-level directories under /downloads, sorted by mtime (newest first)
-    top_dirs = []
     try:
-        for entry in os.scandir(DOWNLOADS_ROOT):
-            if not entry.is_dir(follow_symlinks=False):
-                continue
-            try:
-                mtime = entry.stat().st_mtime
-            except OSError:
-                continue
-            top_dirs.append((mtime, entry.path))
+        entries = list(os.scandir(RECENT_TEMP_ROOT))
     except FileNotFoundError:
         return items
 
-    top_dirs.sort(key=lambda x: x[0], reverse=True)
-    top_dirs = [p for _, p in top_dirs[:max_top_dirs]]
+    # Sort newest first by mtime
+    entries.sort(key=lambda e: e.stat().st_mtime, reverse=True)
 
-    # 2) Walk only those recent top-level directories
-    for base_dir in top_dirs:
-        for root, dirs, files in os.walk(base_dir):
-            # Prune subdirectories that haven't been touched in a while
-            pruned_dirs = []
-            for d in list(dirs):
-                d_path = os.path.join(root, d)
-                try:
-                    d_mtime = os.path.getmtime(d_path)
-                except OSError:
-                    pruned_dirs.append(d)
-                    continue
-                if d_mtime < cutoff:
-                    pruned_dirs.append(d)
+    for entry in entries:
+        if not entry.is_file():
+            continue
 
-            # Remove pruned dirs from the traversal
-            for d in pruned_dirs:
-                dirs.remove(d)
+        ext = os.path.splitext(entry.name)[1].lower()
+        if ext not in MEDIA_EXTS:
+            continue
 
-            for fname in files:
-                ext = os.path.splitext(fname)[1].lower()
-                if ext not in MEDIA_EXTS:
-                    continue
+        try:
+            mtime = entry.stat().st_mtime
+        except OSError:
+            continue
 
-                full_path = os.path.join(root, fname)
-                try:
-                    mtime = os.path.getmtime(full_path)
-                except OSError:
-                    continue
+        items.append({
+            "filename": entry.name,
+            "mtime": mtime,
+            "is_image": ext in IMAGE_EXTS,
+            "mtime_readable": dt.datetime.fromtimestamp(mtime).isoformat(
+                sep=" ", timespec="seconds"
+            ),
+        })
 
-                rel_path = os.path.relpath(full_path, DOWNLOADS_ROOT).replace("\\", "/")
-                items.append({
-                    "rel_path": rel_path,
-                    "filename": fname,
-                    "mtime": mtime,
-                    "is_image": ext in IMAGE_EXTS,
-                })
-
-    # Newest first
-    items.sort(key=lambda x: x["mtime"], reverse=True)
-    items = items[:limit]
-
-    # Optional human-readable timestamp
-    for item in items:
-        item["mtime_readable"] = dt.datetime.fromtimestamp(item["mtime"]).isoformat(
-            sep=" ", timespec="seconds"
-        )
+        if len(items) >= limit:
+            break
 
     return items
 
@@ -203,7 +200,9 @@ def get_recent_media(limit: int = 90, max_top_dirs: int = 30, max_age_days: int 
 @app.route("/")
 def home():
     tasks = load_tasks()
-    recent_media = get_recent_media(limit=90)
+    # Use the small temp folder populated by the background scanner
+    recent_media = get_recent_media_from_temp(limit=90)
+
     # Distribute items across 3 rows: 0,3,6... / 1,4,7... / 2,5,8...
     recent_rows = [
         recent_media[0::3],
@@ -307,16 +306,36 @@ def tasks():
 
 @app.route("/config", methods=["GET", "POST"])
 def config_page():
-    """View and edit the global gallery-dl config file."""
+    """View and edit the global gallery-dl config file AND the recent-scan interval."""
     ensure_data_dirs()
     config_text = read_text(CONFIG_FILE) or ""
+    scan_interval_minutes = get_scan_interval_minutes()
 
     if request.method == "POST":
         action = request.form.get("action")
         if action == "save":
+            # Save gallery-dl config
             config_text = request.form.get("config_text", "")
             write_text(CONFIG_FILE, config_text)
-            flash("Config saved.", "success")
+
+            # Save recent-scan interval from the form
+            interval_raw = request.form.get("scan_interval_minutes", "").strip()
+            if interval_raw:
+                try:
+                    minutes = int(interval_raw)
+                    # Clamp between 5 min and 24h
+                    minutes = max(5, min(minutes, 1440))
+                    write_text(SCAN_INTERVAL_FILE, str(minutes))
+                    scan_interval_minutes = minutes
+                    flash("Config and scan interval saved.", "success")
+                except ValueError:
+                    flash(
+                        "Config saved, but scan interval must be a whole number of minutes.",
+                        "error",
+                    )
+            else:
+                flash("Config saved.", "success")
+
         elif action == "reset":
             try:
                 with urllib.request.urlopen(DEFAULT_CONFIG_URL, timeout=10) as resp:
@@ -327,7 +346,12 @@ def config_page():
             except Exception as exc:
                 flash(f"Failed to fetch default config: {exc}", "error")
 
-    return render_template("config.html", config_text=config_text, config_path=CONFIG_FILE)
+    return render_template(
+        "config.html",
+        config_text=config_text,
+        config_path=CONFIG_FILE,
+        scan_interval_minutes=scan_interval_minutes,
+    )
 
 
 def run_task_background(task_folder: str):
@@ -464,6 +488,18 @@ def task_action(slug):
 def media_file(subpath):
     """Serve files from the /downloads volume."""
     return send_from_directory(DOWNLOADS_ROOT, subpath)
+
+
+@app.route("/recent-media/<path:filename>")
+def recent_media_file(filename):
+    """Serve files from the recent-temp folder in the config volume (/config/_recent)."""
+    return send_from_directory(RECENT_TEMP_ROOT, filename)
+
+
+# Make sure base dirs (including /config/_recent) exist before starting scanner
+ensure_data_dirs()
+# Start the background recent-download scanner after everything is configured
+start_recent_scanner(app)
 
 
 if __name__ == "__main__":
