@@ -22,7 +22,7 @@ VOLUME ["/config", "/tasks", "/downloads"]
 ENV FLASK_APP=app.py \
     DATA_DIR=/data
 
-EXPOSE 5000
+EXPOSE 80
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["gunicorn", "-b", "0.0.0.0:80", "app:app"]
