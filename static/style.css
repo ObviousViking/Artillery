@@ -128,7 +128,7 @@ code {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    animation: media-scroll-left 80s linear infinite;
+    animation: media-scroll-left 60s linear infinite;
     will-change: transform;
 }
 
@@ -138,8 +138,8 @@ code {
 }
 
 /* Individual item wrapper
-   - image dictates shape, capped by max-height
-   - NO per-item animation */
+   - no fixed width/height
+   - the image itself controls the size, capped by max-height */
 .media-item {
     flex: 0 0 auto;
     border-radius: 0.5rem;
@@ -149,23 +149,26 @@ code {
     align-items: center;
     justify-content: center;
 
-    opacity: 1;
-    transform: none;
-    animation: none;
+    /* smooth fade-in */
+    opacity: 0;
+    transform: translateY(4px);
+    animation: media-fade-in 0.5s ease-out forwards;
 }
 
-/* Image: keep aspect ratio, no cropping */
+/* Image: keep aspect ratio, no cropping, size based on its own proportions.
+   - max-height keeps the row from getting huge
+   - width auto so portrait/landscape behave naturally */
 .media-item img.media-img {
     display: block;
     max-height: 140px;
-    /* controls overall size */
+    /* overall size control */
     width: auto;
     height: auto;
     object-fit: contain !important;
-    /* show whole image */
+    /* force "show whole image" */
 }
 
-/* Video placeholder similar size */
+/* Video placeholder keeps reasonable size too */
 .media-video-placeholder {
     max-height: 140px;
     padding: 0.5rem 0.75rem;
@@ -194,5 +197,18 @@ code {
 
     100% {
         transform: translateX(0);
+    }
+}
+
+/* Fade-in for items */
+@keyframes media-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
     }
 }
