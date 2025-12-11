@@ -63,8 +63,7 @@ All wrapped in a dark, minimal interface designed to live inside Docker/Unraid.
   - Recent images (and basic video placeholders) from `/downloads`
   - Smooth scrolling rows, alternating direction per row
 
-> _Screenshot suggestion:_ `screenshots/home.png`
-
+> _Screenshot: (screenshots/home.png)
 ### Tasks
 
 - Table of tasks showing:
@@ -80,7 +79,7 @@ All wrapped in a dark, minimal interface designed to live inside Docker/Unraid.
   - Command builder for common flags (input file, archive, metadata, etc.)
   - Raw command text area for advanced users
 
-> _Screenshot suggestion:_ `screenshots/tasks.png`
+> _Screenshot: (screenshots/tasks.png)
 
 ### Config
 
@@ -89,7 +88,7 @@ All wrapped in a dark, minimal interface designed to live inside Docker/Unraid.
   - **Save** – write your changes
   - **Load default from GitHub** – fetches the example config from the official gallery-dl repo
 
-> _Screenshot suggestion:_ `screenshots/config.png`
+> _Screenshot: (screenshots/config.png)
 
 ---
 
