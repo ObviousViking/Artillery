@@ -1,7 +1,6 @@
 import os
 import time
 import shutil
-import logging
 from pathlib import Path
 from multiprocessing import Process
 
@@ -10,8 +9,6 @@ from multiprocessing import Process
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
-
-logger = logging.getLogger("recent_scanner")
 
 
 def get_recent_leaf_media_files(
@@ -22,33 +19,19 @@ def get_recent_leaf_media_files(
     max_leaf_dirs: int = 80,
 ):
     """
-    Scan the downloads tree in a *very bounded* way:
-
-      1. Collect media files directly in download_root.
-      2. Collect top-level subdirs and sort by mtime (newest first).
-      3. For each top-level dir (in that order), do a leaf-first DFS:
-         - A directory with no subdirectories is treated as a "leaf".
-         - Only files in leaf dirs are considered.
-         - Stop as soon as:
-             * we have `limit` media files, or
-             * we've looked at `max_total_dirs` dirs total, or
-             * we've looked at `max_leaf_dirs` leaf dirs.
-
-    Extra logging has been added so you can see progress in the container logs.
+    Leaf-first, bounded scan with VERY verbose print logging so we can see
+    exactly what it's doing in the container logs.
     """
     root = Path(download_root)
     if not root.is_dir():
-        logger.warning("Recent scanner: download root %s is not a directory", download_root)
+        print(f"Recent scanner: download root {download_root} is not a directory")
         return []
 
-    logger.warning(
+    print(
         "Recent scanner: leaf-first scan START "
-        "(root=%s, limit=%d, max_top_dirs=%d, max_total_dirs=%d, max_leaf_dirs=%d)",
-        download_root,
-        limit,
-        max_top_dirs,
-        max_total_dirs,
-        max_leaf_dirs,
+        f"(root={download_root}, limit={limit}, "
+        f"max_top_dirs={max_top_dirs}, max_total_dirs={max_total_dirs}, "
+        f"max_leaf_dirs={max_leaf_dirs})"
     )
 
     results = []
@@ -79,24 +62,23 @@ def get_recent_leaf_media_files(
                                 "mtime": st.st_mtime,
                             }
                         )
+                        print(f"Recent scanner: ROOT media -> {entry.name}")
                         if len(results) >= limit:
-                            logger.warning(
-                                "Recent scanner: collected %d files from ROOT (root_media=%d), stopping early",
-                                len(results),
-                                root_media_count,
+                            print(
+                                "Recent scanner: collected "
+                                f"{len(results)} files from ROOT (root_media={root_media_count}), stopping early"
                             )
                             return results
                 elif entry.is_dir(follow_symlinks=False):
                     root_dir_count += 1
                     top_dirs.append((st.st_mtime, entry.path))
     except FileNotFoundError:
-        logger.warning("Recent scanner: root %s disappeared during scan", download_root)
+        print(f"Recent scanner: root {download_root} disappeared during scan")
         return results
 
-    logger.warning(
-        "Recent scanner: root scan done (root_media=%d, top_dirs_found=%d)",
-        root_media_count,
-        root_dir_count,
+    print(
+        "Recent scanner: root scan done "
+        f"(root_media={root_media_count}, top_dirs_found={root_dir_count})"
     )
 
     # 2) Sort top-level dirs by mtime (newest first), cap count
@@ -104,40 +86,37 @@ def get_recent_leaf_media_files(
     original_top_dirs = len(top_dirs)
     top_dirs = [p for _, p in top_dirs[:max_top_dirs]]
 
-    logger.warning(
-        "Recent scanner: using %d/%d top-level dirs after cap",
-        len(top_dirs),
-        original_top_dirs,
+    print(
+        "Recent scanner: using "
+        f"{len(top_dirs)}/{original_top_dirs} top-level dirs after cap"
     )
 
     # 3) For each top-level dir, do a bounded leaf-first DFS
     for idx, top_dir in enumerate(top_dirs, start=1):
         if len(results) >= limit:
-            logger.warning("Recent scanner: already reached limit=%d before top_dir #%d", limit, idx)
+            print(
+                f"Recent scanner: already reached limit={limit} "
+                f"before top_dir #{idx}"
+            )
             break
         if total_dirs >= max_total_dirs:
-            logger.warning(
-                "Recent scanner: hit max_total_dirs=%d before top_dir #%d",
-                max_total_dirs,
-                idx,
+            print(
+                f"Recent scanner: hit max_total_dirs={max_total_dirs} "
+                f"before top_dir #{idx}"
             )
             break
         if leaf_dirs_seen >= max_leaf_dirs:
-            logger.warning(
-                "Recent scanner: hit max_leaf_dirs=%d before top_dir #%d",
-                max_leaf_dirs,
-                idx,
+            print(
+                f"Recent scanner: hit max_leaf_dirs={max_leaf_dirs} "
+                f"before top_dir #{idx}"
             )
             break
 
-        logger.warning(
-            "Recent scanner: starting DFS at top dir #%d/%d: %s (current_files=%d, total_dirs=%d, leaf_dirs=%d)",
-            idx,
-            len(top_dirs),
-            top_dir,
-            len(results),
-            total_dirs,
-            leaf_dirs_seen,
+        print(
+            "Recent scanner: starting DFS at top dir "
+            f"#{idx}/{len(top_dirs)}: {top_dir} "
+            f"(current_files={len(results)}, total_dirs={total_dirs}, "
+            f"leaf_dirs={leaf_dirs_seen})"
         )
 
         stack = [top_dir]
@@ -152,17 +131,16 @@ def get_recent_leaf_media_files(
             total_dirs += 1
 
             if total_dirs % 50 == 0:
-                logger.warning(
-                    "Recent scanner: progress – inspected %d dirs so far (leaf_dirs=%d, files=%d)",
-                    total_dirs,
-                    leaf_dirs_seen,
-                    len(results),
+                print(
+                    "Recent scanner: progress – inspected "
+                    f"{total_dirs} dirs so far (leaf_dirs={leaf_dirs_seen}, "
+                    f"files={len(results)})"
                 )
 
             try:
                 entries = list(os.scandir(current_dir))
             except (FileNotFoundError, NotADirectoryError, PermissionError, OSError):
-                logger.warning("Recent scanner: skipping unreadable dir %s", current_dir)
+                print(f"Recent scanner: skipping unreadable dir {current_dir}")
                 continue
 
             subdirs = []
@@ -181,12 +159,10 @@ def get_recent_leaf_media_files(
                 # Leaf directory: only here do we look at files
                 leaf_dirs_seen += 1
 
-                logger.warning(
-                    "Recent scanner: leaf dir #%d at %s (files_here=%d, total_files=%d)",
-                    leaf_dirs_seen,
-                    current_dir,
-                    len(files),
-                    len(results),
+                print(
+                    "Recent scanner: leaf dir "
+                    f"#{leaf_dirs_seen} at {current_dir} "
+                    f"(files_here={len(files)}, total_files={len(results)})"
                 )
 
                 for f in files:
@@ -206,15 +182,13 @@ def get_recent_leaf_media_files(
                             "mtime": st.st_mtime,
                         }
                     )
+                    print(f"Recent scanner: MEDIA file -> {f.path}")
 
                     if len(results) >= limit:
-                        logger.warning(
-                            "Recent scanner: collected %d files, stopping at leaf dir %s "
-                            "(total_dirs=%d, leaf_dirs=%d)",
-                            len(results),
-                            current_dir,
-                            total_dirs,
-                            leaf_dirs_seen,
+                        print(
+                            "Recent scanner: collected "
+                            f"{len(results)} files, stopping at leaf dir {current_dir} "
+                            f"(total_dirs={total_dirs}, leaf_dirs={leaf_dirs_seen})"
                         )
                         return results
 
@@ -229,13 +203,10 @@ def get_recent_leaf_media_files(
                 for sd in subdirs:
                     stack.append(sd.path)
 
-    logger.warning(
-        "Recent scanner: finished leaf-first scan with %d files "
-        "(limit=%d, total_dirs=%d, leaf_dirs=%d)",
-        len(results),
-        limit,
-        total_dirs,
-        leaf_dirs_seen,
+    print(
+        "Recent scanner: finished leaf-first scan with "
+        f"{len(results)} files (limit={limit}, total_dirs={total_dirs}, "
+        f"leaf_dirs={leaf_dirs_seen})"
     )
     return results
 
@@ -277,10 +248,9 @@ def sync_temp_folder(recent_files, temp_root: str):
             except Exception:
                 pass
 
-    logger.warning(
-        "Recent scanner: sync_temp_folder – %d files remain, removed %d obsolete files",
-        len(desired_names),
-        removed,
+    print(
+        "Recent scanner: sync_temp_folder – "
+        f"{len(desired_names)} desired files, removed {removed} obsolete files"
     )
 
     # Ensure all desired files exist
@@ -294,15 +264,15 @@ def sync_temp_folder(recent_files, temp_root: str):
         try:
             shutil.copy2(src_path, dst_path)
             copied += 1
+            print(f"Recent scanner: copied -> {src_path} -> {dst_path}")
         except FileNotFoundError:
             continue
         except Exception:
             continue
 
-    logger.warning(
-        "Recent scanner: sync_temp_folder – copied %d new files into %s",
-        copied,
-        temp_root_path,
+    print(
+        "Recent scanner: sync_temp_folder – "
+        f"copied {copied} new files into {temp_root_path}"
     )
 
 
@@ -310,12 +280,10 @@ def recent_scanner_loop(download_root: str, temp_root: str, interval_seconds: in
     """
     Standalone loop: runs in a separate process.
     """
-    logger.warning(
-        "Recent scanner: loop started (root=%s, temp=%s, interval=%ds, limit=%d)",
-        download_root,
-        temp_root,
-        interval_seconds,
-        limit,
+    print(
+        "Recent scanner: loop started "
+        f"(root={download_root}, temp={temp_root}, "
+        f"interval={interval_seconds}s, limit={limit})"
     )
 
     while True:
@@ -330,16 +298,16 @@ def recent_scanner_loop(download_root: str, temp_root: str, interval_seconds: in
 
             sync_temp_folder(recent_files, temp_root)
 
-            logger.warning(
-                "Recent scanner: cycle COMPLETE, %d files in temp folder",
-                len(recent_files),
+            print(
+                "Recent scanner: cycle COMPLETE, "
+                f"{len(recent_files)} files in temp folder"
             )
         except Exception as exc:
-            logger.exception("Recent scanner: cycle FAILED: %s", exc)
+            print(f"Recent scanner: cycle FAILED: {exc!r}")
 
-        logger.warning(
-            "Recent scanner: sleeping for %d seconds",
-            interval_seconds,
+        print(
+            "Recent scanner: sleeping for "
+            f"{interval_seconds} seconds"
         )
         time.sleep(interval_seconds)
 
@@ -356,7 +324,6 @@ def start_recent_scanner(app):
     temp_root = app.config.get("RECENT_TEMP_DIR")
 
     if not temp_root:
-        # Fallback, should already be configured in app.py
         config_root = os.environ.get("CONFIG_DIR", "/config")
         temp_root = os.path.join(config_root, "media_wall")
 
@@ -371,7 +338,10 @@ def start_recent_scanner(app):
         have_lock = False
 
     if not have_lock:
-        logger.warning("Recent scanner: lock file %s exists, not starting another scanner", lock_path)
+        print(
+            f"Recent scanner: lock file {lock_path} exists, "
+            f"not starting another scanner"
+        )
         return
 
     try:
@@ -381,11 +351,9 @@ def start_recent_scanner(app):
             daemon=True,
         )
         proc.start()
-        logger.warning(
-            "Recent scanner: started subprocess pid=%s (root=%s, temp=%s)",
-            proc.pid,
-            download_root,
-            temp_root,
+        print(
+            "Recent scanner: started subprocess "
+            f"pid={proc.pid} (root={download_root}, temp={temp_root})"
         )
     except Exception as exc:
-        logger.exception("Recent scanner: failed to start subprocess: %s", exc)
+        print(f"Recent scanner: failed to start subprocess: {exc!r}")
