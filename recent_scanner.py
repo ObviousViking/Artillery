@@ -21,14 +21,16 @@ def get_recent_files(
     - Stops walking once we've collected `limit` files.
     """
     download_root = Path(download_root)
-    current_app.logger.info(
-        "Recent scanner: get_recent_files start (root=%s)", download_root
-    )
+
+    # VERY noisy debug
+    msg = f"Recent scanner: get_recent_files start (root={download_root})"
+    print(msg, flush=True)
+    current_app.logger.warning(msg)
 
     if not download_root.is_dir():
-        current_app.logger.warning(
-        "Recent scanner: download root %s is not a directory", download_root
-        )
+        msg = f"Recent scanner: download root {download_root} is not a directory"
+        print(msg, flush=True)
+        current_app.logger.warning(msg)
         return []
 
     now = time.time()
@@ -52,26 +54,27 @@ def get_recent_files(
                 # Also consider files directly under /downloads
                 file_entries.append((st.st_mtime, Path(entry.path)))
     except FileNotFoundError:
-        current_app.logger.warning(
-            "Recent scanner: download root %s not found", download_root
-        )
+        msg = f"Recent scanner: download root {download_root} not found"
+        print(msg, flush=True)
+        current_app.logger.warning(msg)
         return []
 
     # Sort and trim top-level dirs
     top_dirs.sort(key=lambda x: x[0], reverse=True)
     top_dirs = [p for _, p in top_dirs[:max_top_dirs]]
-    current_app.logger.info(
-        "Recent scanner: %d top-level dirs selected, %d root files already",
-        len(top_dirs),
-        len(file_entries),
+
+    msg = (
+        f"Recent scanner: {len(top_dirs)} top-level dirs selected, "
+        f"{len(file_entries)} root files already"
     )
+    print(msg, flush=True)
+    current_app.logger.warning(msg)
 
     # If we already have enough from root files, we can skip walking
     if len(file_entries) >= limit:
-        file_entries = sorted(file_entries, key=lambda x: x[0], reverse=True)[:limit]
-        current_app.logger.info(
-            "Recent scanner: enough files from root only (%d)", len(file_entries)
-        )
+        msg = f"Recent scanner: enough files from root only ({len(file_entries)})"
+        print(msg, flush=True)
+        current_app.logger.warning(msg)
         return _entries_to_results(file_entries, limit)
 
     # 2) Walk only those recent top-level directories
@@ -114,9 +117,9 @@ def get_recent_files(
         if len(file_entries) >= limit:
             break
 
-    current_app.logger.info(
-        "Recent scanner: collected %d candidate files", len(file_entries)
-    )
+    msg = f"Recent scanner: collected {len(file_entries)} candidate files"
+    print(msg, flush=True)
+    current_app.logger.warning(msg)
 
     return _entries_to_results(file_entries, limit)
 
@@ -147,11 +150,9 @@ def sync_temp_folder(recent_files, temp_root: str, use_symlinks: bool = True):
     temp_root = Path(temp_root)
     temp_root.mkdir(parents=True, exist_ok=True)
 
-    current_app.logger.info(
-        "Recent scanner: sync_temp_folder with %d files into %s",
-        len(recent_files),
-        temp_root,
-    )
+    msg = f"Recent scanner: sync_temp_folder with {len(recent_files)} files into {temp_root}"
+    print(msg, flush=True)
+    current_app.logger.warning(msg)
 
     # Target names: just use the basename, but de-duplicate if necessary
     desired_map = {}  # final_name -> source_path
@@ -222,7 +223,13 @@ def _get_interval_seconds() -> int:
             minutes = default_minutes
 
     minutes = max(5, min(minutes, 1440))
-    return minutes * 60
+    seconds = minutes * 60
+
+    msg = f"Recent scanner: interval is {minutes} minutes ({seconds} seconds)"
+    print(msg, flush=True)
+    current_app.logger.warning(msg)
+
+    return seconds
 
 
 def recent_scanner_loop(app, limit: int = 100):
@@ -233,35 +240,44 @@ def recent_scanner_loop(app, limit: int = 100):
       - sleeps based on SCAN_INTERVAL_FILE
     """
     with app.app_context():
+        msg = "Recent scanner: loop started"
+        print(msg, flush=True)
+        current_app.logger.warning(msg)
+
         while True:
             try:
                 download_root = current_app.config["DOWNLOAD_DIR"]
                 temp_root = current_app.config["RECENT_TEMP_DIR"]
 
-                current_app.logger.info("Recent scanner: starting scan.")
+                msg = f"Recent scanner: starting scan (root={download_root}, temp={temp_root})"
+                print(msg, flush=True)
+                current_app.logger.warning(msg)
+
                 recent_files = get_recent_files(download_root, limit=limit)
-                current_app.logger.info(
-                    "Recent scanner: get_recent_files returned %d files",
-                    len(recent_files),
-                )
+                msg = f"Recent scanner: get_recent_files returned {len(recent_files)} files"
+                print(msg, flush=True)
+                current_app.logger.warning(msg)
 
                 if recent_files:
                     sync_temp_folder(recent_files, temp_root)
                 else:
-                    current_app.logger.warning(
-                        "Recent scanner: no files found to sync."
-                    )
+                    msg = "Recent scanner: no files found to sync."
+                    print(msg, flush=True)
+                    current_app.logger.warning(msg)
 
-                current_app.logger.info(
-                    "Recent scanner: cycle complete for root %s.", download_root
-                )
+                msg = f"Recent scanner: cycle complete for root {download_root}"
+                print(msg, flush=True)
+                current_app.logger.warning(msg)
+
             except Exception as e:
-                current_app.logger.exception("Recent scanner failed: %s", e)
+                msg = f"Recent scanner failed: {e}"
+                print(msg, flush=True)
+                current_app.logger.exception(msg)
 
             interval_seconds = _get_interval_seconds()
-            current_app.logger.info(
-                "Recent scanner: sleeping for %d seconds.", interval_seconds
-            )
+            msg = f"Recent scanner: sleeping for {interval_seconds} seconds."
+            print(msg, flush=True)
+            current_app.logger.warning(msg)
             time.sleep(interval_seconds)
 
 
@@ -272,9 +288,17 @@ def start_recent_scanner(app):
     import threading
 
     if getattr(app, "_recent_scanner_started", False):
+        # Extra debug
+        msg = "Recent scanner: start_recent_scanner called but already started"
+        print(msg, flush=True)
+        app.logger.warning(msg)
         return
 
     app._recent_scanner_started = True
+
+    msg = "Recent scanner: starting background thread"
+    print(msg, flush=True)
+    app.logger.warning(msg)
 
     t = threading.Thread(
         target=recent_scanner_loop,
