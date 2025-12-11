@@ -4,24 +4,39 @@ import shutil
 from pathlib import Path
 from multiprocessing import Process
 
+# ---------------------------------------------------------------------------
+# Media types
+# ---------------------------------------------------------------------------
+
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
 
-def find_newest_leaf_dir(root: str, max_depth: int = 10) -> str | None:
+# ---------------------------------------------------------------------------
+# Find "newest-ish" leaf dir by following a single path
+# ---------------------------------------------------------------------------
+
+def find_newest_leaf_dir(
+    root: str,
+    max_depth: int = 32,
+    max_dirs_per_level: int = 256,
+    max_total_dirs: int = 4096,
+    max_seconds: int = 30,
+) -> str | None:
     """
     Starting from `root`, repeatedly:
-      - list direct subdirectories (no recursion),
+      - list *some* direct subdirectories (capped),
       - pick the one with the newest mtime,
       - descend into it.
 
-    Stop when:
-      - there are no subdirectories (leaf), or
-      - max_depth is reached, or
-      - something goes wrong.
+    Hard limits:
+      - max_depth: how deep we go
+      - max_dirs_per_level: how many subdirs we ever look at per level
+      - max_total_dirs: how many dirs we inspect total
+      - max_seconds: max time spent in this function
 
-    Returns the path to the chosen leaf directory, or None.
+    Returns the chosen (approximate) "newest" leaf dir, or None.
     """
     current = Path(root)
 
@@ -29,46 +44,117 @@ def find_newest_leaf_dir(root: str, max_depth: int = 10) -> str | None:
         print(f"Recent scanner: {root} is not a directory")
         return None
 
-    print(f"Recent scanner: find_newest_leaf_dir start at {current}")
+    print(
+        "Recent scanner: find_newest_leaf_dir start at "
+        f"{current} (max_depth={max_depth}, "
+        f"max_dirs_per_level={max_dirs_per_level}, "
+        f"max_total_dirs={max_total_dirs}, "
+        f"max_seconds={max_seconds})"
+    )
 
+    start_time = time.time()
+    total_dirs_seen = 0
     depth = 0
+
     while depth < max_depth:
+        # Global time / dir-count guard
+        if total_dirs_seen >= max_total_dirs:
+            print(
+                "Recent scanner: total dir cap reached "
+                f"(max_total_dirs={max_total_dirs}) at {current}"
+            )
+            return str(current)
+
+        elapsed = time.time() - start_time
+        if elapsed > max_seconds:
+            print(
+                f"Recent scanner: time cap reached "
+                f"({elapsed:.1f}s > {max_seconds}s) at {current}"
+            )
+            return str(current)
+
+        # Collect up to max_dirs_per_level subdirs at this level
+        subdirs = []
+        truncated = False
+
         try:
-            subdirs = []
             with os.scandir(current) as it:
                 for entry in it:
+                    # Check time during large dirs
+                    elapsed = time.time() - start_time
+                    if elapsed > max_seconds:
+                        print(
+                            "Recent scanner: time cap hit while "
+                            f"scanning {current} ({elapsed:.1f}s)"
+                        )
+                        return str(current)
+
                     try:
                         if entry.is_dir(follow_symlinks=False):
                             subdirs.append(entry)
+                            total_dirs_seen += 1
+
+                            if len(subdirs) >= max_dirs_per_level:
+                                truncated = True
+                                break
                     except OSError:
                         continue
         except (FileNotFoundError, NotADirectoryError, PermissionError, OSError):
             print(f"Recent scanner: cannot list {current}, stopping descent")
             break
 
+        if truncated:
+            print(
+                f"Recent scanner: level at {current} truncated to "
+                f"{max_dirs_per_level} subdirs "
+                f"(total_dirs_seen={total_dirs_seen})"
+            )
+
         if not subdirs:
-            # No more subdirectories -> we consider this a leaf
-            print(f"Recent scanner: reached leaf dir {current} at depth {depth}")
+            # No more subdirectories -> treat current as leaf
+            print(
+                "Recent scanner: reached leaf dir "
+                f"{current} at depth {depth} "
+                f"(total_dirs_seen={total_dirs_seen})"
+            )
             return str(current)
 
-        # Pick newest subdir by mtime
+        # Choose newest subdir among the (possibly truncated) set
         try:
             newest = max(subdirs, key=lambda e: e.stat().st_mtime)
         except OSError:
-            # If stat fails for some, just bail out with current as leaf
-            print(f"Recent scanner: error reading mtimes in {current}, using it as leaf")
+            # If stat fails for some reason, bail out with current as "leaf"
+            print(
+                "Recent scanner: error reading mtimes in "
+                f"{current}, using it as leaf (total_dirs_seen={total_dirs_seen})"
+            )
             return str(current)
 
         print(
-            f"Recent scanner: depth {depth} -> choosing newest subdir {newest.path}"
+            "Recent scanner: depth {d} -> choosing newest subdir {child} "
+            "(dirs_here={n}, total_dirs_seen={total})".format(
+                d=depth,
+                child=newest.path,
+                n=len(subdirs),
+                total=total_dirs_seen,
+            )
         )
 
         current = Path(newest.path)
         depth += 1
 
-    print(f"Recent scanner: max_depth reached at {current}")
+    print(
+        "Recent scanner: max_depth reached at {cur} "
+        "(depth={d}, total_dirs_seen={total})".format(
+            cur=current, d=depth, total=total_dirs_seen
+        )
+    )
     return str(current)
 
+
+# ---------------------------------------------------------------------------
+# Collect media files from a single directory
+# ---------------------------------------------------------------------------
 
 def collect_media_files_from_dir(dir_path: str, limit: int = 100):
     """
@@ -126,6 +212,10 @@ def collect_media_files_from_dir(dir_path: str, limit: int = 100):
     )
     return results
 
+
+# ---------------------------------------------------------------------------
+# Sync to temp folder (physical copies)
+# ---------------------------------------------------------------------------
 
 def sync_temp_folder(recent_files, temp_root: str):
     """
@@ -192,10 +282,14 @@ def sync_temp_folder(recent_files, temp_root: str):
     )
 
 
+# ---------------------------------------------------------------------------
+# One cycle + loop
+# ---------------------------------------------------------------------------
+
 def recent_scanner_cycle(download_root: str, temp_root: str, limit: int = 100):
     """
     One full scanner cycle:
-      - find newest leaf directory under download_root,
+      - find newest-ish leaf directory under download_root,
       - collect up to `limit` media files from *that one* directory,
       - sync them into temp_root.
     """
@@ -203,11 +297,18 @@ def recent_scanner_cycle(download_root: str, temp_root: str, limit: int = 100):
         f"Recent scanner: cycle start (root={download_root}, temp={temp_root}, limit={limit})"
     )
 
-    leaf_dir = find_newest_leaf_dir(download_root, max_depth=10)
+    leaf_dir = find_newest_leaf_dir(
+        download_root,
+        max_depth=32,
+        max_dirs_per_level=256,
+        max_total_dirs=4096,
+        max_seconds=30,
+    )
     if not leaf_dir:
         print("Recent scanner: no leaf dir found, skipping cycle")
         return
 
+    print(f"Recent scanner: using leaf dir {leaf_dir}")
     media_files = collect_media_files_from_dir(leaf_dir, limit=limit)
     sync_temp_folder(media_files, temp_root)
 
@@ -217,7 +318,12 @@ def recent_scanner_cycle(download_root: str, temp_root: str, limit: int = 100):
     )
 
 
-def recent_scanner_loop(download_root: str, temp_root: str, interval_seconds: int = 3600, limit: int = 100):
+def recent_scanner_loop(
+    download_root: str,
+    temp_root: str,
+    interval_seconds: int = 3600,
+    limit: int = 100,
+):
     """
     Standalone loop: runs in a separate process.
     """
@@ -240,12 +346,16 @@ def recent_scanner_loop(download_root: str, temp_root: str, interval_seconds: in
         time.sleep(interval_seconds)
 
 
+# ---------------------------------------------------------------------------
+# Entry point from Flask app
+# ---------------------------------------------------------------------------
+
 def start_recent_scanner(app):
     """
     Start the background scanner in a **separate process** so it can't block
     the Flask/Gunicorn worker, even on huge download trees.
 
-    We also use a simple lockfile in /tmp to avoid starting multiple scanners
+    Uses a simple lockfile in /tmp to avoid starting multiple scanners
     if there are several worker processes.
     """
     download_root = app.config.get("DOWNLOAD_DIR", "/downloads")
