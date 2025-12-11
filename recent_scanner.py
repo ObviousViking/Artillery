@@ -28,7 +28,6 @@ def get_recent_files(
     """
     download_root = Path(download_root)
 
-    # VERY noisy debug
     msg = f"Recent scanner: get_recent_files start (root={download_root})"
     print(msg, flush=True)
     current_app.logger.warning(msg)
@@ -105,7 +104,7 @@ def get_recent_files(
                 if d in dirs:
                     dirs.remove(d)
 
-            # Collect files – **media only**
+            # Collect files – media only
             for fname in files:
                 ext = os.path.splitext(fname)[1].lower()
                 if ext not in MEDIA_EXTS:
@@ -119,7 +118,6 @@ def get_recent_files(
 
                 file_entries.append((mtime, Path(full_path)))
 
-                # If we already have limit files, no need to keep going
                 if len(file_entries) >= limit:
                     break
 
@@ -198,7 +196,7 @@ def sync_temp_folder(recent_files, temp_root: str):
     for final_name, src_path in desired_map.items():
         dst_path = temp_root / final_name
 
-        # 🔥 Always replace whatever is there (old symlink or file)
+        # Always replace whatever is there (old symlink or file)
         if dst_path.exists() or dst_path.is_symlink():
             try:
                 dst_path.unlink()
@@ -212,7 +210,6 @@ def sync_temp_folder(recent_files, temp_root: str):
             print(msg, flush=True)
             current_app.logger.warning(msg)
             continue
-
 
 
 def _get_interval_seconds() -> int:
@@ -299,7 +296,6 @@ def start_recent_scanner(app):
     import threading
 
     if getattr(app, "_recent_scanner_started", False):
-        # Extra debug
         msg = "Recent scanner: start_recent_scanner called but already started"
         print(msg, flush=True)
         app.logger.warning(msg)
