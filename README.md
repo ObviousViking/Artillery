@@ -63,7 +63,7 @@ All wrapped in a dark, minimal interface designed to live inside Docker/Unraid.
   - Recent images (and basic video placeholders) from `/downloads`
   - Smooth scrolling rows, alternating direction per row
 
-> _Screenshot: (screenshots/home.png)
+![Artillery Home](screenshots/home.png)
 ### Tasks
 
 - Table of tasks showing:
