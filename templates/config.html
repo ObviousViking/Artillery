@@ -35,6 +35,21 @@
                     </div>
                 </form>
             </div>
+
+            <hr>
+
+            <label for="scan_interval_minutes">
+                Recent downloads scan interval (minutes)
+            </label>
+            <input type="number" id="scan_interval_minutes" name="scan_interval_minutes" min="5" max="1440"
+                value="{{ scan_interval_minutes }}" class="form-control">
+            <p class="text-muted">
+                Runs the background scan this often. Shorter intervals mean more disk
+                I/O and longer scans if your downloads folder is huge.
+            </p>
+
+            <button type="submit" class="btn btn-primary">Save</button>
+            </form>
         </div>
     </div>
 </div>

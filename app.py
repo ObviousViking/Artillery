@@ -15,7 +15,7 @@ from flask import (
     redirect, url_for, flash, send_from_directory
 )
 
-from recent_scanner import start_recent_scanner  # NEW: background recent scanner
+from recent_scanner import start_recent_scanner  # background recent scanner
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
@@ -27,10 +27,14 @@ TASKS_ROOT = os.environ.get("TASKS_DIR") or "/tasks"
 CONFIG_ROOT = os.environ.get("CONFIG_DIR") or "/config"   # global gallery-dl config
 DOWNLOADS_ROOT = os.environ.get("DOWNLOADS_DIR") or "/downloads"
 
-# NEW: temp folder for recent media, kept inside /downloads by default
+# Temp folder for recent media, kept inside /downloads by default
 RECENT_TEMP_ROOT = os.environ.get("RECENT_TEMP_DIR") or os.path.join(DOWNLOADS_ROOT, "_recent")
 
 CONFIG_FILE = os.path.join(CONFIG_ROOT, "gallery-dl.conf")
+
+# Scan interval config (in minutes, stored as plain integer)
+SCAN_INTERVAL_FILE = os.path.join(CONFIG_ROOT, "recent_scan_interval.txt")
+DEFAULT_SCAN_INTERVAL_MINUTES = 60  # sensible default
 
 DEFAULT_CONFIG_URL = os.environ.get(
     "GALLERYDL_DEFAULT_CONFIG_URL",
@@ -42,10 +46,11 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
-
-# Expose paths to recent_scanner via app.config
+# Expose paths/configs to recent_scanner via app.config
 app.config["DOWNLOAD_DIR"] = DOWNLOADS_ROOT
 app.config["RECENT_TEMP_DIR"] = RECENT_TEMP_ROOT
+app.config["SCAN_INTERVAL_FILE"] = SCAN_INTERVAL_FILE
+app.config["DEFAULT_SCAN_INTERVAL_MINUTES"] = DEFAULT_SCAN_INTERVAL_MINUTES
 
 
 def slugify(name: str) -> str:
@@ -61,7 +66,7 @@ def ensure_data_dirs():
     os.makedirs(TASKS_ROOT, exist_ok=True)
     os.makedirs(CONFIG_ROOT, exist_ok=True)
     os.makedirs(DOWNLOADS_ROOT, exist_ok=True)
-    # NEW: ensure recent-temp folder exists
+    # ensure recent-temp folder exists
     os.makedirs(RECENT_TEMP_ROOT, exist_ok=True)
 
 
@@ -78,6 +83,25 @@ def write_text(path: str, content: str):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
+
+
+def get_scan_interval_minutes() -> int:
+    """
+    Read the recent-scan interval (in minutes) from SCAN_INTERVAL_FILE.
+    Returns a sane value (5–1440) with DEFAULT_SCAN_INTERVAL_MINUTES as fallback.
+    """
+    raw = read_text(SCAN_INTERVAL_FILE)
+    if raw is None:
+        return DEFAULT_SCAN_INTERVAL_MINUTES
+
+    try:
+        minutes = int(raw.strip())
+    except ValueError:
+        return DEFAULT_SCAN_INTERVAL_MINUTES
+
+    # Clamp between 5 minutes and 24 hours
+    minutes = max(5, min(minutes, 1440))
+    return minutes
 
 
 def load_tasks():
@@ -376,16 +400,35 @@ def tasks():
 
 @app.route("/config", methods=["GET", "POST"])
 def config_page():
-    """View and edit the global gallery-dl config file."""
+    """View and edit the global gallery-dl config file AND the recent-scan interval."""
     ensure_data_dirs()
     config_text = read_text(CONFIG_FILE) or ""
+    scan_interval_minutes = get_scan_interval_minutes()
 
-    if request.method == "POST__":
+    if request.method == "POST":
         action = request.form.get("action")
         if action == "save":
+            # Save gallery-dl config
             config_text = request.form.get("config_text", "")
             write_text(CONFIG_FILE, config_text)
-            flash("Config saved.", "success")
+
+            # Save recent-scan interval from the form
+            interval_raw = request.form.get("scan_interval_minutes", "").strip()
+            if interval_raw:
+                try:
+                    minutes = int(interval_raw)
+                    minutes = max(5, min(minutes, 1440))
+                    write_text(SCAN_INTERVAL_FILE, str(minutes))
+                    scan_interval_minutes = minutes
+                    flash("Config and scan interval saved.", "success")
+                except ValueError:
+                    flash(
+                        "Config saved, but scan interval must be a whole number of minutes.",
+                        "error",
+                    )
+            else:
+                flash("Config saved.", "success")
+
         elif action == "reset":
             try:
                 with urllib.request.urlopen(DEFAULT_CONFIG_URL, timeout=10) as resp:
@@ -396,7 +439,12 @@ def config_page():
             except Exception as exc:
                 flash(f"Failed to fetch default config: {exc}", "error")
 
-    return render_template("config.html", config_text=config_text, config_path=CONFIG_FILE)
+    return render_template(
+        "config.html",
+        config_text=config_text,
+        config_path=CONFIG_FILE,
+        scan_interval_minutes=scan_interval_minutes,
+    )
 
 
 def run_task_background(task_folder: str):
