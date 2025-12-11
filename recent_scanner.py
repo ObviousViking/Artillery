@@ -4,180 +4,125 @@ import shutil
 from pathlib import Path
 from multiprocessing import Process
 
-# --- media types -------------------------------------------------------------
-
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
 
-def get_recent_media_files_streaming(
-    download_root: str,
-    limit: int = 100,
-    max_top_dirs: int = 50,
-    max_total_dirs: int = 200,
-):
+def find_newest_leaf_dir(root: str, max_depth: int = 10) -> str | None:
     """
-    Streaming, bounded scan:
+    Starting from `root`, repeatedly:
+      - list direct subdirectories (no recursion),
+      - pick the one with the newest mtime,
+      - descend into it.
 
-      1. Scan media files directly in download_root.
-      2. Collect top-level subdirs and sort by mtime (newest first).
-      3. For each top-level dir (in that order), do a DFS:
-         - Use os.scandir() as an iterator (NO list()).
-         - As we see files, we add media files immediately.
-         - As soon as we hit `limit` total media files, we STOP and return.
-         - We also cap total dirs visited at `max_total_dirs`.
+    Stop when:
+      - there are no subdirectories (leaf), or
+      - max_depth is reached, or
+      - something goes wrong.
 
-    This avoids fully listing giant leaf directories just to grab 100 files.
+    Returns the path to the chosen leaf directory, or None.
     """
-    root = Path(download_root)
-    if not root.is_dir():
-        print(f"Recent scanner: download root {download_root} is not a directory")
-        return []
+    current = Path(root)
+
+    if not current.is_dir():
+        print(f"Recent scanner: {root} is not a directory")
+        return None
+
+    print(f"Recent scanner: find_newest_leaf_dir start at {current}")
+
+    depth = 0
+    while depth < max_depth:
+        try:
+            subdirs = []
+            with os.scandir(current) as it:
+                for entry in it:
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            subdirs.append(entry)
+                    except OSError:
+                        continue
+        except (FileNotFoundError, NotADirectoryError, PermissionError, OSError):
+            print(f"Recent scanner: cannot list {current}, stopping descent")
+            break
+
+        if not subdirs:
+            # No more subdirectories -> we consider this a leaf
+            print(f"Recent scanner: reached leaf dir {current} at depth {depth}")
+            return str(current)
+
+        # Pick newest subdir by mtime
+        try:
+            newest = max(subdirs, key=lambda e: e.stat().st_mtime)
+        except OSError:
+            # If stat fails for some, just bail out with current as leaf
+            print(f"Recent scanner: error reading mtimes in {current}, using it as leaf")
+            return str(current)
+
+        print(
+            f"Recent scanner: depth {depth} -> choosing newest subdir {newest.path}"
+        )
+
+        current = Path(newest.path)
+        depth += 1
+
+    print(f"Recent scanner: max_depth reached at {current}")
+    return str(current)
+
+
+def collect_media_files_from_dir(dir_path: str, limit: int = 100):
+    """
+    Scan a single directory (non-recursive) for media files.
+    Stop as soon as `limit` files have been collected.
+    """
+    results = []
+    dir_path = Path(dir_path)
+
+    if not dir_path.is_dir():
+        print(f"Recent scanner: {dir_path} is not a directory when collecting media")
+        return results
 
     print(
-        "Recent scanner: streaming scan START "
-        f"(root={download_root}, limit={limit}, "
-        f"max_top_dirs={max_top_dirs}, max_total_dirs={max_total_dirs})"
+        f"Recent scanner: collecting up to {limit} media files from {dir_path}"
     )
 
-    results = []
-    total_dirs = 0
-
-    # 1) Media files directly in /downloads root
-    top_dirs = []
-    root_media_count = 0
-    root_dir_count = 0
-
     try:
-        with os.scandir(download_root) as it:
+        with os.scandir(dir_path) as it:
             for entry in it:
+                try:
+                    if not entry.is_file(follow_symlinks=False):
+                        continue
+                except OSError:
+                    continue
+
+                ext = os.path.splitext(entry.name)[1].lower()
+                if ext not in MEDIA_EXTS:
+                    continue
+
                 try:
                     st = entry.stat()
                 except OSError:
                     continue
 
-                if entry.is_file(follow_symlinks=False):
-                    ext = os.path.splitext(entry.name)[1].lower()
-                    if ext in MEDIA_EXTS:
-                        root_media_count += 1
-                        results.append(
-                            {
-                                "path": os.path.join(download_root, entry.name),
-                                "name": entry.name,
-                                "mtime": st.st_mtime,
-                            }
-                        )
-                        print(f"Recent scanner: ROOT media -> {entry.name}")
-                        if len(results) >= limit:
-                            print(
-                                "Recent scanner: collected "
-                                f"{len(results)} files from ROOT (root_media={root_media_count}), stopping early"
-                            )
-                            return results
-                elif entry.is_dir(follow_symlinks=False):
-                    root_dir_count += 1
-                    top_dirs.append((st.st_mtime, entry.path))
-    except FileNotFoundError:
-        print(f"Recent scanner: root {download_root} disappeared during scan")
-        return results
-
-    print(
-        "Recent scanner: root scan done "
-        f"(root_media={root_media_count}, top_dirs_found={root_dir_count})"
-    )
-
-    # 2) Sort top-level dirs by mtime (newest first), cap count
-    top_dirs.sort(key=lambda x: x[0], reverse=True)
-    original_top_dirs = len(top_dirs)
-    top_dirs = [p for _, p in top_dirs[:max_top_dirs]]
-
-    print(
-        "Recent scanner: using "
-        f"{len(top_dirs)}/{original_top_dirs} top-level dirs after cap"
-    )
-
-    # 3) For each top-level dir, do a bounded streaming DFS
-    for idx, top_dir in enumerate(top_dirs, start=1):
-        if len(results) >= limit:
-            print(
-                f"Recent scanner: already reached limit={limit} "
-                f"before top_dir #{idx}"
-            )
-            break
-        if total_dirs >= max_total_dirs:
-            print(
-                f"Recent scanner: hit max_total_dirs={max_total_dirs} "
-                f"before top_dir #{idx}"
-            )
-            break
-
-        print(
-            "Recent scanner: starting DFS at top dir "
-            f"#{idx}/{len(top_dirs)}: {top_dir} "
-            f"(current_files={len(results)}, total_dirs={total_dirs})"
-        )
-
-        stack = [top_dir]
-
-        while stack and len(results) < limit and total_dirs < max_total_dirs:
-            current_dir = stack.pop()
-            total_dirs += 1
-
-            if total_dirs % 50 == 0:
-                print(
-                    "Recent scanner: progress – inspected "
-                    f"{total_dirs} dirs so far (files={len(results)})"
+                results.append(
+                    {
+                        "path": entry.path,
+                        "name": entry.name,
+                        "mtime": st.st_mtime,
+                    }
                 )
+                print(f"Recent scanner: MEDIA file -> {entry.path}")
 
-            try:
-                it = os.scandir(current_dir)
-            except (FileNotFoundError, NotADirectoryError, PermissionError, OSError):
-                print(f"Recent scanner: skipping unreadable dir {current_dir}")
-                continue
-
-            # STREAM entries: do NOT wrap in list()
-            for entry in it:
-                try:
-                    is_dir = entry.is_dir(follow_symlinks=False)
-                    is_file = entry.is_file(follow_symlinks=False)
-                except OSError:
-                    continue
-
-                if is_file:
-                    ext = os.path.splitext(entry.name)[1].lower()
-                    if ext not in MEDIA_EXTS:
-                        continue
-
-                    try:
-                        st = entry.stat()
-                    except OSError:
-                        continue
-
-                    results.append(
-                        {
-                            "path": entry.path,
-                            "name": entry.name,
-                            "mtime": st.st_mtime,
-                        }
+                if len(results) >= limit:
+                    print(
+                        f"Recent scanner: reached limit {limit} in {dir_path}, stopping"
                     )
-                    print(f"Recent scanner: MEDIA file -> {entry.path}")
-
-                    if len(results) >= limit:
-                        print(
-                            "Recent scanner: collected "
-                            f"{len(results)} files, stopping in dir {current_dir} "
-                            f"(total_dirs={total_dirs})"
-                        )
-                        return results
-
-                elif is_dir:
-                    # Defer deeper scanning; we don't sort by mtime here
-                    stack.append(entry.path)
+                    break
+    except (FileNotFoundError, NotADirectoryError, PermissionError, OSError):
+        print(f"Recent scanner: could not scan files in {dir_path}")
 
     print(
-        "Recent scanner: finished streaming scan with "
-        f"{len(results)} files (limit={limit}, total_dirs={total_dirs})"
+        f"Recent scanner: collected {len(results)} media files from {dir_path}"
     )
     return results
 
@@ -190,7 +135,7 @@ def sync_temp_folder(recent_files, temp_root: str):
     temp_root_path = Path(temp_root)
     temp_root_path.mkdir(parents=True, exist_ok=True)
 
-    # Target names: just use the basename, but de-duplicate if necessary
+    # Target names: use basename, de-duplicate if clashes
     desired_map = {}  # final_name -> source_path
     name_counts = {}
 
@@ -247,6 +192,31 @@ def sync_temp_folder(recent_files, temp_root: str):
     )
 
 
+def recent_scanner_cycle(download_root: str, temp_root: str, limit: int = 100):
+    """
+    One full scanner cycle:
+      - find newest leaf directory under download_root,
+      - collect up to `limit` media files from *that one* directory,
+      - sync them into temp_root.
+    """
+    print(
+        f"Recent scanner: cycle start (root={download_root}, temp={temp_root}, limit={limit})"
+    )
+
+    leaf_dir = find_newest_leaf_dir(download_root, max_depth=10)
+    if not leaf_dir:
+        print("Recent scanner: no leaf dir found, skipping cycle")
+        return
+
+    media_files = collect_media_files_from_dir(leaf_dir, limit=limit)
+    sync_temp_folder(media_files, temp_root)
+
+    print(
+        f"Recent scanner: cycle COMPLETE, {len(media_files)} files mirrored "
+        f"from {leaf_dir} to {temp_root}"
+    )
+
+
 def recent_scanner_loop(download_root: str, temp_root: str, interval_seconds: int = 3600, limit: int = 100):
     """
     Standalone loop: runs in a separate process.
@@ -259,19 +229,7 @@ def recent_scanner_loop(download_root: str, temp_root: str, interval_seconds: in
 
     while True:
         try:
-            recent_files = get_recent_media_files_streaming(
-                download_root,
-                limit=limit,
-                max_top_dirs=50,
-                max_total_dirs=200,
-            )
-
-            sync_temp_folder(recent_files, temp_root)
-
-            print(
-                "Recent scanner: cycle COMPLETE, "
-                f"{len(recent_files)} files in temp folder"
-            )
+            recent_scanner_cycle(download_root, temp_root, limit=limit)
         except Exception as exc:
             print(f"Recent scanner: cycle FAILED: {exc!r}")
 
