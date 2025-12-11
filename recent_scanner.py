@@ -21,7 +21,7 @@ def find_newest_leaf_dir(
     root: str,
     max_depth: int = 32,
     max_dirs_per_level: int = 256,
-    max_total_dirs: int = 4096,
+    max_total_dirs: int = 256,
     max_seconds: int = 30,
 ) -> str | None:
     """
