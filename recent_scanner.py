@@ -20,8 +20,8 @@ MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 def find_newest_leaf_dir(
     root: str,
     max_depth: int = 32,
-    max_dirs_per_level: int = 256,
-    max_total_dirs: int = 256,
+    max_dirs_per_level: int = 128,
+    max_total_dirs: int = 128,
     max_seconds: int = 30,
 ) -> str | None:
     """
