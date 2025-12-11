@@ -21,31 +21,58 @@ def get_recent_files(
     - Stops walking once we've collected `limit` files.
     """
     download_root = Path(download_root)
-    file_entries = []
+    current_app.logger.info(
+        "Recent scanner: get_recent_files start (root=%s)", download_root
+    )
 
     if not download_root.is_dir():
+        current_app.logger.warning(
+        "Recent scanner: download root %s is not a directory", download_root
+        )
         return []
 
     now = time.time()
     max_age_seconds = max_age_days * 24 * 60 * 60
     cutoff = now - max_age_seconds
 
+    file_entries = []
+
     # 1) Top-level dirs under /downloads, sorted by mtime (newest first)
     top_dirs = []
     try:
         for entry in os.scandir(download_root):
-            if not entry.is_dir(follow_symlinks=False):
-                continue
             try:
-                mtime = entry.stat().st_mtime
+                st = entry.stat()
             except OSError:
                 continue
-            top_dirs.append((mtime, entry.path))
+
+            if entry.is_dir(follow_symlinks=False):
+                top_dirs.append((st.st_mtime, entry.path))
+            else:
+                # Also consider files directly under /downloads
+                file_entries.append((st.st_mtime, Path(entry.path)))
     except FileNotFoundError:
+        current_app.logger.warning(
+            "Recent scanner: download root %s not found", download_root
+        )
         return []
 
+    # Sort and trim top-level dirs
     top_dirs.sort(key=lambda x: x[0], reverse=True)
     top_dirs = [p for _, p in top_dirs[:max_top_dirs]]
+    current_app.logger.info(
+        "Recent scanner: %d top-level dirs selected, %d root files already",
+        len(top_dirs),
+        len(file_entries),
+    )
+
+    # If we already have enough from root files, we can skip walking
+    if len(file_entries) >= limit:
+        file_entries = sorted(file_entries, key=lambda x: x[0], reverse=True)[:limit]
+        current_app.logger.info(
+            "Recent scanner: enough files from root only (%d)", len(file_entries)
+        )
+        return _entries_to_results(file_entries, limit)
 
     # 2) Walk only those recent top-level directories
     for base_dir in top_dirs:
@@ -87,6 +114,14 @@ def get_recent_files(
         if len(file_entries) >= limit:
             break
 
+    current_app.logger.info(
+        "Recent scanner: collected %d candidate files", len(file_entries)
+    )
+
+    return _entries_to_results(file_entries, limit)
+
+
+def _entries_to_results(file_entries, limit):
     # Sort newest first and trim to limit
     file_entries.sort(key=lambda x: x[0], reverse=True)
     file_entries = file_entries[:limit]
@@ -111,6 +146,12 @@ def sync_temp_folder(recent_files, temp_root: str, use_symlinks: bool = True):
     """
     temp_root = Path(temp_root)
     temp_root.mkdir(parents=True, exist_ok=True)
+
+    current_app.logger.info(
+        "Recent scanner: sync_temp_folder with %d files into %s",
+        len(recent_files),
+        temp_root,
+    )
 
     # Target names: just use the basename, but de-duplicate if necessary
     desired_map = {}  # final_name -> source_path
@@ -199,9 +240,20 @@ def recent_scanner_loop(app, limit: int = 100):
 
                 current_app.logger.info("Recent scanner: starting scan.")
                 recent_files = get_recent_files(download_root, limit=limit)
-                sync_temp_folder(recent_files, temp_root)
                 current_app.logger.info(
-                    "Recent scanner: completed. %d files mirrored.", len(recent_files)
+                    "Recent scanner: get_recent_files returned %d files",
+                    len(recent_files),
+                )
+
+                if recent_files:
+                    sync_temp_folder(recent_files, temp_root)
+                else:
+                    current_app.logger.warning(
+                        "Recent scanner: no files found to sync."
+                    )
+
+                current_app.logger.info(
+                    "Recent scanner: cycle complete for root %s.", download_root
                 )
             except Exception as e:
                 current_app.logger.exception("Recent scanner failed: %s", e)
