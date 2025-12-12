@@ -1,5 +1,5 @@
 import os
-import json  # unused for now, handy later
+import json
 import uuid  # unused for now
 import datetime as dt
 import re
@@ -13,6 +13,8 @@ import time
 import logging
 import signal
 import faulthandler
+import sqlite3
+from typing import Optional, List, Tuple
 
 from flask import (
     Flask, render_template, request,
@@ -33,25 +35,17 @@ app.logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
 DEBUG_REQUEST_TIMING = os.environ.get("ARTILLERY_DEBUG_REQUESTS", "0") == "1"
 DEBUG_FS_TIMING = os.environ.get("ARTILLERY_DEBUG_FS", "0") == "1"
 
-# If set, dump stack traces periodically (helps catch startup hangs)
+# If set, dump stack traces periodically (helps catch hangs)
 HANG_DUMP_SECONDS = int(os.environ.get("ARTILLERY_HANG_DUMP_SECONDS", "0") or "0")
-# If set, probe /downloads with a cheap stat() in the background
-PROBE_DOWNLOADS = os.environ.get("ARTILLERY_PROBE_DOWNLOADS", "1") == "1"
-PROBE_TIMEOUT_SECONDS = float(os.environ.get("ARTILLERY_PROBE_TIMEOUT_SECONDS", "5"))
 
-# Enable faulthandler so tracebacks go to stderr (docker logs)
 faulthandler.enable()
-
-# Allow manual stack dump: `kill -USR1 <pid>`
 try:
     faulthandler.register(signal.SIGUSR1, all_threads=True)
 except Exception:
     pass
 
 if HANG_DUMP_SECONDS > 0:
-    # Periodic dump of all thread stacks (useful when "it just hangs")
     faulthandler.dump_traceback_later(HANG_DUMP_SECONDS, repeat=True)
-
 
 # ---------------------------------------------------------------------
 # Base data directories
@@ -72,6 +66,11 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
+# Media wall DB
+MEDIA_DB = os.path.join(CONFIG_ROOT, "mediawall.sqlite")
+MEDIA_WALL_ITEMS = int(os.environ.get("MEDIA_WALL_ITEMS", "45"))  # total thumbnails on wall
+MEDIA_WALL_ROWS = 3  # template expects 3 rows currently
+MEDIA_WALL_AUTO_INGEST_ON_TASK_END = os.environ.get("MEDIA_WALL_AUTO_INGEST_ON_TASK_END", "1") == "1"
 
 # ---------------------------------------------------------------------
 # Optional request timing
@@ -91,10 +90,13 @@ if DEBUG_REQUEST_TIMING:
                             request.method, request.path, resp.status_code, dt_ms)
         return resp
 
-
 # ---------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------
+
+def _utcnow() -> str:
+    return dt.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
 
 def slugify(name: str) -> str:
     name = name.strip().lower()
@@ -178,7 +180,202 @@ def load_tasks():
 
     return tasks
 
+# ---------------------------------------------------------------------
+# Media wall SQLite index (parses /tasks/*/logs.txt only)
+# ---------------------------------------------------------------------
 
+def _open_media_db() -> sqlite3.Connection:
+    ensure_data_dirs(ensure_downloads=False)
+    os.makedirs(os.path.dirname(MEDIA_DB), exist_ok=True)
+    conn = sqlite3.connect(MEDIA_DB, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS media (
+            path TEXT PRIMARY KEY,         -- relative to downloads root
+            ext  TEXT NOT NULL,
+            task TEXT,
+            first_seen TEXT NOT NULL,
+            last_seen  TEXT NOT NULL,
+            seen_count INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE TABLE IF NOT EXISTS task_offsets (
+            task TEXT PRIMARY KEY,         -- task slug
+            log_path TEXT NOT NULL,
+            offset INTEGER NOT NULL DEFAULT 0,
+            updated TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_media_ext ON media(ext);
+        CREATE INDEX IF NOT EXISTS idx_media_last_seen ON media(last_seen);
+    """)
+    conn.commit()
+    return conn
+
+
+def _extract_relpath_from_log_line(line: str, downloads_root: str) -> Optional[str]:
+    """
+    Accepts lines like:
+      /downloads/site/artist/file.jpg
+    Returns:
+      site/artist/file.jpg
+    """
+    s = line.strip()
+    if not s:
+        return None
+
+    s = s.replace("\\", "/")
+    dr = downloads_root.replace("\\", "/").rstrip("/")
+
+    # Must start with /downloads/... (fast + safe)
+    if not (s == dr or s.startswith(dr + "/")):
+        return None
+
+    rel = s[len(dr):].lstrip("/")
+    if not rel:
+        return None
+
+    ext = os.path.splitext(rel)[1].lower()
+    if not ext:
+        return None
+    if ext not in MEDIA_EXTS:
+        return None
+
+    return rel
+
+
+def ingest_task_log(conn: sqlite3.Connection, task_slug: str, log_path: str, *, full_rescan: bool = False) -> Tuple[int, int]:
+    """
+    Ingest one task's logs.txt.
+    Returns (matched_lines, new_unique_inserts).
+    """
+    start_offset = 0
+    if not full_rescan:
+        row = conn.execute(
+            "SELECT offset FROM task_offsets WHERE task=? AND log_path=?",
+            (task_slug, log_path),
+        ).fetchone()
+        if row:
+            start_offset = int(row[0])
+
+    try:
+        with open(log_path, "rb") as f:
+            if start_offset > 0:
+                f.seek(start_offset)
+            data = f.read()
+            end_offset = f.tell()
+    except OSError:
+        return (0, 0)
+
+    # Always update offset record
+    def _upsert_offset(offset: int):
+        conn.execute(
+            """
+            INSERT INTO task_offsets(task, log_path, offset, updated)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(task) DO UPDATE SET
+                log_path=excluded.log_path,
+                offset=excluded.offset,
+                updated=excluded.updated
+            """,
+            (task_slug, log_path, int(offset), _utcnow()),
+        )
+
+    if not data:
+        _upsert_offset(start_offset)
+        return (0, 0)
+
+    text = data.decode("utf-8", errors="ignore")
+    now = _utcnow()
+
+    matched = 0
+    inserted = 0
+
+    for line in text.splitlines():
+        rel = _extract_relpath_from_log_line(line, DOWNLOADS_ROOT)
+        if not rel:
+            continue
+
+        matched += 1
+        ext = os.path.splitext(rel)[1].lower()
+
+        # Try insert unique
+        cur = conn.execute(
+            """
+            INSERT OR IGNORE INTO media(path, ext, task, first_seen, last_seen, seen_count)
+            VALUES (?, ?, ?, ?, ?, 1)
+            """,
+            (rel, ext, task_slug, now, now),
+        )
+        if cur.rowcount == 1:
+            inserted += 1
+        else:
+            conn.execute(
+                """
+                UPDATE media
+                SET last_seen=?, task=?, ext=?, seen_count=seen_count + 1
+                WHERE path=?
+                """,
+                (now, task_slug, ext, rel),
+            )
+
+    _upsert_offset(end_offset)
+    conn.execute(
+        """
+        INSERT INTO meta(key, value)
+        VALUES ('last_ingest', ?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value
+        """,
+        (now,),
+    )
+    conn.commit()
+    return (matched, inserted)
+
+
+def ingest_all_task_logs(conn: sqlite3.Connection, *, full_rescan: bool = False) -> dict:
+    tasks_seen = 0
+    matched_total = 0
+    inserted_total = 0
+
+    if not os.path.isdir(TASKS_ROOT):
+        return {"tasks_seen": 0, "matched": 0, "inserted": 0}
+
+    for slug in sorted(os.listdir(TASKS_ROOT)):
+        task_dir = os.path.join(TASKS_ROOT, slug)
+        if not os.path.isdir(task_dir):
+            continue
+
+        log_path = os.path.join(task_dir, "logs.txt")
+        if not os.path.exists(log_path):
+            continue
+
+        tasks_seen += 1
+        matched, inserted = ingest_task_log(conn, slug, log_path, full_rescan=full_rescan)
+        matched_total += matched
+        inserted_total += inserted
+
+    return {"tasks_seen": tasks_seen, "matched": matched_total, "inserted": inserted_total}
+
+
+def get_random_media_paths(conn: sqlite3.Connection, n: int) -> List[str]:
+    rows = conn.execute(
+        "SELECT path FROM media ORDER BY RANDOM() LIMIT ?",
+        (int(n),)
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def get_mediawall_status(conn: sqlite3.Connection) -> dict:
+    count = conn.execute("SELECT COUNT(*) FROM media").fetchone()[0]
+    last_ingest = conn.execute("SELECT value FROM meta WHERE key='last_ingest'").fetchone()
+    last_ingest = last_ingest[0] if last_ingest else None
+    return {"count": int(count), "last_ingest": last_ingest}
 
 # ---------------------------------------------------------------------
 # Health check
@@ -188,23 +385,73 @@ def load_tasks():
 def healthz():
     return Response("ok\n", mimetype="text/plain")
 
+# ---------------------------------------------------------------------
+# Media wall admin endpoints
+# ---------------------------------------------------------------------
+
+@app.route("/mediawall/status")
+def mediawall_status():
+    conn = _open_media_db()
+    status = get_mediawall_status(conn)
+    conn.close()
+    return Response(json.dumps(status, indent=2) + "\n", mimetype="application/json")
+
+
+@app.route("/mediawall/rebuild", methods=["POST"])
+def mediawall_rebuild():
+    conn = _open_media_db()
+    stats = ingest_all_task_logs(conn, full_rescan=False)
+    status = get_mediawall_status(conn)
+    conn.close()
+    flash(
+        f"Media wall updated. Tasks: {stats['tasks_seen']}, matched lines: {stats['matched']}, new items: {stats['inserted']}. "
+        f"Total indexed: {status['count']}.",
+        "success"
+    )
+    return redirect(url_for("home"))
+
+
+@app.route("/mediawall/rebuild_full", methods=["POST"])
+def mediawall_rebuild_full():
+    conn = _open_media_db()
+    stats = ingest_all_task_logs(conn, full_rescan=True)
+    status = get_mediawall_status(conn)
+    conn.close()
+    flash(
+        f"Media wall FULL reparse done. Tasks: {stats['tasks_seen']}, matched lines: {stats['matched']}, new items: {stats['inserted']}. "
+        f"Total indexed: {status['count']}.",
+        "success"
+    )
+    return redirect(url_for("home"))
 
 # ---------------------------------------------------------------------
-# Home page (NO filesystem scanning)
+# Home page (NO downloads scanning; uses SQLite media index)
 # ---------------------------------------------------------------------
 
 @app.route("/")
 def home():
     tasks = load_tasks()
-    recent_rows = [[], [], []]
-    has_media = False
+
+    # Build media wall rows from SQLite (fast; no /downloads enumeration)
+    conn = _open_media_db()
+    paths = get_random_media_paths(conn, MEDIA_WALL_ITEMS)
+    conn.close()
+
+    # Convert to /media/<subpath> URLs for the template
+    urls = [url_for("media_file", subpath=p) for p in paths]
+    has_media = len(urls) > 0
+
+    # Split into 3 rows (template expects recent_rows)
+    recent_rows = [[] for _ in range(MEDIA_WALL_ROWS)]
+    for i, u in enumerate(urls):
+        recent_rows[i % MEDIA_WALL_ROWS].append(u)
+
     return render_template(
         "home.html",
         tasks_count=len(tasks),
         recent_rows=recent_rows,
         has_media=has_media,
     )
-
 
 # ---------------------------------------------------------------------
 # Tasks
@@ -213,7 +460,8 @@ def home():
 @app.route("/tasks", methods=["GET", "POST"])
 def tasks():
     if request.method == "POST":
-        ensure_data_dirs(ensure_downloads=True)
+        # IMPORTANT: do NOT touch /downloads here (slow mount might hang).
+        ensure_data_dirs(ensure_downloads=False)
 
         name = request.form.get("name", "").strip()
         urls_text = request.form.get("urls", "").strip()
@@ -282,7 +530,6 @@ def tasks():
     tasks_list = load_tasks()
     return render_template("tasks.html", tasks=tasks_list)
 
-
 # ---------------------------------------------------------------------
 # Config page
 # ---------------------------------------------------------------------
@@ -310,12 +557,12 @@ def config_page():
 
     return render_template("config.html", config_text=config_text, config_path=CONFIG_FILE)
 
-
 # ---------------------------------------------------------------------
 # Task actions
 # ---------------------------------------------------------------------
 
 def run_task_background(task_folder: str):
+    # Only touch /downloads when actually running downloads
     ensure_data_dirs(ensure_downloads=True)
 
     lock_path = os.path.join(task_folder, "lock")
@@ -382,7 +629,18 @@ def run_task_background(task_folder: str):
     except Exception as exc:
         with open(logs_path, "a", encoding="utf-8") as logf:
             logf.write(f"\nERROR while running task: {exc}\n")
+
     finally:
+        # Update wall index from this task's new log lines (does NOT touch /downloads)
+        if MEDIA_WALL_AUTO_INGEST_ON_TASK_END:
+            try:
+                slug = os.path.basename(task_folder.rstrip("/"))
+                conn = _open_media_db()
+                ingest_task_log(conn, slug, logs_path, full_rescan=False)
+                conn.close()
+            except Exception as exc:
+                app.logger.warning("Media wall ingest failed for %s: %s", task_folder, exc)
+
         if os.path.exists(lock_path):
             os.remove(lock_path)
 
@@ -416,6 +674,7 @@ def task_action(slug):
             flash("Task is already running.", "error")
             return redirect(url_for("tasks"))
 
+        # Touch /downloads only when running
         ensure_data_dirs(ensure_downloads=True)
         open(lock_path, "w").close()
 
@@ -438,16 +697,15 @@ def task_action(slug):
     flash("Unknown action.", "error")
     return redirect(url_for("tasks"))
 
-
 # ---------------------------------------------------------------------
 # Static media route
 # ---------------------------------------------------------------------
 
 @app.route("/media/<path:subpath>")
 def media_file(subpath):
+    # This will touch /downloads; only called when the browser requests a file.
     ensure_data_dirs(ensure_downloads=True)
     return send_from_directory(DOWNLOADS_ROOT, subpath)
-
 
 # ---------------------------------------------------------------------
 # Main (dev only)
