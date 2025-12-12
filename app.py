@@ -179,49 +179,7 @@ def load_tasks():
     return tasks
 
 
-# ---------------------------------------------------------------------
-# Background probe: does a cheap stat(/downloads) hang?
-# ---------------------------------------------------------------------
 
-def _probe_downloads_stat():
-    """
-    IMPORTANT: This does NOT enumerate files. It only calls os.stat on the mount point.
-    If THIS hangs, your issue is the filesystem/mount itself, not your Flask routes.
-    """
-    app.logger.info("Probe: starting os.stat(%s)", DOWNLOADS_ROOT)
-
-    result = {"done": False, "err": None, "ms": None}
-
-    def _work():
-        try:
-            t0 = time.perf_counter()
-            os.stat(DOWNLOADS_ROOT)
-            result["ms"] = (time.perf_counter() - t0) * 1000
-        except Exception as e:
-            result["err"] = repr(e)
-        finally:
-            result["done"] = True
-
-    t = threading.Thread(target=_work, daemon=True)
-    t.start()
-    t.join(PROBE_TIMEOUT_SECONDS)
-
-    if result["done"]:
-        if result["err"]:
-            app.logger.warning("Probe: os.stat(%s) error: %s", DOWNLOADS_ROOT, result["err"])
-        else:
-            app.logger.info("Probe: os.stat(%s) OK in %.1fms", DOWNLOADS_ROOT, result["ms"])
-    else:
-        app.logger.error(
-            "Probe: os.stat(%s) did NOT return within %.1fs (filesystem/mount likely blocking)",
-            DOWNLOADS_ROOT, PROBE_TIMEOUT_SECONDS
-        )
-
-
-# Run probe at import time ONLY if explicitly enabled via env var
-# Default is now OFF to avoid slowdowns on large/slow mounts
-if os.environ.get("ARTILLERY_PROBE_DOWNLOADS", "0") == "1":
-    threading.Thread(target=_probe_downloads_stat, daemon=True).start()
 # ---------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------
