@@ -9,14 +9,28 @@ import subprocess
 import shlex
 import shutil
 import threading
+import time
+import logging
 
 from flask import (
     Flask, render_template, request,
-    redirect, url_for, flash, send_from_directory
+    redirect, url_for, flash, send_from_directory, Response
 )
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
+
+# ---------------------------------------------------------------------
+# Logging / Debug toggles
+# ---------------------------------------------------------------------
+
+LOG_LEVEL = os.environ.get("ARTILLERY_LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO))
+app.logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+
+DEBUG_REQUEST_TIMING = os.environ.get("ARTILLERY_DEBUG_REQUESTS", "0") == "1"
+DEBUG_FS_TIMING = os.environ.get("ARTILLERY_DEBUG_FS", "0") == "1"
+
 
 # ---------------------------------------------------------------------
 # Base data directories
@@ -41,6 +55,25 @@ MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
 
 # ---------------------------------------------------------------------
+# Request timing (optional)
+# ---------------------------------------------------------------------
+
+if DEBUG_REQUEST_TIMING:
+    @app.before_request
+    def _t_start():
+        request._t0 = time.perf_counter()
+
+    @app.after_request
+    def _t_end(resp):
+        t0 = getattr(request, "_t0", None)
+        if t0 is not None:
+            dt_ms = (time.perf_counter() - t0) * 1000
+            app.logger.info("REQ %s %s -> %s (%.1fms)",
+                            request.method, request.path, resp.status_code, dt_ms)
+        return resp
+
+
+# ---------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------
 
@@ -52,11 +85,25 @@ def slugify(name: str) -> str:
     return name or "task"
 
 
-def ensure_data_dirs():
-    """Ensure base directories exist."""
+def ensure_data_dirs(ensure_downloads: bool = False):
+    """
+    Ensure base directories exist.
+
+    IMPORTANT:
+    - We DO NOT touch /downloads unless explicitly asked to.
+      This prevents the UI from hanging when /downloads is a huge/slow/stale mount.
+    """
+    t0 = time.perf_counter() if DEBUG_FS_TIMING else None
+
     os.makedirs(TASKS_ROOT, exist_ok=True)
     os.makedirs(CONFIG_ROOT, exist_ok=True)
-    os.makedirs(DOWNLOADS_ROOT, exist_ok=True)
+
+    if ensure_downloads:
+        os.makedirs(DOWNLOADS_ROOT, exist_ok=True)
+
+    if DEBUG_FS_TIMING and t0 is not None:
+        ms = (time.perf_counter() - t0) * 1000
+        app.logger.info("ensure_data_dirs(downloads=%s) %.1fms", ensure_downloads, ms)
 
 
 def read_text(path: str):
@@ -76,7 +123,7 @@ def write_text(path: str, content: str):
 
 def load_tasks():
     """Scan TASKS_ROOT and build a list of task dicts from per-task folders."""
-    ensure_data_dirs()
+    ensure_data_dirs(ensure_downloads=False)
 
     tasks = []
     if not os.path.isdir(TASKS_ROOT):
@@ -88,7 +135,6 @@ def load_tasks():
             continue
 
         slug = entry
-
         name = read_text(os.path.join(task_path, "name.txt")) or slug
         schedule = read_text(os.path.join(task_path, "cron.txt"))
         command = read_text(os.path.join(task_path, "command.txt")) or "gallery-dl --input-file urls.txt"
@@ -122,7 +168,16 @@ def load_tasks():
 
 
 # ---------------------------------------------------------------------
-# Home page (NO filesystem scanning for now)
+# Health check (never touches /downloads)
+# ---------------------------------------------------------------------
+
+@app.route("/healthz")
+def healthz():
+    return Response("ok\n", mimetype="text/plain")
+
+
+# ---------------------------------------------------------------------
+# Home page (NO filesystem scanning)
 # ---------------------------------------------------------------------
 
 @app.route("/")
@@ -130,9 +185,9 @@ def home():
     """
     Home page: show welcome text + task count.
 
-    The media wall is effectively disabled for now: we pass empty
-    recent_rows and has_media=False so the template shows the
-    "No recent downloads found yet." message without touching /downloads.
+    The media wall is disabled: we pass empty recent_rows and has_media=False
+    so the template shows the "No recent downloads found yet." message without
+    touching /downloads.
     """
     tasks = load_tasks()
 
@@ -153,9 +208,10 @@ def home():
 
 @app.route("/tasks", methods=["GET", "POST"])
 def tasks():
-    ensure_data_dirs()
-
     if request.method == "POST":
+        # Only touch /downloads when the user is actively creating/updating tasks
+        ensure_data_dirs(ensure_downloads=True)
+
         name = request.form.get("name", "").strip()
         urls_text = request.form.get("urls", "").strip()
         schedule = request.form.get("schedule", "").strip()  # cron
@@ -173,9 +229,6 @@ def tasks():
         slug = slugify(name)
         task_folder = os.path.join(TASKS_ROOT, slug)
         os.makedirs(task_folder, exist_ok=True)
-
-        # Ensure downloads root exists (config will handle subdirs)
-        os.makedirs(DOWNLOADS_ROOT, exist_ok=True)
 
         # Basic files
         write_text(os.path.join(task_folder, "name.txt"), name)
@@ -233,21 +286,23 @@ def tasks():
         flash("Task created (or updated).", "success")
         return redirect(url_for("tasks"))
 
+    # GET: never touch /downloads
+    ensure_data_dirs(ensure_downloads=False)
     tasks_list = load_tasks()
     return render_template("tasks.html", tasks=tasks_list)
 
 
 # ---------------------------------------------------------------------
-# Config page
+# Config page (never touches /downloads)
 # ---------------------------------------------------------------------
 
 @app.route("/config", methods=["GET", "POST"])
 def config_page():
     """View and edit the global gallery-dl config file."""
-    ensure_data_dirs()
+    ensure_data_dirs(ensure_downloads=False)
     config_text = read_text(CONFIG_FILE) or ""
 
-    if request.method == "POST":  # <-- make sure it's POST, not POST__
+    if request.method == "POST":
         action = request.form.get("action")
         if action == "save":
             config_text = request.form.get("config_text", "")
@@ -272,6 +327,10 @@ def config_page():
 
 def run_task_background(task_folder: str):
     """Background worker to run gallery-dl for a given task folder."""
+    # If /downloads is slow/hung, this will only hang the background worker,
+    # not your UI page loads.
+    ensure_data_dirs(ensure_downloads=True)
+
     lock_path = os.path.join(task_folder, "lock")
     logs_path = os.path.join(task_folder, "logs.txt")
     last_run_path = os.path.join(task_folder, "last_run.txt")
@@ -346,7 +405,7 @@ def run_task_background(task_folder: str):
 @app.route("/tasks/<slug>/action", methods=["POST"])
 def task_action(slug):
     """Handle per-task actions: run, pause/unpause, delete."""
-    ensure_data_dirs()
+    ensure_data_dirs(ensure_downloads=False)
     action = request.form.get("action")
     task_folder = os.path.join(TASKS_ROOT, slug)
 
@@ -374,6 +433,9 @@ def task_action(slug):
         if os.path.exists(lock_path):
             flash("Task is already running.", "error")
             return redirect(url_for("tasks"))
+
+        # Touch /downloads only when actually running a task
+        ensure_data_dirs(ensure_downloads=True)
 
         # Create lock file immediately
         open(lock_path, "w").close()
@@ -407,6 +469,8 @@ def task_action(slug):
 @app.route("/media/<path:subpath>")
 def media_file(subpath):
     """Serve files from the /downloads volume."""
+    # Only touch /downloads if the user is actually requesting a file from it
+    ensure_data_dirs(ensure_downloads=True)
     return send_from_directory(DOWNLOADS_ROOT, subpath)
 
 
