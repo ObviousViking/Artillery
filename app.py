@@ -4,7 +4,6 @@ import uuid  # unused for now
 import datetime as dt
 import re
 import urllib.request
-import urllib.error
 import subprocess
 import shlex
 import shutil
@@ -14,7 +13,8 @@ import logging
 import signal
 import faulthandler
 import sqlite3
-from typing import Optional, List, Tuple
+import hashlib
+from typing import Optional, List, Dict, Tuple
 
 from flask import (
     Flask, render_template, request,
@@ -35,7 +35,6 @@ app.logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
 DEBUG_REQUEST_TIMING = os.environ.get("ARTILLERY_DEBUG_REQUESTS", "0") == "1"
 DEBUG_FS_TIMING = os.environ.get("ARTILLERY_DEBUG_FS", "0") == "1"
 
-# If set, dump stack traces periodically (helps catch hangs)
 HANG_DUMP_SECONDS = int(os.environ.get("ARTILLERY_HANG_DUMP_SECONDS", "0") or "0")
 
 faulthandler.enable()
@@ -66,11 +65,14 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
-# Media wall DB
+# Media wall DB + cache dir
 MEDIA_DB = os.path.join(CONFIG_ROOT, "mediawall.sqlite")
-MEDIA_WALL_ITEMS = int(os.environ.get("MEDIA_WALL_ITEMS", "45"))  # total thumbnails on wall
-MEDIA_WALL_ROWS = 3  # template expects 3 rows currently
-MEDIA_WALL_AUTO_INGEST_ON_TASK_END = os.environ.get("MEDIA_WALL_AUTO_INGEST_ON_TASK_END", "1") == "1"
+MEDIA_WALL_DIR = os.path.join(CONFIG_ROOT, "media_wall")
+MEDIA_WALL_ITEMS = int(os.environ.get("MEDIA_WALL_ITEMS", "45"))
+MEDIA_WALL_ROWS = 3
+
+# Only cache images by default (videos can be huge)
+MEDIA_WALL_CACHE_VIDEOS = os.environ.get("MEDIA_WALL_CACHE_VIDEOS", "0") == "1"
 
 # ---------------------------------------------------------------------
 # Optional request timing
@@ -187,12 +189,14 @@ def load_tasks():
 def _open_media_db() -> sqlite3.Connection:
     ensure_data_dirs(ensure_downloads=False)
     os.makedirs(os.path.dirname(MEDIA_DB), exist_ok=True)
+
     conn = sqlite3.connect(MEDIA_DB, timeout=30)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
+
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS media (
-            path TEXT PRIMARY KEY,         -- relative to downloads root
+            path TEXT PRIMARY KEY,
             ext  TEXT NOT NULL,
             task TEXT,
             first_seen TEXT NOT NULL,
@@ -201,7 +205,7 @@ def _open_media_db() -> sqlite3.Connection:
         );
 
         CREATE TABLE IF NOT EXISTS task_offsets (
-            task TEXT PRIMARY KEY,         -- task slug
+            task TEXT PRIMARY KEY,
             log_path TEXT NOT NULL,
             offset INTEGER NOT NULL DEFAULT 0,
             updated TEXT NOT NULL
@@ -220,12 +224,6 @@ def _open_media_db() -> sqlite3.Connection:
 
 
 def _extract_relpath_from_log_line(line: str, downloads_root: str) -> Optional[str]:
-    """
-    Accepts lines like:
-      /downloads/site/artist/file.jpg
-    Returns:
-      site/artist/file.jpg
-    """
     s = line.strip()
     if not s:
         return None
@@ -233,7 +231,6 @@ def _extract_relpath_from_log_line(line: str, downloads_root: str) -> Optional[s
     s = s.replace("\\", "/")
     dr = downloads_root.replace("\\", "/").rstrip("/")
 
-    # Must start with /downloads/... (fast + safe)
     if not (s == dr or s.startswith(dr + "/")):
         return None
 
@@ -251,10 +248,6 @@ def _extract_relpath_from_log_line(line: str, downloads_root: str) -> Optional[s
 
 
 def ingest_task_log(conn: sqlite3.Connection, task_slug: str, log_path: str, *, full_rescan: bool = False) -> Tuple[int, int]:
-    """
-    Ingest one task's logs.txt.
-    Returns (matched_lines, new_unique_inserts).
-    """
     start_offset = 0
     if not full_rescan:
         row = conn.execute(
@@ -273,7 +266,6 @@ def ingest_task_log(conn: sqlite3.Connection, task_slug: str, log_path: str, *, 
     except OSError:
         return (0, 0)
 
-    # Always update offset record
     def _upsert_offset(offset: int):
         conn.execute(
             """
@@ -289,6 +281,7 @@ def ingest_task_log(conn: sqlite3.Connection, task_slug: str, log_path: str, *, 
 
     if not data:
         _upsert_offset(start_offset)
+        conn.commit()
         return (0, 0)
 
     text = data.decode("utf-8", errors="ignore")
@@ -305,7 +298,6 @@ def ingest_task_log(conn: sqlite3.Connection, task_slug: str, log_path: str, *, 
         matched += 1
         ext = os.path.splitext(rel)[1].lower()
 
-        # Try insert unique
         cur = conn.execute(
             """
             INSERT OR IGNORE INTO media(path, ext, task, first_seen, last_seen, seen_count)
@@ -363,19 +355,98 @@ def ingest_all_task_logs(conn: sqlite3.Connection, *, full_rescan: bool = False)
     return {"tasks_seen": tasks_seen, "matched": matched_total, "inserted": inserted_total}
 
 
-def get_random_media_paths(conn: sqlite3.Connection, n: int) -> List[str]:
-    rows = conn.execute(
-        "SELECT path FROM media ORDER BY RANDOM() LIMIT ?",
-        (int(n),)
-    ).fetchall()
-    return [r[0] for r in rows]
+def _cache_name_for_relpath(relpath: str) -> str:
+    ext = os.path.splitext(relpath)[1].lower()
+    h = hashlib.sha1(relpath.encode("utf-8", errors="ignore")).hexdigest()
+    return f"{h}{ext}"
+
+
+def _clean_cache_dir():
+    os.makedirs(MEDIA_WALL_DIR, exist_ok=True)
+    for fn in os.listdir(MEDIA_WALL_DIR):
+        try:
+            os.remove(os.path.join(MEDIA_WALL_DIR, fn))
+        except Exception:
+            pass
+
+
+def refresh_wall_cache(conn: sqlite3.Connection, n: int) -> dict:
+    """
+    Picks N random items from media table and copies them into /config/media_wall.
+    Cache folder becomes the single source of truth for homepage rendering.
+    """
+    ensure_data_dirs(ensure_downloads=False)
+    os.makedirs(MEDIA_WALL_DIR, exist_ok=True)
+
+    # Choose candidates (prefer images; optionally include videos)
+    if MEDIA_WALL_CACHE_VIDEOS:
+        rows = conn.execute(
+            "SELECT path, ext FROM media ORDER BY RANDOM() LIMIT ?",
+            (int(n),)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT path, ext FROM media WHERE ext IN ({}) ORDER BY RANDOM() LIMIT ?".format(
+                ",".join(["?"] * len(IMAGE_EXTS))
+            ),
+            tuple(sorted(IMAGE_EXTS)) + (int(n),)
+        ).fetchall()
+
+    picked = [(r[0], r[1]) for r in rows]
+    if not picked:
+        return {"picked": 0, "copied": 0, "failed": 0}
+
+    # Always clean cache for predictability + speed
+    _clean_cache_dir()
+
+    copied = 0
+    failed = 0
+
+    for rel, ext in picked:
+        src = os.path.join(DOWNLOADS_ROOT, rel)
+        name = _cache_name_for_relpath(rel)
+        dst = os.path.join(MEDIA_WALL_DIR, name)
+
+        try:
+            tmp = dst + ".tmp"
+            shutil.copy2(src, tmp)
+            os.replace(tmp, dst)
+            copied += 1
+        except Exception as exc:
+            failed += 1
+            app.logger.warning("media wall copy failed: %s -> %s (%s)", src, dst, exc)
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception:
+                pass
+
+    now = _utcnow()
+    conn.execute(
+        """
+        INSERT INTO meta(key, value)
+        VALUES ('last_cache_refresh', ?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value
+        """,
+        (now,),
+    )
+    conn.commit()
+
+    return {"picked": len(picked), "copied": copied, "failed": failed}
 
 
 def get_mediawall_status(conn: sqlite3.Connection) -> dict:
-    count = conn.execute("SELECT COUNT(*) FROM media").fetchone()[0]
-    last_ingest = conn.execute("SELECT value FROM meta WHERE key='last_ingest'").fetchone()
-    last_ingest = last_ingest[0] if last_ingest else None
-    return {"count": int(count), "last_ingest": last_ingest}
+    media_count = conn.execute("SELECT COUNT(*) FROM media").fetchone()[0]
+
+    def _meta(k: str) -> Optional[str]:
+        row = conn.execute("SELECT value FROM meta WHERE key=?", (k,)).fetchone()
+        return row[0] if row else None
+
+    return {
+        "media_count": int(media_count),
+        "last_ingest": _meta("last_ingest"),
+        "last_cache_refresh": _meta("last_cache_refresh"),
+    }
 
 # ---------------------------------------------------------------------
 # Health check
@@ -404,8 +475,8 @@ def mediawall_rebuild():
     status = get_mediawall_status(conn)
     conn.close()
     flash(
-        f"Media wall updated. Tasks: {stats['tasks_seen']}, matched lines: {stats['matched']}, new items: {stats['inserted']}. "
-        f"Total indexed: {status['count']}.",
+        f"Media index updated. Tasks: {stats['tasks_seen']}, matched: {stats['matched']}, new: {stats['inserted']}. "
+        f"Indexed: {status['media_count']}.",
         "success"
     )
     return redirect(url_for("home"))
@@ -418,30 +489,71 @@ def mediawall_rebuild_full():
     status = get_mediawall_status(conn)
     conn.close()
     flash(
-        f"Media wall FULL reparse done. Tasks: {stats['tasks_seen']}, matched lines: {stats['matched']}, new items: {stats['inserted']}. "
-        f"Total indexed: {status['count']}.",
+        f"Media index FULL reparse. Tasks: {stats['tasks_seen']}, matched: {stats['matched']}, new: {stats['inserted']}. "
+        f"Indexed: {status['media_count']}.",
+        "success"
+    )
+    return redirect(url_for("home"))
+
+
+@app.route("/mediawall/refresh", methods=["POST"])
+def mediawall_refresh():
+    conn = _open_media_db()
+    result = refresh_wall_cache(conn, MEDIA_WALL_ITEMS)
+    status = get_mediawall_status(conn)
+    conn.close()
+    flash(
+        f"Media wall refreshed. Picked: {result['picked']}, copied: {result['copied']}, failed: {result['failed']}.",
+        "success"
+    )
+    return redirect(url_for("home"))
+
+
+@app.route("/mediawall/seed", methods=["POST"])
+def mediawall_seed():
+    """Convenience endpoint: rebuild (incremental) then refresh cache."""
+    conn = _open_media_db()
+    stats = ingest_all_task_logs(conn, full_rescan=False)
+    result = refresh_wall_cache(conn, MEDIA_WALL_ITEMS)
+    status = get_mediawall_status(conn)
+    conn.close()
+    flash(
+        f"Seeded wall. Rebuild: tasks={stats['tasks_seen']} matched={stats['matched']} new={stats['inserted']}. "
+        f"Refresh: picked={result['picked']} copied={result['copied']} failed={result['failed']}. "
+        f"Indexed={status['media_count']}.",
         "success"
     )
     return redirect(url_for("home"))
 
 # ---------------------------------------------------------------------
-# Home page (NO downloads scanning; uses SQLite media index)
+# Cached wall file route (fast: served from /config/media_wall)
+# ---------------------------------------------------------------------
+
+@app.route("/wall/<path:filename>")
+def wall_file(filename):
+    ensure_data_dirs(ensure_downloads=False)
+    os.makedirs(MEDIA_WALL_DIR, exist_ok=True)
+    return send_from_directory(MEDIA_WALL_DIR, filename)
+
+# ---------------------------------------------------------------------
+# Home page (uses cache folder; never scans /downloads)
 # ---------------------------------------------------------------------
 
 @app.route("/")
 def home():
     tasks = load_tasks()
 
-    # Build media wall rows from SQLite (fast; no /downloads enumeration)
-    conn = _open_media_db()
-    paths = get_random_media_paths(conn, MEDIA_WALL_ITEMS)
-    conn.close()
+    os.makedirs(MEDIA_WALL_DIR, exist_ok=True)
+    cached_files = [
+        fn for fn in os.listdir(MEDIA_WALL_DIR)
+        if os.path.splitext(fn)[1].lower() in MEDIA_EXTS and not fn.endswith(".tmp")
+    ]
+    # Keep it bounded
+    cached_files = cached_files[:MEDIA_WALL_ITEMS]
 
-    # Convert to /media/<subpath> URLs for the template
-    urls = [url_for("media_file", subpath=p) for p in paths]
+    urls = [url_for("wall_file", filename=fn) for fn in cached_files]
     has_media = len(urls) > 0
 
-    # Split into 3 rows (template expects recent_rows)
     recent_rows = [[] for _ in range(MEDIA_WALL_ROWS)]
     for i, u in enumerate(urls):
         recent_rows[i % MEDIA_WALL_ROWS].append(u)
@@ -460,7 +572,7 @@ def home():
 @app.route("/tasks", methods=["GET", "POST"])
 def tasks():
     if request.method == "POST":
-        # IMPORTANT: do NOT touch /downloads here (slow mount might hang).
+        # IMPORTANT: do NOT touch /downloads here.
         ensure_data_dirs(ensure_downloads=False)
 
         name = request.form.get("name", "").strip()
@@ -562,7 +674,6 @@ def config_page():
 # ---------------------------------------------------------------------
 
 def run_task_background(task_folder: str):
-    # Only touch /downloads when actually running downloads
     ensure_data_dirs(ensure_downloads=True)
 
     lock_path = os.path.join(task_folder, "lock")
@@ -629,18 +740,7 @@ def run_task_background(task_folder: str):
     except Exception as exc:
         with open(logs_path, "a", encoding="utf-8") as logf:
             logf.write(f"\nERROR while running task: {exc}\n")
-
     finally:
-        # Update wall index from this task's new log lines (does NOT touch /downloads)
-        if MEDIA_WALL_AUTO_INGEST_ON_TASK_END:
-            try:
-                slug = os.path.basename(task_folder.rstrip("/"))
-                conn = _open_media_db()
-                ingest_task_log(conn, slug, logs_path, full_rescan=False)
-                conn.close()
-            except Exception as exc:
-                app.logger.warning("Media wall ingest failed for %s: %s", task_folder, exc)
-
         if os.path.exists(lock_path):
             os.remove(lock_path)
 
@@ -674,7 +774,6 @@ def task_action(slug):
             flash("Task is already running.", "error")
             return redirect(url_for("tasks"))
 
-        # Touch /downloads only when running
         ensure_data_dirs(ensure_downloads=True)
         open(lock_path, "w").close()
 
@@ -698,12 +797,11 @@ def task_action(slug):
     return redirect(url_for("tasks"))
 
 # ---------------------------------------------------------------------
-# Static media route
+# Original media route (serves from /downloads)
 # ---------------------------------------------------------------------
 
 @app.route("/media/<path:subpath>")
 def media_file(subpath):
-    # This will touch /downloads; only called when the browser requests a file.
     ensure_data_dirs(ensure_downloads=True)
     return send_from_directory(DOWNLOADS_ROOT, subpath)
 
