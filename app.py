@@ -11,6 +11,8 @@ import shutil
 import threading
 import time
 import logging
+import signal
+import faulthandler
 
 from flask import (
     Flask, render_template, request,
@@ -31,14 +33,32 @@ app.logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
 DEBUG_REQUEST_TIMING = os.environ.get("ARTILLERY_DEBUG_REQUESTS", "0") == "1"
 DEBUG_FS_TIMING = os.environ.get("ARTILLERY_DEBUG_FS", "0") == "1"
 
+# If set, dump stack traces periodically (helps catch startup hangs)
+HANG_DUMP_SECONDS = int(os.environ.get("ARTILLERY_HANG_DUMP_SECONDS", "0") or "0")
+# If set, probe /downloads with a cheap stat() in the background
+PROBE_DOWNLOADS = os.environ.get("ARTILLERY_PROBE_DOWNLOADS", "1") == "1"
+PROBE_TIMEOUT_SECONDS = float(os.environ.get("ARTILLERY_PROBE_TIMEOUT_SECONDS", "5"))
+
+# Enable faulthandler so tracebacks go to stderr (docker logs)
+faulthandler.enable()
+
+# Allow manual stack dump: `kill -USR1 <pid>`
+try:
+    faulthandler.register(signal.SIGUSR1, all_threads=True)
+except Exception:
+    pass
+
+if HANG_DUMP_SECONDS > 0:
+    # Periodic dump of all thread stacks (useful when "it just hangs")
+    faulthandler.dump_traceback_later(HANG_DUMP_SECONDS, repeat=True)
+
 
 # ---------------------------------------------------------------------
 # Base data directories
 # ---------------------------------------------------------------------
 
-# Allow overriding with TASKS_DIR / CONFIG_DIR envs (for Unraid-style mappings)
 TASKS_ROOT = os.environ.get("TASKS_DIR") or "/tasks"
-CONFIG_ROOT = os.environ.get("CONFIG_DIR") or "/config"   # global gallery-dl config
+CONFIG_ROOT = os.environ.get("CONFIG_DIR") or "/config"
 DOWNLOADS_ROOT = os.environ.get("DOWNLOADS_DIR") or "/downloads"
 
 CONFIG_FILE = os.path.join(CONFIG_ROOT, "gallery-dl.conf")
@@ -48,14 +68,13 @@ DEFAULT_CONFIG_URL = os.environ.get(
     "https://raw.githubusercontent.com/mikf/gallery-dl/master/docs/gallery-dl.conf",
 )
 
-# Media extensions (kept for future use, but NOT used on the home page right now)
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
 
 # ---------------------------------------------------------------------
-# Request timing (optional)
+# Optional request timing
 # ---------------------------------------------------------------------
 
 if DEBUG_REQUEST_TIMING:
@@ -78,7 +97,6 @@ if DEBUG_REQUEST_TIMING:
 # ---------------------------------------------------------------------
 
 def slugify(name: str) -> str:
-    """Very simple slug: lowercase, spaces -> -, remove non-alphanum/-."""
     name = name.strip().lower()
     name = re.sub(r"\s+", "-", name)
     name = re.sub(r"[^a-z0-9-]+", "", name)
@@ -89,15 +107,12 @@ def ensure_data_dirs(ensure_downloads: bool = False):
     """
     Ensure base directories exist.
 
-    IMPORTANT:
-    - We DO NOT touch /downloads unless explicitly asked to.
-      This prevents the UI from hanging when /downloads is a huge/slow/stale mount.
+    CRITICAL: do not touch /downloads unless explicitly requested.
     """
     t0 = time.perf_counter() if DEBUG_FS_TIMING else None
 
     os.makedirs(TASKS_ROOT, exist_ok=True)
     os.makedirs(CONFIG_ROOT, exist_ok=True)
-
     if ensure_downloads:
         os.makedirs(DOWNLOADS_ROOT, exist_ok=True)
 
@@ -107,7 +122,6 @@ def ensure_data_dirs(ensure_downloads: bool = False):
 
 
 def read_text(path: str):
-    """Read a small text file, return stripped contents or None."""
     if not os.path.exists(path):
         return None
     with open(path, "r", encoding="utf-8") as f:
@@ -115,14 +129,12 @@ def read_text(path: str):
 
 
 def write_text(path: str, content: str):
-    """Write a small text file (overwrite)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
 
 
 def load_tasks():
-    """Scan TASKS_ROOT and build a list of task dicts from per-task folders."""
     ensure_data_dirs(ensure_downloads=False)
 
     tasks = []
@@ -152,7 +164,7 @@ def load_tasks():
             status = "idle"
 
         tasks.append({
-            "id": slug,               # we use slug as id
+            "id": slug,
             "name": name,
             "slug": slug,
             "schedule": schedule,
@@ -168,7 +180,51 @@ def load_tasks():
 
 
 # ---------------------------------------------------------------------
-# Health check (never touches /downloads)
+# Background probe: does a cheap stat(/downloads) hang?
+# ---------------------------------------------------------------------
+
+def _probe_downloads_stat():
+    """
+    IMPORTANT: This does NOT enumerate files. It only calls os.stat on the mount point.
+    If THIS hangs, your issue is the filesystem/mount itself, not your Flask routes.
+    """
+    app.logger.info("Probe: starting os.stat(%s)", DOWNLOADS_ROOT)
+
+    result = {"done": False, "err": None, "ms": None}
+
+    def _work():
+        try:
+            t0 = time.perf_counter()
+            os.stat(DOWNLOADS_ROOT)
+            result["ms"] = (time.perf_counter() - t0) * 1000
+        except Exception as e:
+            result["err"] = repr(e)
+        finally:
+            result["done"] = True
+
+    t = threading.Thread(target=_work, daemon=True)
+    t.start()
+    t.join(PROBE_TIMEOUT_SECONDS)
+
+    if result["done"]:
+        if result["err"]:
+            app.logger.warning("Probe: os.stat(%s) error: %s", DOWNLOADS_ROOT, result["err"])
+        else:
+            app.logger.info("Probe: os.stat(%s) OK in %.1fms", DOWNLOADS_ROOT, result["ms"])
+    else:
+        app.logger.error(
+            "Probe: os.stat(%s) did NOT return within %.1fs (filesystem/mount likely blocking)",
+            DOWNLOADS_ROOT, PROBE_TIMEOUT_SECONDS
+        )
+
+
+# Run probe at import time (but in background so it never blocks startup)
+if PROBE_DOWNLOADS:
+    threading.Thread(target=_probe_downloads_stat, daemon=True).start()
+
+
+# ---------------------------------------------------------------------
+# Health check
 # ---------------------------------------------------------------------
 
 @app.route("/healthz")
@@ -182,18 +238,9 @@ def healthz():
 
 @app.route("/")
 def home():
-    """
-    Home page: show welcome text + task count.
-
-    The media wall is disabled: we pass empty recent_rows and has_media=False
-    so the template shows the "No recent downloads found yet." message without
-    touching /downloads.
-    """
     tasks = load_tasks()
-
     recent_rows = [[], [], []]
     has_media = False
-
     return render_template(
         "home.html",
         tasks_count=len(tasks),
@@ -209,12 +256,11 @@ def home():
 @app.route("/tasks", methods=["GET", "POST"])
 def tasks():
     if request.method == "POST":
-        # Only touch /downloads when the user is actively creating/updating tasks
         ensure_data_dirs(ensure_downloads=True)
 
         name = request.form.get("name", "").strip()
         urls_text = request.form.get("urls", "").strip()
-        schedule = request.form.get("schedule", "").strip()  # cron
+        schedule = request.form.get("schedule", "").strip()
         command = request.form.get("command", "").strip()
 
         if not name:
@@ -225,12 +271,10 @@ def tasks():
             flash("You need to provide at least one URL.", "error")
             return redirect(url_for("tasks"))
 
-        # Folder based on task name
         slug = slugify(name)
         task_folder = os.path.join(TASKS_ROOT, slug)
         os.makedirs(task_folder, exist_ok=True)
 
-        # Basic files
         write_text(os.path.join(task_folder, "name.txt"), name)
         write_text(os.path.join(task_folder, "urls.txt"), urls_text.strip() + "\n")
 
@@ -241,44 +285,35 @@ def tasks():
             if os.path.exists(cron_path):
                 os.remove(cron_path)
 
-        # Fallback command if builder didn’t fill anything
         if not command:
             command = "gallery-dl --input-file urls.txt"
 
-        # ensure the command has --config and --destination (-d) set correctly
         try:
             parts = shlex.split(command)
             if parts and parts[0] == "gallery-dl":
-                has_config_flag = False
-                has_dest_flag = False
+                has_config_flag = any(
+                    (p in ("-c", "--config") or p.startswith("--config=")) for p in parts
+                )
+                has_dest_flag = any(
+                    (p in ("-d", "--destination") or p.startswith("--destination=")) for p in parts
+                )
 
-                for p in parts:
-                    if p in ("-c", "--config") or p.startswith("--config="):
-                        has_config_flag = True
-                    if p in ("-d", "--destination") or p.startswith("--destination="):
-                        has_dest_flag = True
-
-                insert_index = 1  # directly after 'gallery-dl'
-
-                # Inject --config first (if missing)
+                insert_index = 1
                 if not has_config_flag:
                     parts.insert(insert_index, "--config")
                     parts.insert(insert_index + 1, CONFIG_FILE)
                     insert_index += 2
 
-                # Then inject -d / --destination /downloads (if missing)
                 if not has_dest_flag:
                     parts.insert(insert_index, "--destination")
                     parts.insert(insert_index + 1, DOWNLOADS_ROOT)
 
                 command = " ".join(shlex.quote(p) for p in parts)
         except ValueError:
-            # If parsing fails, just leave command as-is; user can fix it manually.
             pass
 
         write_text(os.path.join(task_folder, "command.txt"), command)
 
-        # Ensure logs.txt exists (even if empty)
         logs_path = os.path.join(task_folder, "logs.txt")
         if not os.path.exists(logs_path):
             write_text(logs_path, "")
@@ -286,19 +321,17 @@ def tasks():
         flash("Task created (or updated).", "success")
         return redirect(url_for("tasks"))
 
-    # GET: never touch /downloads
     ensure_data_dirs(ensure_downloads=False)
     tasks_list = load_tasks()
     return render_template("tasks.html", tasks=tasks_list)
 
 
 # ---------------------------------------------------------------------
-# Config page (never touches /downloads)
+# Config page
 # ---------------------------------------------------------------------
 
 @app.route("/config", methods=["GET", "POST"])
 def config_page():
-    """View and edit the global gallery-dl config file."""
     ensure_data_dirs(ensure_downloads=False)
     config_text = read_text(CONFIG_FILE) or ""
 
@@ -326,9 +359,6 @@ def config_page():
 # ---------------------------------------------------------------------
 
 def run_task_background(task_folder: str):
-    """Background worker to run gallery-dl for a given task folder."""
-    # If /downloads is slow/hung, this will only hang the background worker,
-    # not your UI page loads.
     ensure_data_dirs(ensure_downloads=True)
 
     lock_path = os.path.join(task_folder, "lock")
@@ -364,9 +394,7 @@ def run_task_background(task_folder: str):
         return
 
     env = os.environ.copy()
-    # Hard-wire config for safety
     env["GALLERY_DL_CONFIG"] = CONFIG_FILE
-    # Ensure gallery-dl is on PATH for cron-launched processes
     env["PATH"] = env.get("PATH", "") + os.pathsep + "/usr/local/bin"
 
     try:
@@ -404,7 +432,6 @@ def run_task_background(task_folder: str):
 
 @app.route("/tasks/<slug>/action", methods=["POST"])
 def task_action(slug):
-    """Handle per-task actions: run, pause/unpause, delete."""
     ensure_data_dirs(ensure_downloads=False)
     action = request.form.get("action")
     task_folder = os.path.join(TASKS_ROOT, slug)
@@ -413,7 +440,6 @@ def task_action(slug):
         flash("Task not found.", "error")
         return redirect(url_for("tasks"))
 
-    # DELETE
     if action == "delete":
         try:
             shutil.rmtree(task_folder)
@@ -422,7 +448,6 @@ def task_action(slug):
             flash(f"Failed to delete task: {exc}", "error")
         return redirect(url_for("tasks"))
 
-    # RUN (background)
     if action == "run":
         paused_path = os.path.join(task_folder, "paused")
         if os.path.exists(paused_path):
@@ -434,20 +459,15 @@ def task_action(slug):
             flash("Task is already running.", "error")
             return redirect(url_for("tasks"))
 
-        # Touch /downloads only when actually running a task
         ensure_data_dirs(ensure_downloads=True)
-
-        # Create lock file immediately
         open(lock_path, "w").close()
 
-        # Fire off a background thread
         t = threading.Thread(target=run_task_background, args=(task_folder,), daemon=True)
         t.start()
 
         flash("Task started in background. Check logs.txt for progress.", "success")
         return redirect(url_for("tasks"))
 
-    # PAUSE / UNPAUSE
     if action == "pause":
         paused_path = os.path.join(task_folder, "paused")
         if os.path.exists(paused_path):
@@ -463,13 +483,11 @@ def task_action(slug):
 
 
 # ---------------------------------------------------------------------
-# Static media route (kept as before)
+# Static media route
 # ---------------------------------------------------------------------
 
 @app.route("/media/<path:subpath>")
 def media_file(subpath):
-    """Serve files from the /downloads volume."""
-    # Only touch /downloads if the user is actually requesting a file from it
     ensure_data_dirs(ensure_downloads=True)
     return send_from_directory(DOWNLOADS_ROOT, subpath)
 
@@ -479,5 +497,4 @@ def media_file(subpath):
 # ---------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # For local dev; in Docker we use gunicorn
     app.run(host="0.0.0.0", port=5000, debug=True)
