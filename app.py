@@ -15,23 +15,17 @@ from flask import (
     redirect, url_for, flash, send_from_directory
 )
 
-from recent_scanner import start_recent_scanner  # background media wall scanner
-
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
 
-
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 # Base data directories
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 
 # Allow overriding with TASKS_DIR / CONFIG_DIR envs (for Unraid-style mappings)
 TASKS_ROOT = os.environ.get("TASKS_DIR") or "/tasks"
 CONFIG_ROOT = os.environ.get("CONFIG_DIR") or "/config"   # global gallery-dl config
 DOWNLOADS_ROOT = os.environ.get("DOWNLOADS_DIR") or "/downloads"
-
-# Temp folder for media wall, kept inside /config by default
-RECENT_TEMP_ROOT = os.environ.get("RECENT_TEMP_DIR") or os.path.join(CONFIG_ROOT, "media_wall")
 
 CONFIG_FILE = os.path.join(CONFIG_ROOT, "gallery-dl.conf")
 
@@ -40,19 +34,15 @@ DEFAULT_CONFIG_URL = os.environ.get(
     "https://raw.githubusercontent.com/mikf/gallery-dl/master/docs/gallery-dl.conf",
 )
 
-# Media extensions (used by the media wall / scanner)
+# Media extensions (kept for future use, but NOT used on the home page right now)
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
-# Expose paths to recent_scanner via app.config
-app.config["DOWNLOAD_DIR"] = DOWNLOADS_ROOT
-app.config["RECENT_TEMP_DIR"] = RECENT_TEMP_ROOT
 
-
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 
 def slugify(name: str) -> str:
     """Very simple slug: lowercase, spaces -> -, remove non-alphanum/-."""
@@ -67,7 +57,6 @@ def ensure_data_dirs():
     os.makedirs(TASKS_ROOT, exist_ok=True)
     os.makedirs(CONFIG_ROOT, exist_ok=True)
     os.makedirs(DOWNLOADS_ROOT, exist_ok=True)
-    os.makedirs(RECENT_TEMP_ROOT, exist_ok=True)
 
 
 def read_text(path: str):
@@ -132,82 +121,23 @@ def load_tasks():
     return tasks
 
 
-def get_recent_media_from_temp(limit: int = 90):
-    """
-    Read media files from the small media wall folder under CONFIG_ROOT/media_wall.
-
-    This is the only thing the homepage uses. It never touches /downloads directly.
-    """
-    items = []
-
-    if not os.path.isdir(RECENT_TEMP_ROOT):
-        return items
-
-    try:
-        entries = list(os.scandir(RECENT_TEMP_ROOT))
-    except FileNotFoundError:
-        return items
-
-    # Sort newest first by mtime
-    def _safe_mtime(entry):
-        try:
-            return entry.stat().st_mtime
-        except OSError:
-            return 0
-
-    entries.sort(key=_safe_mtime, reverse=True)
-
-    for entry in entries:
-        if not entry.is_file():
-            continue
-
-        ext = os.path.splitext(entry.name)[1].lower()
-        if ext not in MEDIA_EXTS:
-            continue
-
-        try:
-            mtime = entry.stat().st_mtime
-        except OSError:
-            continue
-
-        items.append({
-            "filename": entry.name,
-            "mtime": mtime,
-            "is_image": ext in IMAGE_EXTS,
-            "mtime_readable": dt.datetime.fromtimestamp(mtime).isoformat(
-                sep=" ", timespec="seconds"
-            ),
-        })
-
-        if len(items) >= limit:
-            break
-
-    return items
-
-
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# Home page (NO filesystem scanning for now)
+# ---------------------------------------------------------------------
 
 @app.route("/")
 def home():
+    """
+    Home page: show welcome text + task count.
+
+    The media wall is effectively disabled for now: we pass empty
+    recent_rows and has_media=False so the template shows the
+    "No recent downloads found yet." message without touching /downloads.
+    """
     tasks = load_tasks()
 
-    # Try to read whatever the scanner has placed in /config/media_wall.
-    try:
-        recent_media = get_recent_media_from_temp(limit=90)
-    except Exception as exc:
-        # Fail safe: log and show empty wall rather than 500
-        app.logger.exception("Failed to read recent media: %s", exc)
-        recent_media = []
-
-    # Distribute items across 3 rows: 0,3,6... / 1,4,7... / 2,5,8...
-    recent_rows = [
-        recent_media[0::3],
-        recent_media[1::3],
-        recent_media[2::3],
-    ]
-    has_media = len(recent_media) > 0
+    recent_rows = [[], [], []]
+    has_media = False
 
     return render_template(
         "home.html",
@@ -216,6 +146,10 @@ def home():
         has_media=has_media,
     )
 
+
+# ---------------------------------------------------------------------
+# Tasks
+# ---------------------------------------------------------------------
 
 @app.route("/tasks", methods=["GET", "POST"])
 def tasks():
@@ -258,7 +192,7 @@ def tasks():
         if not command:
             command = "gallery-dl --input-file urls.txt"
 
-        # Ensure the command has --config and --destination (-d) set correctly
+        # ensure the command has --config and --destination (-d) set correctly
         try:
             parts = shlex.split(command)
             if parts and parts[0] == "gallery-dl":
@@ -303,13 +237,17 @@ def tasks():
     return render_template("tasks.html", tasks=tasks_list)
 
 
+# ---------------------------------------------------------------------
+# Config page
+# ---------------------------------------------------------------------
+
 @app.route("/config", methods=["GET", "POST"])
 def config_page():
     """View and edit the global gallery-dl config file."""
     ensure_data_dirs()
     config_text = read_text(CONFIG_FILE) or ""
 
-    if request.method == "POST":  # NOTE: fixed from POST__ to POST
+    if request.method == "POST":  # <-- make sure it's POST, not POST__
         action = request.form.get("action")
         if action == "save":
             config_text = request.form.get("config_text", "")
@@ -327,6 +265,10 @@ def config_page():
 
     return render_template("config.html", config_text=config_text, config_path=CONFIG_FILE)
 
+
+# ---------------------------------------------------------------------
+# Task actions
+# ---------------------------------------------------------------------
 
 def run_task_background(task_folder: str):
     """Background worker to run gallery-dl for a given task folder."""
@@ -458,24 +400,19 @@ def task_action(slug):
     return redirect(url_for("tasks"))
 
 
+# ---------------------------------------------------------------------
+# Static media route (kept as before)
+# ---------------------------------------------------------------------
+
 @app.route("/media/<path:subpath>")
 def media_file(subpath):
     """Serve files from the /downloads volume."""
     return send_from_directory(DOWNLOADS_ROOT, subpath)
 
 
-@app.route("/recent-media/<path:filename>")
-def recent_media_file(filename):
-    """Serve files from the media wall folder in the config volume."""
-    return send_from_directory(RECENT_TEMP_ROOT, filename)
-
-
-# ---------------------------------------------------------------------------
-# Kick off background scanner (separate process from recent_scanner.py)
-# ---------------------------------------------------------------------------
-
-start_recent_scanner(app)
-
+# ---------------------------------------------------------------------
+# Main (dev only)
+# ---------------------------------------------------------------------
 
 if __name__ == "__main__":
     # For local dev; in Docker we use gunicorn
