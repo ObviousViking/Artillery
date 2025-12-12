@@ -14,7 +14,7 @@ import signal
 import faulthandler
 import sqlite3
 import hashlib
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Tuple
 
 from flask import (
     Flask, render_template, request,
@@ -65,14 +65,26 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
-# Media wall DB + cache dir
+# ---------------------------------------------------------------------
+# Media wall (DB + cache folder)
+# ---------------------------------------------------------------------
+
 MEDIA_DB = os.path.join(CONFIG_ROOT, "mediawall.sqlite")
 MEDIA_WALL_DIR = os.path.join(CONFIG_ROOT, "media_wall")
-MEDIA_WALL_ITEMS = int(os.environ.get("MEDIA_WALL_ITEMS", "45"))
-MEDIA_WALL_ROWS = 3
 
-# Only cache images by default (videos can be huge)
+MEDIA_WALL_ROWS = 3
+MEDIA_WALL_ITEMS_ON_PAGE = int(os.environ.get("MEDIA_WALL_ITEMS", "45"))  # what homepage shows
 MEDIA_WALL_CACHE_VIDEOS = os.environ.get("MEDIA_WALL_CACHE_VIDEOS", "0") == "1"
+
+# Your requirement: copy up to 100 files into cache after task completion
+MEDIA_WALL_COPY_LIMIT = int(os.environ.get("MEDIA_WALL_COPY_LIMIT", "100"))
+
+# Auto behavior on task completion
+MEDIA_WALL_AUTO_INGEST_ON_TASK_END = os.environ.get("MEDIA_WALL_AUTO_INGEST_ON_TASK_END", "1") == "1"
+MEDIA_WALL_AUTO_REFRESH_ON_TASK_END = os.environ.get("MEDIA_WALL_AUTO_REFRESH_ON_TASK_END", "1") == "1"
+
+# Throttle refresh to avoid copying 100 files for every task finish in rapid succession
+MEDIA_WALL_MIN_REFRESH_SECONDS = int(os.environ.get("MEDIA_WALL_MIN_REFRESH_SECONDS", "300"))
 
 # ---------------------------------------------------------------------
 # Optional request timing
@@ -117,6 +129,8 @@ def ensure_data_dirs(ensure_downloads: bool = False):
 
     os.makedirs(TASKS_ROOT, exist_ok=True)
     os.makedirs(CONFIG_ROOT, exist_ok=True)
+    os.makedirs(MEDIA_WALL_DIR, exist_ok=True)
+
     if ensure_downloads:
         os.makedirs(DOWNLOADS_ROOT, exist_ok=True)
 
@@ -183,7 +197,7 @@ def load_tasks():
     return tasks
 
 # ---------------------------------------------------------------------
-# Media wall SQLite index (parses /tasks/*/logs.txt only)
+# Media wall DB
 # ---------------------------------------------------------------------
 
 def _open_media_db() -> sqlite3.Connection:
@@ -239,9 +253,7 @@ def _extract_relpath_from_log_line(line: str, downloads_root: str) -> Optional[s
         return None
 
     ext = os.path.splitext(rel)[1].lower()
-    if not ext:
-        return None
-    if ext not in MEDIA_EXTS:
+    if not ext or ext not in MEDIA_EXTS:
         return None
 
     return rel
@@ -266,7 +278,7 @@ def ingest_task_log(conn: sqlite3.Connection, task_slug: str, log_path: str, *, 
     except OSError:
         return (0, 0)
 
-    def _upsert_offset(offset: int):
+    def upsert_offset(offset: int):
         conn.execute(
             """
             INSERT INTO task_offsets(task, log_path, offset, updated)
@@ -280,7 +292,7 @@ def ingest_task_log(conn: sqlite3.Connection, task_slug: str, log_path: str, *, 
         )
 
     if not data:
-        _upsert_offset(start_offset)
+        upsert_offset(start_offset)
         conn.commit()
         return (0, 0)
 
@@ -317,7 +329,8 @@ def ingest_task_log(conn: sqlite3.Connection, task_slug: str, log_path: str, *, 
                 (now, task_slug, ext, rel),
             )
 
-    _upsert_offset(end_offset)
+    upsert_offset(end_offset)
+
     conn.execute(
         """
         INSERT INTO meta(key, value)
@@ -372,13 +385,10 @@ def _clean_cache_dir():
 
 def refresh_wall_cache(conn: sqlite3.Connection, n: int) -> dict:
     """
-    Picks N random items from media table and copies them into /config/media_wall.
-    Cache folder becomes the single source of truth for homepage rendering.
+    Pick up to N random items and copy them into /config/media_wall.
     """
     ensure_data_dirs(ensure_downloads=False)
-    os.makedirs(MEDIA_WALL_DIR, exist_ok=True)
 
-    # Choose candidates (prefer images; optionally include videos)
     if MEDIA_WALL_CACHE_VIDEOS:
         rows = conn.execute(
             "SELECT path, ext FROM media ORDER BY RANDOM() LIMIT ?",
@@ -396,13 +406,12 @@ def refresh_wall_cache(conn: sqlite3.Connection, n: int) -> dict:
     if not picked:
         return {"picked": 0, "copied": 0, "failed": 0}
 
-    # Always clean cache for predictability + speed
     _clean_cache_dir()
 
     copied = 0
     failed = 0
 
-    for rel, ext in picked:
+    for rel, _ext in picked:
         src = os.path.join(DOWNLOADS_ROOT, rel)
         name = _cache_name_for_relpath(rel)
         dst = os.path.join(MEDIA_WALL_DIR, name)
@@ -433,6 +442,19 @@ def refresh_wall_cache(conn: sqlite3.Connection, n: int) -> dict:
     conn.commit()
 
     return {"picked": len(picked), "copied": copied, "failed": failed}
+
+
+def _should_refresh_cache(conn: sqlite3.Connection) -> bool:
+    try:
+        row = conn.execute("SELECT value FROM meta WHERE key='last_cache_refresh'").fetchone()
+        if not row or not row[0]:
+            return True
+        last = row[0].replace("Z", "")
+        last_dt = dt.datetime.fromisoformat(last)
+        age = (dt.datetime.utcnow() - last_dt).total_seconds()
+        return age >= MEDIA_WALL_MIN_REFRESH_SECONDS
+    except Exception:
+        return True
 
 
 def get_mediawall_status(conn: sqlite3.Connection) -> dict:
@@ -474,55 +496,29 @@ def mediawall_rebuild():
     stats = ingest_all_task_logs(conn, full_rescan=False)
     status = get_mediawall_status(conn)
     conn.close()
-    flash(
-        f"Media index updated. Tasks: {stats['tasks_seen']}, matched: {stats['matched']}, new: {stats['inserted']}. "
-        f"Indexed: {status['media_count']}.",
-        "success"
-    )
-    return redirect(url_for("home"))
-
-
-@app.route("/mediawall/rebuild_full", methods=["POST"])
-def mediawall_rebuild_full():
-    conn = _open_media_db()
-    stats = ingest_all_task_logs(conn, full_rescan=True)
-    status = get_mediawall_status(conn)
-    conn.close()
-    flash(
-        f"Media index FULL reparse. Tasks: {stats['tasks_seen']}, matched: {stats['matched']}, new: {stats['inserted']}. "
-        f"Indexed: {status['media_count']}.",
-        "success"
-    )
+    flash(f"Media index updated: {stats} (total={status['media_count']})", "success")
     return redirect(url_for("home"))
 
 
 @app.route("/mediawall/refresh", methods=["POST"])
 def mediawall_refresh():
     conn = _open_media_db()
-    result = refresh_wall_cache(conn, MEDIA_WALL_ITEMS)
+    result = refresh_wall_cache(conn, MEDIA_WALL_COPY_LIMIT)
     status = get_mediawall_status(conn)
     conn.close()
-    flash(
-        f"Media wall refreshed. Picked: {result['picked']}, copied: {result['copied']}, failed: {result['failed']}.",
-        "success"
-    )
+    flash(f"Media wall refreshed: {result} (total={status['media_count']})", "success")
     return redirect(url_for("home"))
 
 
 @app.route("/mediawall/seed", methods=["POST"])
 def mediawall_seed():
-    """Convenience endpoint: rebuild (incremental) then refresh cache."""
+    """Convenience: rebuild then refresh."""
     conn = _open_media_db()
     stats = ingest_all_task_logs(conn, full_rescan=False)
-    result = refresh_wall_cache(conn, MEDIA_WALL_ITEMS)
+    result = refresh_wall_cache(conn, MEDIA_WALL_COPY_LIMIT)
     status = get_mediawall_status(conn)
     conn.close()
-    flash(
-        f"Seeded wall. Rebuild: tasks={stats['tasks_seen']} matched={stats['matched']} new={stats['inserted']}. "
-        f"Refresh: picked={result['picked']} copied={result['copied']} failed={result['failed']}. "
-        f"Indexed={status['media_count']}.",
-        "success"
-    )
+    flash(f"Seeded wall. rebuild={stats} refresh={result} total={status['media_count']}", "success")
     return redirect(url_for("home"))
 
 # ---------------------------------------------------------------------
@@ -548,8 +544,7 @@ def home():
         fn for fn in os.listdir(MEDIA_WALL_DIR)
         if os.path.splitext(fn)[1].lower() in MEDIA_EXTS and not fn.endswith(".tmp")
     ]
-    # Keep it bounded
-    cached_files = cached_files[:MEDIA_WALL_ITEMS]
+    cached_files = cached_files[:MEDIA_WALL_ITEMS_ON_PAGE]
 
     urls = [url_for("wall_file", filename=fn) for fn in cached_files]
     has_media = len(urls) > 0
@@ -741,6 +736,20 @@ def run_task_background(task_folder: str):
         with open(logs_path, "a", encoding="utf-8") as logf:
             logf.write(f"\nERROR while running task: {exc}\n")
     finally:
+        # ---- MEDIA WALL HOOK: ingest + refresh cache (copy up to 100) ----
+        if MEDIA_WALL_AUTO_INGEST_ON_TASK_END:
+            try:
+                slug = os.path.basename(task_folder.rstrip("/"))
+                conn = _open_media_db()  # creates DB if missing
+                ingest_task_log(conn, slug, logs_path, full_rescan=False)
+
+                if MEDIA_WALL_AUTO_REFRESH_ON_TASK_END and _should_refresh_cache(conn):
+                    refresh_wall_cache(conn, min(MEDIA_WALL_COPY_LIMIT, 100))
+
+                conn.close()
+            except Exception as exc:
+                app.logger.warning("Media wall update failed: %s", exc)
+
         if os.path.exists(lock_path):
             os.remove(lock_path)
 
