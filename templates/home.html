@@ -32,12 +32,12 @@
     </div>
 </div>
 
-<!-- Recent downloads / media wall -->
+<!-- Media wall (served from /config/media_wall via /wall/<filename>) -->
 <div class="row">
     <div class="col-12">
         <div class="card shadow-sm">
             <div class="card-body">
-                <h5 class="card-title mb-3">Recent downloads</h5>
+                <h5 class="card-title mb-3">Media wall</h5>
 
                 {% if has_media %}
                 <div id="media-wall-container">
@@ -50,29 +50,18 @@
                         {% if row %}
                         <div class="media-wall-row">
                             <div class="media-strip
-                                    {% if loop.index0 == 1 %}
-                                        media-strip-right
-                                    {% else %}
-                                        media-strip-left
-                                    {% endif %}">
+                                {% if loop.index0 == 1 %}
+                                    media-strip-right
+                                {% else %}
+                                    media-strip-left
+                                {% endif %}">
                                 {# duplicate items to allow continuous scroll #}
                                 {% for _ in range(2) %}
                                 {% for item in row %}
                                 <div class="media-item">
-                                    {% if item.is_image %}
-                                    <a href="{{ url_for('recent_media_file', filename=item.filename) }}" target="_blank"
-                                        class="d-block">
-                                        <img src="{{ url_for('recent_media_file', filename=item.filename) }}"
-                                            alt="{{ item.filename }}" class="media-img" />
+                                    <a href="{{ item }}" target="_blank" class="d-block">
+                                        <img src="{{ item }}" alt="media" class="media-img" loading="lazy" />
                                     </a>
-                                    {% else %}
-                                    <a href="{{ url_for('recent_media_file', filename=item.filename) }}" target="_blank"
-                                        class="d-block text-decoration-none">
-                                        <div class="media-video-placeholder">
-                                            <span class="small text-muted">Video</span>
-                                        </div>
-                                    </a>
-                                    {% endif %}
                                 </div>
                                 {% endfor %}
                                 {% endfor %}
@@ -84,7 +73,7 @@
                 </div>
                 {% else %}
                 <p class="text-muted mb-0">
-                    No recent downloads found yet.
+                    No media cached yet. Run a task, then refresh the media wall.
                 </p>
                 {% endif %}
             </div>
