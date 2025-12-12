@@ -12,9 +12,9 @@ PGID="${PGID:-0}"
 # Ensure directories exist (Unraid maps these)
 : "${TASKS_DIR:=/tasks}"
 : "${CONFIG_DIR:=/config}"
-: "${DOWNLOADS_DIR:=/downloads}"
 
-mkdir -p "$TASKS_DIR" "$CONFIG_DIR" "$DOWNLOADS_DIR"
+
+mkdir -p "$TASKS_DIR" "$CONFIG_DIR" 
 
 log "Updating gallery-dl to latest..."
 pip install --no-cache-dir --upgrade gallery-dl
