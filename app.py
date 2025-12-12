@@ -218,11 +218,10 @@ def _probe_downloads_stat():
         )
 
 
-# Run probe at import time (but in background so it never blocks startup)
-if PROBE_DOWNLOADS:
+# Run probe at import time ONLY if explicitly enabled via env var
+# Default is now OFF to avoid slowdowns on large/slow mounts
+if os.environ.get("ARTILLERY_PROBE_DOWNLOADS", "0") == "1":
     threading.Thread(target=_probe_downloads_stat, daemon=True).start()
-
-
 # ---------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------
