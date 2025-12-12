@@ -161,7 +161,7 @@ def find_newest_leaf_dir(
 def collect_media_files_from_dir(
     dir_path: str,
     limit: int = 100,
-    max_entries: int = 2000,
+    max_entries: int = 50,
     max_seconds: int = 10,
 ):
     """

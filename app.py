@@ -20,6 +20,7 @@ from recent_scanner import start_recent_scanner  # background media wall scanner
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
 
+
 # ---------------------------------------------------------------------------
 # Base data directories
 # ---------------------------------------------------------------------------
