@@ -33,7 +33,7 @@ fi
 
 # Setup cron to run scheduler as the chosen user
 log "Setting up cron entry for scheduler..."
-CRON_LINE="* * * * * gosu $APP_USER_SPEC /usr/local/bin/python /app/scheduler.py >> /var/log/cron.log 2>&1"
+CRON_LINE="* * * * * /usr/local/bin/gosu $APP_USER_SPEC /usr/local/bin/python /app/scheduler.py >> /var/log/cron.log 2>&1"
 
 echo "$CRON_LINE" | crontab -
 
