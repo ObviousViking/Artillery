@@ -1,18 +1,11 @@
 FROM python:3.12-slim
 
-# Install cron and gosu (latest version, no signature verification)
+# Install system deps: cron and gosu (now from Debian repos!)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends cron wget \
-    && rm -rf /var/lib/apt/lists/* \
-    && set -eux; \
-    GOSU_VERSION=1.19; \
-    dpkgArch="$(dpkg --print-architecture | awk -F- '{ print $NF }')"; \
-    wget -O /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/${GOSU_VERSION}/gosu-${dpkgArch}"; \
-    chmod +x /usr/local/bin/gosu; \
-    gosu --version; \
-    gosu nobody true  # Quick verification it works
+    && apt-get install -y --no-install-recommends cron gosu \
+    && rm -rf /var/lib/apt/lists/*
 
-# Rest of your Dockerfile stays the same
+# Rest unchanged...
 WORKDIR /app
 
 COPY requirements.txt .
