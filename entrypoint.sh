@@ -31,44 +31,44 @@ else
   log "PUID/PGID not set (or zero), running as root."
 fi
 
-# Setup cron to run scheduler as the chosen user
-log "Setting up cron entry for scheduler..."
-
+# Resolve absolute paths (cron has a minimal environment/PATH)
 GOSU_BIN="$(command -v gosu || true)"
 PY_BIN="$(command -v python3 || command -v python || true)"
 
 if [ -z "$PY_BIN" ]; then
-  log "ERROR: python (python3/python) not found in PATH"
+  log "ERROR: python not found (python3/python)"
   exit 1
 fi
+
+# Setup cron to run scheduler as the chosen user
+log "Setting up cron entry for scheduler..."
+
+mkdir -p /var/log
+touch /var/log/cron.log
 
 if [ "$APP_USER_SPEC" != "root" ]; then
   if [ -z "$GOSU_BIN" ]; then
     log "ERROR: gosu not found in PATH (needed for non-root PUID/PGID)"
     exit 1
   fi
-  CRON_CMD="$GOSU_BIN $APP_USER_SPEC $PY_BIN /app/scheduler.py"
-else
-  CRON_CMD="$PY_BIN /app/scheduler.py"
-fi
 
-# Install crontab with explicit PATH (cron has a minimal environment)
-crontab - <<EOF
+  # Write a crontab with explicit PATH so cron can find gosu/python
+  crontab - <<EOF
 SHELL=/bin/sh
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-* * * * * $CRON_CMD >> /var/log/cron.log 2>&1
+* * * * * $GOSU_BIN $APP_USER_SPEC $PY_BIN /app/scheduler.py >> /var/log/cron.log 2>&1
 EOF
+else
+  crontab - <<EOF
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+* * * * * $PY_BIN /app/scheduler.py >> /var/log/cron.log 2>&1
+EOF
+fi
 
 log "Starting cron..."
-mkdir -p /var/log
-touch /var/log/cron.log
-
-# Start the right cron daemon (varies by base image)
-if command -v crond >/dev/null 2>&1; then
-  crond
-else
-  cron
-fi
+# Keep using the same daemon command you had (since UI worked with it)
+cron
 
 log "Starting web app as $APP_USER_SPEC..."
 # Exec gunicorn as the chosen user so it writes files with correct ownership
