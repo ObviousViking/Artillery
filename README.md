@@ -12,8 +12,6 @@ It lets you:
 
 All wrapped in a dark, minimal interface designed to live inside Docker/Unraid.
 
-![Artillery Banner](screenshots/banner.png)
-
 ---
 
 ## 🚀 Features
