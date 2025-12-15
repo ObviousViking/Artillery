@@ -19,23 +19,11 @@
                             spellcheck="false">{{ config_text }}</textarea>
                     </div>
 
-                    <hr class="my-4">
-
-                    <div class="mb-3">
-                        <label class="form-label" for="scan_interval_minutes">
-                            Recent downloads scan interval (minutes)
-                        </label>
-                        <input type="number" id="scan_interval_minutes" name="scan_interval_minutes" min="5" max="1440"
-                            value="{{ scan_interval_minutes }}" class="form-control">
-                        <div class="form-text">
-                            Runs the background scan this often. Shorter intervals mean more disk I/O,
-                            and the larger your downloads folder, the longer each scan will take.
-                        </div>
-                    </div>
+                    
 
                     <div class="d-flex flex-wrap gap-2">
                         <button type="submit" name="action" value="save" class="btn btn-danger">
-                            Save config &amp; scan interval
+                            Save config
                         </button>
                         <button type="submit" name="action" value="reset" class="btn btn-outline-warning">
                             Load default config from GitHub
