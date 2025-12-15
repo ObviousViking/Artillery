@@ -19,6 +19,11 @@ mkdir -p "$TASKS_DIR" "$CONFIG_DIR"
 log "Updating gallery-dl to latest..."
 pip install --no-cache-dir --upgrade gallery-dl
 
+
+# remove stale lock files from previous container run
+find /tasks -maxdepth 2 -type f -iname "*lock*" -print -delete || true
+
+
 # Decide how we run things: as root or as numeric uid:gid
 if [ "$PUID" != "0" ] && [ "$PGID" != "0" ]; then
   APP_USER_SPEC="$PUID:$PGID"
