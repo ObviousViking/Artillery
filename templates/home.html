@@ -37,7 +37,7 @@
 
         <div id="media-wall-container"
              data-rows="3"
-             data-limit="45"
+             data-limit="150"
              data-poll-ms="3000">
 
           <p id="media-wall-loader" class="text-muted small mb-2">
@@ -80,130 +80,162 @@
 
         <script>
         (function () {
-            const container = document.getElementById("media-wall-container");
-            if (!container) return;
+          const container = document.getElementById("media-wall-container");
+          if (!container) return;
 
-            const rows = parseInt(container.dataset.rows || "3", 10);
-            const limit = parseInt(container.dataset.limit || "45", 10);
-            const pollMs = parseInt(container.dataset.pollMs || "3000", 10);
+          const rows = parseInt(container.dataset.rows || "3", 10);
+          const limit = parseInt(container.dataset.limit || "150", 10);
+          const pollMs = parseInt(container.dataset.pollMs || "3000", 10);
 
-            const loader = document.getElementById("media-wall-loader");
-            const emptyMsg = document.getElementById("media-wall-empty");
-            const wall = document.getElementById("media-wall");
+          const loader = document.getElementById("media-wall-loader");
+          const emptyMsg = document.getElementById("media-wall-empty");
+          const wall = document.getElementById("media-wall");
 
-            let lastSig = "";
+          let lastSig = "";
 
-            function hideLoader() { if (loader) loader.style.display = "none"; }
-            function setEmpty(isEmpty) { if (emptyMsg) emptyMsg.style.display = isEmpty ? "" : "none"; }
-            function setReady() { if (wall) wall.classList.add("media-wall-ready"); }
-            function buildUrl(baseUrl, v) { return baseUrl + (baseUrl.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(v); }
+          function hideLoader() { if (loader) loader.style.display = "none"; }
+          function setEmpty(isEmpty) { if (emptyMsg) emptyMsg.style.display = isEmpty ? "" : "none"; }
+          function setReady() { if (wall) wall.classList.add("media-wall-ready"); }
+          function buildUrl(baseUrl, v) { return baseUrl + (baseUrl.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(v); }
 
-            function initMarquees() {
+          function initMarquees() {
             const strips = document.querySelectorAll(".media-strip");
             strips.forEach(strip => {
-                const kids = strip.children;
-                if (!kids || kids.length < 2) return;
+              const kids = strip.children;
+              if (!kids || kids.length < 2) return;
 
-                const half = Math.floor(kids.length / 2);
-                if (!kids[half]) return;
+              const half = Math.floor(kids.length / 2);
+              if (!kids[half]) return;
 
-                const distance = kids[half].offsetLeft;
-                if (!distance) return;
+              const distance = kids[half].offsetLeft;
+              if (!distance) return;
 
-                const speed = 16;
-                const duration = Math.max(25, distance / speed);
+              const speed = 16; // px/sec
+              const duration = Math.max(25, distance / speed);
 
-                const prev = strip.__loopDistance || 0;
-                const prevDur = strip.__loopDuration || 0;
-                if (prev === distance && Math.abs(prevDur - duration) < 0.01) return;
+              const prev = strip.__loopDistance || 0;
+              const prevDur = strip.__loopDuration || 0;
+              if (prev === distance && Math.abs(prevDur - duration) < 0.01) return;
 
-                strip.__loopDistance = distance;
-                strip.__loopDuration = duration;
+              strip.__loopDistance = distance;
+              strip.__loopDuration = duration;
 
-                strip.style.setProperty("--loop-distance", distance + "px");
-                strip.style.setProperty("--duration", duration + "s");
+              strip.style.setProperty("--loop-distance", distance + "px");
+              strip.style.setProperty("--duration", duration + "s");
             });
-            }
+          }
 
-            function render(items) {
+          function render(items) {
             if (!wall) return;
 
             wall.innerHTML = "";
 
             if (!items.length) {
-                setEmpty(true);
-                hideLoader();
-                setReady();
-                return;
+              setEmpty(true);
+              hideLoader();
+              setReady();
+              return;
             }
 
             setEmpty(false);
 
-            const perRow = 80;
+            // playlist size per row (before duplicating)
+            const perRow = Math.min(80, Math.max(30, items.length));
 
-            function pickRandomPlaylist(src, count) {
-                const out = [];
-                if (!src.length) return out;
+            // ---- Shared pool across all rows to reduce duplicates ----
+            let pool = items.slice();
+            for (let i = pool.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [pool[i], pool[j]] = [pool[j], pool[i]];
+            }
+            let poolIdx = 0;
 
-                const bag = src.slice();
-                for (let i = bag.length - 1; i > 0; i--) {
+            const usedGlobal = new Set();
+
+            function reshufflePool() {
+              for (let i = pool.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
-                [bag[i], bag[j]] = [bag[j], bag[i]];
-                }
-
-                let idx = 0;
-                while (out.length < count) {
-                out.push(bag[idx]);
-                idx++;
-                if (idx >= bag.length) {
-                    idx = 0;
-                    for (let i = bag.length - 1; i > 0; i--) {
-                    const j = Math.floor(Math.random() * (i + 1));
-                    [bag[i], bag[j]] = [bag[j], bag[i]];
-                    }
-                }
-                }
-                return out;
+                [pool[i], pool[j]] = [pool[j], pool[i]];
+              }
             }
 
+            function nextFromPool() {
+              if (!pool.length) return null;
+              const it = pool[poolIdx++];
+              if (poolIdx >= pool.length) {
+                poolIdx = 0;
+                reshufflePool();
+              }
+              return it;
+            }
+
+            function buildPlaylist(count) {
+              const out = [];
+              let guard = 0;
+
+              // Pass 1: avoid duplicates across rows this render
+              while (out.length < count && guard < count * 10) {
+                guard++;
+                const it = nextFromPool();
+                if (!it) break;
+
+                const key = it.name || it.url;
+                if (usedGlobal.has(key)) continue;
+
+                usedGlobal.add(key);
+                out.push(it);
+              }
+
+              // Pass 2: allow repeats if we ran out of uniques
+              while (out.length < count) {
+                const it = nextFromPool();
+                if (!it) break;
+                out.push(it);
+              }
+
+              return out;
+            }
+            // ---------------------------------------------------------
+
             for (let rowIdx = 0; rowIdx < rows; rowIdx++) {
-                const rowItems = pickRandomPlaylist(items, perRow);
-                if (!rowItems.length) continue;
+              const rowItems = buildPlaylist(perRow);
+              if (!rowItems.length) continue;
 
-                const rowDiv = document.createElement("div");
-                rowDiv.className = "media-wall-row";
+              const rowDiv = document.createElement("div");
+              rowDiv.className = "media-wall-row";
 
-                const strip = document.createElement("div");
-                strip.className = "media-strip " + (rowIdx === 1 ? "media-strip-right" : "media-strip-left");
+              const strip = document.createElement("div");
+              strip.className = "media-strip " + (rowIdx === 1 ? "media-strip-right" : "media-strip-left");
 
-                for (let r = 0; r < 2; r++) {
+              // duplicate once to enable seamless loop
+              for (let r = 0; r < 2; r++) {
                 for (const it of rowItems) {
-                    const itemDiv = document.createElement("div");
-                    itemDiv.className = "media-item";
+                  const itemDiv = document.createElement("div");
+                  itemDiv.className = "media-item";
 
-                    const a = document.createElement("a");
-                    a.className = "d-block";
-                    a.target = "_blank";
-                    a.href = buildUrl(it.url, it.mtime);
+                  const a = document.createElement("a");
+                  a.className = "d-block";
+                  a.target = "_blank";
+                  a.href = buildUrl(it.url, it.mtime);
 
-                    const img = document.createElement("img");
-                    img.className = "media-img";
-                    img.loading = "lazy";
-                    img.alt = "media";
+                  const img = document.createElement("img");
+                  img.className = "media-img";
+                  img.loading = "lazy";
+                  img.alt = "media";
 
-                    const setSrc = (v) => { img.src = buildUrl(it.url, v); };
-                    setSrc(it.mtime);
+                  const setSrc = (v) => { img.src = buildUrl(it.url, v); };
+                  setSrc(it.mtime);
 
-                    img.onerror = () => setTimeout(() => setSrc(Date.now()), 800);
+                  img.onerror = () => setTimeout(() => setSrc(Date.now()), 800);
 
-                    a.appendChild(img);
-                    itemDiv.appendChild(a);
-                    strip.appendChild(itemDiv);
+                  a.appendChild(img);
+                  itemDiv.appendChild(a);
+                  strip.appendChild(itemDiv);
                 }
-                }
+              }
 
-                rowDiv.appendChild(strip);
-                wall.appendChild(rowDiv);
+              rowDiv.appendChild(strip);
+              wall.appendChild(rowDiv);
             }
 
             hideLoader();
@@ -212,31 +244,31 @@
             initMarquees();
             setTimeout(initMarquees, 250);
             setTimeout(initMarquees, 1000);
-            }
+          }
 
-            async function refresh() {
+          async function refresh() {
             try {
-                const res = await fetch("/mediawall/api/cache_index", { cache: "no-store" });
-                if (!res.ok) return;
+              const res = await fetch("/mediawall/api/cache_index", { cache: "no-store" });
+              if (!res.ok) return;
 
-                const data = await res.json();
-                const items = (data.items || []).slice(0, limit);
+              const data = await res.json();
+              const items = (data.items || []).slice(0, limit);
 
-                const sig = items.map(i => i.name + ":" + i.mtime).join("|");
-                if (sig && sig === lastSig) {
+              const sig = items.map(i => i.name + ":" + i.mtime).join("|");
+              if (sig && sig === lastSig) {
                 hideLoader();
                 setReady();
                 return;
-                }
-                lastSig = sig;
+              }
+              lastSig = sig;
 
-                render(items);
+              render(items);
             } catch (e) {
-                // keep polling quietly
+              // keep polling quietly
             }
-            }
+          }
 
-            document.addEventListener("DOMContentLoaded", () => {
+          document.addEventListener("DOMContentLoaded", () => {
             // initialize scrolling for server-rendered content (if present)
             initMarquees();
             setTimeout(initMarquees, 250);
@@ -247,7 +279,7 @@
             // build randomized strips from API + keep updated
             refresh();
             setInterval(refresh, pollMs);
-            });
+          });
         })();
         </script>
 
