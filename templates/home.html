@@ -112,48 +112,94 @@
 
             // Seamless infinite scroll: set loop distance to exactly one copy width
             function initMarquees() {
-              const strips = document.querySelectorAll(".media-strip");
-              strips.forEach(strip => {
-                const distance = Math.floor(strip.scrollWidth / 2); // two copies exist
+            const strips = document.querySelectorAll(".media-strip");
+            strips.forEach(strip => {
+                const kids = strip.children;
+                if (!kids || kids.length < 2) return;
+
+                const half = Math.floor(kids.length / 2);
+                if (!kids[half]) return;
+
+                // exact px distance to where copy #2 starts
+                const distance = kids[half].offsetLeft;
                 if (!distance) return;
 
-                const speed = 35; // px/sec (tweak)
-                const duration = Math.max(12, distance / speed);
+                // slower scroll (px/sec)
+                const speed = 16;
+                const duration = Math.max(25, distance / speed);
+
+                // don't restart animation unnecessarily
+                const prev = strip.__loopDistance || 0;
+                const prevDur = strip.__loopDuration || 0;
+                if (prev === distance && Math.abs(prevDur - duration) < 0.01) return;
+
+                strip.__loopDistance = distance;
+                strip.__loopDuration = duration;
 
                 strip.style.setProperty("--loop-distance", distance + "px");
                 strip.style.setProperty("--duration", duration + "s");
-              });
+            });
             }
 
+
             function render(items) {
-              if (!wall) return;
+            if (!wall) return;
 
-              wall.innerHTML = "";
+            wall.innerHTML = "";
 
-              if (!items.length) {
+            if (!items.length) {
                 setEmpty(true);
                 hideLoader();
                 setReady();
                 return;
-              }
+            }
 
-              setEmpty(false);
+            setEmpty(false);
 
-              const buckets = Array.from({ length: rows }, () => []);
-              items.forEach((it, idx) => buckets[idx % rows].push(it));
+            // How many tiles per row BEFORE duplicating (the strip will contain 2x this)
+            // Bigger = feels more “infinite”, but heavier DOM. 60–120 is a good range.
+            const perRow = 80;
 
-              buckets.forEach((rowItems, idx) => {
-                if (!rowItems.length) return;
+            function pickRandomPlaylist(src, count) {
+                const out = [];
+                if (!src.length) return out;
+
+                // try to cycle through a shuffled bag to avoid obvious repeats
+                const bag = src.slice();
+                for (let i = bag.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [bag[i], bag[j]] = [bag[j], bag[i]];
+                }
+
+                let idx = 0;
+                while (out.length < count) {
+                out.push(bag[idx]);
+                idx++;
+                if (idx >= bag.length) {
+                    // reshuffle and continue
+                    idx = 0;
+                    for (let i = bag.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [bag[i], bag[j]] = [bag[j], bag[i]];
+                    }
+                }
+                }
+                return out;
+            }
+
+            for (let rowIdx = 0; rowIdx < rows; rowIdx++) {
+                const rowItems = pickRandomPlaylist(items, perRow);
+                if (!rowItems.length) continue;
 
                 const rowDiv = document.createElement("div");
                 rowDiv.className = "media-wall-row";
 
                 const strip = document.createElement("div");
-                strip.className = "media-strip " + (idx === 1 ? "media-strip-right" : "media-strip-left");
+                strip.className = "media-strip " + (rowIdx === 1 ? "media-strip-right" : "media-strip-left");
 
-                // Duplicate items so the strip can loop seamlessly
+                // duplicate once to enable seamless loop
                 for (let r = 0; r < 2; r++) {
-                  for (const it of rowItems) {
+                for (const it of rowItems) {
                     const itemDiv = document.createElement("div");
                     itemDiv.className = "media-item";
 
@@ -167,72 +213,31 @@
                     img.loading = "lazy";
                     img.alt = "media";
 
-                    const setSrc = (v) => {
-                      img.src = buildUrl(it.url, v);
-                    };
-
-                    // Cache bust using mtime so cache swaps load cleanly
+                    const setSrc = (v) => { img.src = buildUrl(it.url, v); };
                     setSrc(it.mtime);
 
-                    // If a transient 404 occurs during folder swap, retry with a hard bust
                     img.onerror = () => {
-                      setTimeout(() => setSrc(Date.now()), 800);
+                    setTimeout(() => setSrc(Date.now()), 800);
                     };
 
                     a.appendChild(img);
                     itemDiv.appendChild(a);
                     strip.appendChild(itemDiv);
-                  }
+                }
                 }
 
                 rowDiv.appendChild(strip);
                 wall.appendChild(rowDiv);
-              });
-
-              hideLoader();
-              setReady();
-
-              // init seamless scroll now + after images have had time to affect layout
-              initMarquees();
-              setTimeout(initMarquees, 250);
-              setTimeout(initMarquees, 1000);
             }
 
-            async function refresh() {
-              try {
-                const res = await fetch("/mediawall/api/cache_index", { cache: "no-store" });
-                if (!res.ok) return;
+            hideLoader();
+            setReady();
 
-                const data = await res.json();
-                const items = (data.items || []).slice(0, limit);
-
-                // signature includes mtime, so it updates when cache swaps
-                const sig = items.map(i => i.name + ":" + i.mtime).join("|");
-                if (sig && sig === lastSig) {
-                  hideLoader();
-                  setReady();
-                  return;
-                }
-                lastSig = sig;
-
-                render(items);
-              } catch (e) {
-                // keep polling quietly
-              }
+            initMarquees();
+            setTimeout(initMarquees, 250);
+            setTimeout(initMarquees, 1000);
             }
 
-            document.addEventListener("DOMContentLoaded", () => {
-              // make the initial server-render loop cleanly too
-              initMarquees();
-              setTimeout(initMarquees, 250);
-              setTimeout(initMarquees, 1000);
-
-              window.addEventListener("resize", () => setTimeout(initMarquees, 150));
-
-              // poll for updates
-              refresh();
-              setInterval(refresh, pollMs);
-            });
           })();
         </script>
       </div>
