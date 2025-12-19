@@ -79,7 +79,7 @@
         </div>
 
         <script>
-          (function () {
+        (function () {
             const container = document.getElementById("media-wall-container");
             if (!container) return;
 
@@ -93,24 +93,11 @@
 
             let lastSig = "";
 
-            function hideLoader() {
-              if (loader) loader.style.display = "none";
-            }
+            function hideLoader() { if (loader) loader.style.display = "none"; }
+            function setEmpty(isEmpty) { if (emptyMsg) emptyMsg.style.display = isEmpty ? "" : "none"; }
+            function setReady() { if (wall) wall.classList.add("media-wall-ready"); }
+            function buildUrl(baseUrl, v) { return baseUrl + (baseUrl.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(v); }
 
-            function setEmpty(isEmpty) {
-              if (!emptyMsg) return;
-              emptyMsg.style.display = isEmpty ? "" : "none";
-            }
-
-            function setReady() {
-              if (wall) wall.classList.add("media-wall-ready");
-            }
-
-            function buildUrl(baseUrl, v) {
-              return baseUrl + (baseUrl.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(v);
-            }
-
-            // Seamless infinite scroll: set loop distance to exactly one copy width
             function initMarquees() {
             const strips = document.querySelectorAll(".media-strip");
             strips.forEach(strip => {
@@ -120,15 +107,12 @@
                 const half = Math.floor(kids.length / 2);
                 if (!kids[half]) return;
 
-                // exact px distance to where copy #2 starts
                 const distance = kids[half].offsetLeft;
                 if (!distance) return;
 
-                // slower scroll (px/sec)
                 const speed = 16;
                 const duration = Math.max(25, distance / speed);
 
-                // don't restart animation unnecessarily
                 const prev = strip.__loopDistance || 0;
                 const prevDur = strip.__loopDuration || 0;
                 if (prev === distance && Math.abs(prevDur - duration) < 0.01) return;
@@ -140,7 +124,6 @@
                 strip.style.setProperty("--duration", duration + "s");
             });
             }
-
 
             function render(items) {
             if (!wall) return;
@@ -156,15 +139,12 @@
 
             setEmpty(false);
 
-            // How many tiles per row BEFORE duplicating (the strip will contain 2x this)
-            // Bigger = feels more “infinite”, but heavier DOM. 60–120 is a good range.
             const perRow = 80;
 
             function pickRandomPlaylist(src, count) {
                 const out = [];
                 if (!src.length) return out;
 
-                // try to cycle through a shuffled bag to avoid obvious repeats
                 const bag = src.slice();
                 for (let i = bag.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
@@ -176,7 +156,6 @@
                 out.push(bag[idx]);
                 idx++;
                 if (idx >= bag.length) {
-                    // reshuffle and continue
                     idx = 0;
                     for (let i = bag.length - 1; i > 0; i--) {
                     const j = Math.floor(Math.random() * (i + 1));
@@ -197,7 +176,6 @@
                 const strip = document.createElement("div");
                 strip.className = "media-strip " + (rowIdx === 1 ? "media-strip-right" : "media-strip-left");
 
-                // duplicate once to enable seamless loop
                 for (let r = 0; r < 2; r++) {
                 for (const it of rowItems) {
                     const itemDiv = document.createElement("div");
@@ -216,9 +194,7 @@
                     const setSrc = (v) => { img.src = buildUrl(it.url, v); };
                     setSrc(it.mtime);
 
-                    img.onerror = () => {
-                    setTimeout(() => setSrc(Date.now()), 800);
-                    };
+                    img.onerror = () => setTimeout(() => setSrc(Date.now()), 800);
 
                     a.appendChild(img);
                     itemDiv.appendChild(a);
@@ -238,8 +214,43 @@
             setTimeout(initMarquees, 1000);
             }
 
-          })();
+            async function refresh() {
+            try {
+                const res = await fetch("/mediawall/api/cache_index", { cache: "no-store" });
+                if (!res.ok) return;
+
+                const data = await res.json();
+                const items = (data.items || []).slice(0, limit);
+
+                const sig = items.map(i => i.name + ":" + i.mtime).join("|");
+                if (sig && sig === lastSig) {
+                hideLoader();
+                setReady();
+                return;
+                }
+                lastSig = sig;
+
+                render(items);
+            } catch (e) {
+                // keep polling quietly
+            }
+            }
+
+            document.addEventListener("DOMContentLoaded", () => {
+            // initialize scrolling for server-rendered content (if present)
+            initMarquees();
+            setTimeout(initMarquees, 250);
+            setTimeout(initMarquees, 1000);
+
+            window.addEventListener("resize", () => setTimeout(initMarquees, 150));
+
+            // build randomized strips from API + keep updated
+            refresh();
+            setInterval(refresh, pollMs);
+            });
+        })();
         </script>
+
       </div>
     </div>
   </div>
