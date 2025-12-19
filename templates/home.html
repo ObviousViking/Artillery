@@ -98,6 +98,14 @@
           function setReady() { if (wall) wall.classList.add("media-wall-ready"); }
           function buildUrl(baseUrl, v) { return baseUrl + (baseUrl.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(v); }
 
+          // --- Seamless loop: SUB-PIXEL accurate distance to start of copy #2 ---
+          let _marqueeTimer = null;
+
+          function scheduleInitMarquees() {
+            clearTimeout(_marqueeTimer);
+            _marqueeTimer = setTimeout(initMarquees, 50);
+          }
+
           function initMarquees() {
             const strips = document.querySelectorAll(".media-strip");
             strips.forEach(strip => {
@@ -107,23 +115,27 @@
               const half = Math.floor(kids.length / 2);
               if (!kids[half]) return;
 
-              const distance = kids[half].offsetLeft;
-              if (!distance) return;
+              const stripRect = strip.getBoundingClientRect();
+              const kidRect = kids[half].getBoundingClientRect();
+              const distance = kidRect.left - stripRect.left;
+
+              if (!(distance > 0)) return;
 
               const speed = 16; // px/sec
               const duration = Math.max(25, distance / speed);
 
               const prev = strip.__loopDistance || 0;
               const prevDur = strip.__loopDuration || 0;
-              if (prev === distance && Math.abs(prevDur - duration) < 0.01) return;
+              if (Math.abs(prev - distance) < 0.1 && Math.abs(prevDur - duration) < 0.05) return;
 
               strip.__loopDistance = distance;
               strip.__loopDuration = duration;
 
-              strip.style.setProperty("--loop-distance", distance + "px");
-              strip.style.setProperty("--duration", duration + "s");
+              strip.style.setProperty("--loop-distance", distance.toFixed(2) + "px");
+              strip.style.setProperty("--duration", duration.toFixed(2) + "s");
             });
           }
+          // ---------------------------------------------------------------------
 
           function render(items) {
             if (!wall) return;
@@ -241,9 +253,16 @@
             hideLoader();
             setReady();
 
-            initMarquees();
-            setTimeout(initMarquees, 250);
-            setTimeout(initMarquees, 1000);
+            // Recalc once now, then again as images load/layout settles
+            scheduleInitMarquees();
+            setTimeout(scheduleInitMarquees, 250);
+            setTimeout(scheduleInitMarquees, 1000);
+
+            // Recalc when images load (subpixel widths can change after load)
+            wall.querySelectorAll("img.media-img").forEach(img => {
+              if (img.complete) return;
+              img.addEventListener("load", scheduleInitMarquees, { once: true });
+            });
           }
 
           async function refresh() {
@@ -270,11 +289,11 @@
 
           document.addEventListener("DOMContentLoaded", () => {
             // initialize scrolling for server-rendered content (if present)
-            initMarquees();
-            setTimeout(initMarquees, 250);
-            setTimeout(initMarquees, 1000);
+            scheduleInitMarquees();
+            setTimeout(scheduleInitMarquees, 250);
+            setTimeout(scheduleInitMarquees, 1000);
 
-            window.addEventListener("resize", () => setTimeout(initMarquees, 150));
+            window.addEventListener("resize", () => setTimeout(scheduleInitMarquees, 150));
 
             // build randomized strips from API + keep updated
             refresh();
