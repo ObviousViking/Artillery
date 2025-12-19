@@ -72,6 +72,18 @@ MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 MEDIA_DB = os.path.join(CONFIG_ROOT, "mediawall.sqlite")
 MEDIA_WALL_DIR = os.path.join(CONFIG_ROOT, "media_wall")
 
+from werkzeug.exceptions import NotFound
+from flask import jsonify
+
+MEDIA_WALL_DIR_PREV = os.path.join(CONFIG_ROOT, "media_wall_prev")
+MEDIA_WALL_DIR_NEXT = os.path.join(CONFIG_ROOT, "media_wall_next")
+
+MEDIA_WALL_REFRESH_LOCK = threading.Lock()
+
+# Disable aggressive caching of send_from_directory responses
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+
+
 MEDIA_WALL_ROWS = 3
 MEDIA_WALL_ITEMS_ON_PAGE = int(os.environ.get("MEDIA_WALL_ITEMS", "45"))  # what homepage shows
 MEDIA_WALL_CACHE_VIDEOS = os.environ.get("MEDIA_WALL_CACHE_VIDEOS", "0") == "1"
@@ -130,6 +142,9 @@ def ensure_data_dirs(ensure_downloads: bool = False):
     os.makedirs(TASKS_ROOT, exist_ok=True)
     os.makedirs(CONFIG_ROOT, exist_ok=True)
     os.makedirs(MEDIA_WALL_DIR, exist_ok=True)
+    os.makedirs(MEDIA_WALL_DIR_PREV, exist_ok=True)
+    os.makedirs(MEDIA_WALL_DIR_NEXT, exist_ok=True)
+
 
     if ensure_downloads:
         os.makedirs(DOWNLOADS_ROOT, exist_ok=True)
@@ -374,74 +389,106 @@ def _cache_name_for_relpath(relpath: str) -> str:
     return f"{h}{ext}"
 
 
-def _clean_cache_dir():
-    os.makedirs(MEDIA_WALL_DIR, exist_ok=True)
-    for fn in os.listdir(MEDIA_WALL_DIR):
+def _clean_dir(path: str):
+    os.makedirs(path, exist_ok=True)
+    for fn in os.listdir(path):
         try:
-            os.remove(os.path.join(MEDIA_WALL_DIR, fn))
+            os.remove(os.path.join(path, fn))
         except Exception:
             pass
 
 
 def refresh_wall_cache(conn: sqlite3.Connection, n: int) -> dict:
     """
-    Pick up to N random items and copy them into /config/media_wall.
+    Pick up to N random items and copy them into cache.
+    Refresh is atomic:
+      - build new cache in MEDIA_WALL_DIR_NEXT
+      - move current -> PREV
+      - move NEXT -> current
+    Old wall links remain valid for at least one refresh cycle via PREV fallback.
     """
     ensure_data_dirs(ensure_downloads=False)
 
-    if MEDIA_WALL_CACHE_VIDEOS:
-        rows = conn.execute(
-            "SELECT path, ext FROM media ORDER BY RANDOM() LIMIT ?",
-            (int(n),)
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT path, ext FROM media WHERE ext IN ({}) ORDER BY RANDOM() LIMIT ?".format(
-                ",".join(["?"] * len(IMAGE_EXTS))
-            ),
-            tuple(sorted(IMAGE_EXTS)) + (int(n),)
-        ).fetchall()
+    with MEDIA_WALL_REFRESH_LOCK:
+        # choose candidates
+        if MEDIA_WALL_CACHE_VIDEOS:
+            rows = conn.execute(
+                "SELECT path, ext FROM media ORDER BY RANDOM() LIMIT ?",
+                (int(n),)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT path, ext FROM media WHERE ext IN ({}) ORDER BY RANDOM() LIMIT ?".format(
+                    ",".join(["?"] * len(IMAGE_EXTS))
+                ),
+                tuple(sorted(IMAGE_EXTS)) + (int(n),)
+            ).fetchall()
 
-    picked = [(r[0], r[1]) for r in rows]
-    if not picked:
-        return {"picked": 0, "copied": 0, "failed": 0}
+        picked = [(r[0], r[1]) for r in rows]
+        if not picked:
+            return {"picked": 0, "copied": 0, "failed": 0}
 
-    _clean_cache_dir()
+        # build next cache
+        _clean_dir(MEDIA_WALL_DIR_NEXT)
 
-    copied = 0
-    failed = 0
+        copied = 0
+        failed = 0
 
-    for rel, _ext in picked:
-        src = os.path.join(DOWNLOADS_ROOT, rel)
-        name = _cache_name_for_relpath(rel)
-        dst = os.path.join(MEDIA_WALL_DIR, name)
+        for rel, _ext in picked:
+            src = os.path.join(DOWNLOADS_ROOT, rel)
+            name = _cache_name_for_relpath(rel)
+            dst = os.path.join(MEDIA_WALL_DIR_NEXT, name)
+
+            tmp = dst + ".tmp"
+            try:
+                shutil.copy2(src, tmp)
+                os.replace(tmp, dst)  # atomic file publish
+                copied += 1
+            except Exception as exc:
+                failed += 1
+                app.logger.warning("media wall copy failed: %s -> %s (%s)", src, dst, exc)
+                try:
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
+                except Exception:
+                    pass
+
+        # if we copied nothing, don't swap (avoid wiping current wall)
+        if copied == 0:
+            return {"picked": len(picked), "copied": 0, "failed": failed}
+
+        # rotate: delete old prev, move current->prev, next->current
+        try:
+            if os.path.isdir(MEDIA_WALL_DIR_PREV):
+                shutil.rmtree(MEDIA_WALL_DIR_PREV)
+        except Exception:
+            pass
 
         try:
-            tmp = dst + ".tmp"
-            shutil.copy2(src, tmp)
-            os.replace(tmp, dst)
-            copied += 1
-        except Exception as exc:
-            failed += 1
-            app.logger.warning("media wall copy failed: %s -> %s (%s)", src, dst, exc)
-            try:
-                if os.path.exists(tmp):
-                    os.remove(tmp)
-            except Exception:
-                pass
+            if os.path.isdir(MEDIA_WALL_DIR):
+                os.replace(MEDIA_WALL_DIR, MEDIA_WALL_DIR_PREV)
+        except Exception:
+            # if replace fails, we still try to proceed safely
+            pass
 
-    now = _utcnow()
-    conn.execute(
-        """
-        INSERT INTO meta(key, value)
-        VALUES ('last_cache_refresh', ?)
-        ON CONFLICT(key) DO UPDATE SET value=excluded.value
-        """,
-        (now,),
-    )
-    conn.commit()
+        os.replace(MEDIA_WALL_DIR_NEXT, MEDIA_WALL_DIR)
 
-    return {"picked": len(picked), "copied": copied, "failed": failed}
+        # recreate next dir for next run
+        os.makedirs(MEDIA_WALL_DIR_NEXT, exist_ok=True)
+
+        now = _utcnow()
+        conn.execute(
+            """
+            INSERT INTO meta(key, value)
+            VALUES ('last_cache_refresh', ?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value
+            """,
+            (now,),
+        )
+        conn.commit()
+
+        return {"picked": len(picked), "copied": copied, "failed": failed}
+
 
 
 def _should_refresh_cache(conn: sqlite3.Connection) -> bool:
@@ -528,8 +575,56 @@ def mediawall_seed():
 @app.route("/wall/<path:filename>")
 def wall_file(filename):
     ensure_data_dirs(ensure_downloads=False)
-    os.makedirs(MEDIA_WALL_DIR, exist_ok=True)
-    return send_from_directory(MEDIA_WALL_DIR, filename)
+
+    def _send(dirpath: str):
+        resp = send_from_directory(dirpath, filename, conditional=True)
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
+
+    try:
+        return _send(MEDIA_WALL_DIR)
+    except NotFound:
+        return _send(MEDIA_WALL_DIR_PREV)
+    
+
+
+@app.route("/mediawall/api/cache_index")
+def mediawall_cache_index():
+    ensure_data_dirs(ensure_downloads=False)
+
+    def _list_dir(d: str):
+        items = []
+        if not os.path.isdir(d):
+            return items
+        for entry in os.scandir(d):
+            if not entry.is_file():
+                continue
+            fn = entry.name
+            if fn.endswith(".tmp"):
+                continue
+            ext = os.path.splitext(fn)[1].lower()
+            if ext not in MEDIA_EXTS:
+                continue
+            try:
+                st = entry.stat()
+            except FileNotFoundError:
+                continue
+            items.append({
+                "name": fn,
+                "mtime": int(st.st_mtime),
+                "size": int(st.st_size),
+                "url": url_for("wall_file", filename=fn),
+            })
+        items.sort(key=lambda x: x["mtime"], reverse=True)
+        return items
+
+    # primary list only (prev is fallback)
+    return jsonify({
+        "items": _list_dir(MEDIA_WALL_DIR),
+    })
+
 
 # ---------------------------------------------------------------------
 # Home page (uses cache folder; never scans /downloads)

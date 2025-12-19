@@ -1,85 +1,176 @@
-{% extends "base.html" %}
-{% block content %}
-
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <h1 class="card-title mb-3">Welcome to Artillery</h1>
-                <p class="mb-3">
-                    Artillery is your lightweight web front-end for
-                    <code>gallery-dl</code>. Create repeatable download tasks, schedule
-                    them with cron, and keep everything isolated per task folder.
-                </p>
-
-                <ul class="mb-3">
-                    <li>Each task has its own folder under <code>/tasks/&lt;task-name&gt;</code>.</li>
-                    <li>Downloads go to <code>/downloads</code> using your global <code>gallery-dl.conf</code>.</li>
-                    <li>Tasks can be run manually, paused, or scheduled via cron.</li>
-                    <li>All output is logged to each task’s <code>logs.txt</code> for troubleshooting.</li>
-                </ul>
-
-                <div class="d-flex flex-wrap gap-2">
-                    <a href="{{ url_for('tasks') }}" class="btn btn-danger">
-                        View tasks
-                    </a>
-                    <a href="{{ url_for('config_page') }}" class="btn btn-outline-light">
-                        Edit config
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- Media wall (served from /config/media_wall via /wall/<filename>) -->
 <div class="row">
-    <div class="col-12">
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <h5 class="card-title mb-3">Media wall</h5>
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Media wall</h5>
 
-                {% if has_media %}
-                <div id="media-wall-container">
-                    <p id="media-wall-loader" class="text-muted small mb-2">
-                        Loading media wall...
-                    </p>
+        <div id="media-wall-container" data-rows="3" data-limit="45" data-poll-ms="3000">
+          <p id="media-wall-loader" class="text-muted small mb-2">
+            Loading media wall...
+          </p>
 
-                    <div class="media-wall">
-                        {% for row in recent_rows %}
-                        {% if row %}
-                        <div class="media-wall-row">
-                            <div class="media-strip
-                                {% if loop.index0 == 1 %}
-                                    media-strip-right
-                                {% else %}
-                                    media-strip-left
-                                {% endif %}">
-                                {# duplicate items to allow continuous scroll #}
-                                {% for _ in range(2) %}
-                                {% for item in row %}
-                                <div class="media-item">
-                                    <a href="{{ item }}" target="_blank" class="d-block">
-                                        <img src="{{ item }}" alt="media" class="media-img" loading="lazy" />
-                                    </a>
-                                </div>
-                                {% endfor %}
-                                {% endfor %}
-                            </div>
-                        </div>
-                        {% endif %}
-                        {% endfor %}
-                    </div>
+          <p id="media-wall-empty" class="text-muted mb-0" {% if has_media %}style="display:none"{% endif %}>
+            No media cached yet. Run a task, then refresh the media wall.
+          </p>
+
+          <!-- initial server-render (fast first paint) -->
+          {% if has_media %}
+          <div class="media-wall" id="media-wall">
+            {% for row in recent_rows %}
+              {% if row %}
+              <div class="media-wall-row">
+                <div class="media-strip
+                  {% if loop.index0 == 1 %}
+                    media-strip-right
+                  {% else %}
+                    media-strip-left
+                  {% endif %}">
+                  {# duplicate items to allow continuous scroll #}
+                  {% for _ in range(2) %}
+                    {% for item in row %}
+                      <div class="media-item">
+                        <a href="{{ item }}" target="_blank" class="d-block">
+                          <img src="{{ item }}" alt="media" class="media-img" loading="lazy" />
+                        </a>
+                      </div>
+                    {% endfor %}
+                  {% endfor %}
                 </div>
-                {% else %}
-                <p class="text-muted mb-0">
-                    No media cached yet. Run a task, then refresh the media wall.
-                </p>
-                {% endif %}
-            </div>
+              </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="media-wall" id="media-wall"></div>
+          {% endif %}
         </div>
-    </div>
-</div>
 
-{% endblock %}
- 
+        <script>
+          (function () {
+            const container = document.getElementById("media-wall-container");
+            if (!container) return;
+
+            const rows = parseInt(container.dataset.rows || "3", 10);
+            const limit = parseInt(container.dataset.limit || "45", 10);
+            const pollMs = parseInt(container.dataset.pollMs || "3000", 10);
+
+            const loader = document.getElementById("media-wall-loader");
+            const emptyMsg = document.getElementById("media-wall-empty");
+            const wall = document.getElementById("media-wall");
+
+            let lastSig = "";
+
+            function hideLoader() {
+              if (loader) loader.style.display = "none";
+            }
+
+            function setEmpty(isEmpty) {
+              if (!emptyMsg) return;
+              emptyMsg.style.display = isEmpty ? "" : "none";
+            }
+
+            function buildImgUrl(baseUrl, v) {
+              // baseUrl is like "/wall/<file>"
+              return baseUrl + (baseUrl.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(v);
+            }
+
+            function render(items) {
+              if (!wall) return;
+
+              wall.innerHTML = "";
+
+              if (!items.length) {
+                setEmpty(true);
+                hideLoader();
+                return;
+              }
+
+              setEmpty(false);
+
+              const buckets = Array.from({ length: rows }, () => []);
+              items.forEach((it, idx) => buckets[idx % rows].push(it));
+
+              buckets.forEach((rowItems, idx) => {
+                if (!rowItems.length) return;
+
+                const rowDiv = document.createElement("div");
+                rowDiv.className = "media-wall-row";
+
+                const strip = document.createElement("div");
+                strip.className = "media-strip " + (idx === 1 ? "media-strip-right" : "media-strip-left");
+
+                // duplicate items to allow continuous scroll (same as your Jinja)
+                for (let r = 0; r < 2; r++) {
+                  for (const it of rowItems) {
+                    const itemDiv = document.createElement("div");
+                    itemDiv.className = "media-item";
+
+                    const a = document.createElement("a");
+                    a.className = "d-block";
+                    a.target = "_blank";
+                    a.href = buildImgUrl(it.url, it.mtime);
+
+                    const img = document.createElement("img");
+                    img.className = "media-img";
+                    img.loading = "lazy";
+                    img.alt = "media";
+
+                    const setSrc = (v) => {
+                      img.src = buildImgUrl(it.url, v);
+                    };
+
+                    // cache-bust with file mtime so updated cache swaps load immediately
+                    setSrc(it.mtime);
+
+                    // if we ever hit a transient 404 (swap/copy timing), retry shortly with a hard bust
+                    img.onerror = () => {
+                      setTimeout(() => setSrc(Date.now()), 800);
+                    };
+
+                    a.appendChild(img);
+                    itemDiv.appendChild(a);
+                    strip.appendChild(itemDiv);
+                  }
+                }
+
+                rowDiv.appendChild(strip);
+                wall.appendChild(rowDiv);
+              });
+
+              hideLoader();
+            }
+
+            async function refresh() {
+              try {
+                const res = await fetch("/mediawall/api/cache_index", { cache: "no-store" });
+                if (!res.ok) return;
+
+                const data = await res.json();
+                const items = (data.items || []).slice(0, limit);
+
+                // signature includes mtime so we also refresh when files change
+                const sig = items.map(i => i.name + ":" + i.mtime).join("|");
+                if (sig && sig === lastSig) {
+                  hideLoader();
+                  return;
+                }
+                lastSig = sig;
+
+                render(items);
+              } catch (e) {
+                // no spam — just keep polling
+              }
+            }
+
+            document.addEventListener("DOMContentLoaded", () => {
+              // initial poll (will replace server-render if changed)
+              refresh();
+              setInterval(refresh, pollMs);
+            });
+          })();
+        </script>
+      </div>
+    </div>
+  </div>
+</div>
