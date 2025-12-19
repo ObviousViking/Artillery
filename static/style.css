@@ -196,6 +196,10 @@ code {
     justify-content: center;
 }
 
+.media-wall-row:hover .media-strip {
+  animation-play-state: paused;
+}
+
 /* Scrolling animations */
 @keyframes media-scroll-left {
     from { transform: translate3d(0,0,0); }
