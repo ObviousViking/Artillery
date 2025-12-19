@@ -1,3 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h1 class="card-title mb-3">Welcome to Artillery</h1>
+                <p class="mb-3">
+                    Artillery is your lightweight web front-end for
+                    <code>gallery-dl</code>. Create repeatable download tasks, schedule
+                    them with cron, and keep everything isolated per task folder.
+                </p>
+
+                <ul class="mb-3">
+                    <li>Each task has its own folder under <code>/tasks/&lt;task-name&gt;</code>.</li>
+                    <li>Downloads go to <code>/downloads</code> using your global <code>gallery-dl.conf</code>.</li>
+                    <li>Tasks can be run manually, paused, or scheduled via cron.</li>
+                    <li>All output is logged to each task’s <code>logs.txt</code> for troubleshooting.</li>
+                </ul>
+
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="{{ url_for('tasks') }}" class="btn btn-danger">
+                        View tasks
+                    </a>
+                    <a href="{{ url_for('config_page') }}" class="btn btn-outline-light">
+                        Edit config
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Media wall (served from /config/media_wall via /wall/<filename>) -->
 <div class="row">
   <div class="col-12">
@@ -174,3 +208,7 @@
     </div>
   </div>
 </div>
+
+
+{% endblock %}
+ 
