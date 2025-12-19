@@ -138,8 +138,15 @@ code {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    animation: media-scroll-left 60s linear infinite;
     will-change: transform;
+    backface-visibility: hidden;
+    transform: translate3d(0,0,0);
+
+    /* JS will set these precisely */
+    --loop-distance: 0px;
+    --duration: 60s;
+
+    animation: media-scroll-left var(--duration) linear infinite;
 }
 
 /* Reverse direction for the middle row */
@@ -191,23 +198,13 @@ code {
 
 /* Scrolling animations */
 @keyframes media-scroll-left {
-    0% {
-        transform: translateX(0);
-    }
-
-    100% {
-        transform: translateX(-50%);
-    }
+    from { transform: translate3d(0,0,0); }
+    to   { transform: translate3d(calc(-1 * var(--loop-distance)),0,0); }
 }
 
 @keyframes media-scroll-right {
-    0% {
-        transform: translateX(-50%);
-    }
-
-    100% {
-        transform: translateX(0);
-    }
+    from { transform: translate3d(calc(-1 * var(--loop-distance)),0,0); }
+    to   { transform: translate3d(0,0,0); }
 }
 
 /* Fade-in for items */
