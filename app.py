@@ -901,6 +901,35 @@ def task_action(slug):
     return redirect(url_for("tasks"))
 
 # ---------------------------------------------------------------------
+# Task logs endpoint
+# ---------------------------------------------------------------------
+
+@app.route("/tasks/<slug>/logs")
+def task_logs(slug):
+    """
+    Fetch the log content for a task.
+    Returns JSON with the log content and metadata.
+    """
+    ensure_data_dirs(ensure_downloads=False)
+    
+    task_folder = os.path.join(TASKS_ROOT, slug)
+    if not os.path.isdir(task_folder):
+        return jsonify({"error": "Task not found"}), 404
+    
+    logs_path = os.path.join(task_folder, "logs.txt")
+    
+    try:
+        if os.path.exists(logs_path):
+            with open(logs_path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+        else:
+            content = "No logs yet. Task has not been run."
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    
+    return jsonify({"slug": slug, "content": content})
+
+# ---------------------------------------------------------------------
 # Original media route (serves from /downloads)
 # ---------------------------------------------------------------------
 

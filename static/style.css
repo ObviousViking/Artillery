@@ -223,3 +223,32 @@ code {
         transform: translateY(0);
     }
 }
+
+/* Output panel styles */
+.card-header {
+    background-color: #0f172a;
+    border-bottom: 1px solid #374151;
+}
+
+#logContainer {
+    color: #c2c2c2;
+    background-color: #050505 !important;
+    word-break: break-word;
+}
+
+#logContainer pre {
+    color: #e5e7eb;
+}
+
+#taskSelector.form-control {
+    background-color: #050505;
+    color: #e5e7eb;
+    border-color: #374151;
+}
+
+#taskSelector.form-control:focus {
+    background-color: #020617;
+    color: #f9fafb;
+    border-color: #f97316;
+    box-shadow: 0 0 0 0.2rem rgba(249, 115, 22, 0.25);
+}

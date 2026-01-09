@@ -111,6 +111,37 @@
     </div>
 </div>
 
+<!-- Output Panel -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-secondary">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Output</h5>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnToggleOutput" data-collapsed="true">
+                    Show
+                </button>
+            </div>
+            <div id="outputPanel" class="card-body" style="display: none;">
+                <div class="mb-3">
+                    <label class="form-label" for="taskSelector">Select task to view logs:</label>
+                    <select id="taskSelector" class="form-control">
+                        <option value="">-- Choose a task --</option>
+                        {% for task in tasks %}
+                        <option value="{{ task.slug }}">{{ task.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div id="logContainer" class="bg-dark p-3 rounded" style="max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.875rem; border: 1px solid #374151;">
+                    <p class="text-muted mb-0">Select a task to view its output...</p>
+                </div>
+                <div class="mt-2">
+                    <small class="text-muted">Auto-refreshing every 2 seconds</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="row">
     <div class="col-12">
         <div class="card shadow-sm border-secondary">
@@ -286,6 +317,7 @@ https://example.com/image2" required></textarea>
 <script>
     (function () {
         let isEditingExistingTask = false;
+        let outputPollInterval = null;
 
         const nameInput = document.getElementById("name");
         const urlsTextarea = document.getElementById("urls");
@@ -295,6 +327,12 @@ https://example.com/image2" required></textarea>
         const editingFlag = document.getElementById("editingFlag");
         const taskFormTitle = document.getElementById("taskFormTitle");
         const btnNewTask = document.getElementById("btnNewTask");
+        
+        // Output panel elements
+        const btnToggleOutput = document.getElementById("btnToggleOutput");
+        const outputPanel = document.getElementById("outputPanel");
+        const taskSelector = document.getElementById("taskSelector");
+        const logContainer = document.getElementById("logContainer");
 
         function buildCommandFromOptions() {
             const flags = [];
@@ -327,6 +365,63 @@ https://example.com/image2" required></textarea>
             syncHiddenFromPreview();
         }
 
+        // Output panel functions
+        function toggleOutputPanel() {
+            const isCollapsed = btnToggleOutput.getAttribute("data-collapsed") === "true";
+            if (isCollapsed) {
+                outputPanel.style.display = "block";
+                btnToggleOutput.textContent = "Hide";
+                btnToggleOutput.setAttribute("data-collapsed", "false");
+                startOutputPolling();
+            } else {
+                outputPanel.style.display = "none";
+                btnToggleOutput.textContent = "Show";
+                btnToggleOutput.setAttribute("data-collapsed", "true");
+                stopOutputPolling();
+            }
+        }
+
+        function fetchTaskLogs(slug) {
+            if (!slug) {
+                logContainer.innerHTML = '<p class="text-muted mb-0">Select a task to view its output...</p>';
+                return;
+            }
+            
+            fetch(`/tasks/${slug}/logs`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        logContainer.innerHTML = `<p class="text-danger mb-0">Error: ${data.error}</p>`;
+                    } else {
+                        // Escape HTML and preserve whitespace
+                        const escapedContent = (data.content || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                        logContainer.innerHTML = `<pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;">${escapedContent}</pre>`;
+                        // Auto-scroll to bottom
+                        logContainer.scrollTop = logContainer.scrollHeight;
+                    }
+                })
+                .catch(err => {
+                    logContainer.innerHTML = `<p class="text-danger mb-0">Failed to fetch logs: ${err.message}</p>`;
+                });
+        }
+
+        function startOutputPolling() {
+            if (outputPollInterval) return;
+            outputPollInterval = setInterval(() => {
+                const slug = taskSelector.value;
+                if (slug) {
+                    fetchTaskLogs(slug);
+                }
+            }, 2000); // Poll every 2 seconds
+        }
+
+        function stopOutputPolling() {
+            if (outputPollInterval) {
+                clearInterval(outputPollInterval);
+                outputPollInterval = null;
+            }
+        }
+
         document.addEventListener("DOMContentLoaded", function () {
             // Hook options changes
             document.querySelectorAll(".gd-option").forEach(function (cb) {
@@ -341,6 +436,17 @@ https://example.com/image2" required></textarea>
             if (commandPreview) {
                 commandPreview.addEventListener("input", function () {
                     syncHiddenFromPreview();
+                });
+            }
+
+            // Output panel event listeners
+            if (btnToggleOutput) {
+                btnToggleOutput.addEventListener("click", toggleOutputPanel);
+            }
+
+            if (taskSelector) {
+                taskSelector.addEventListener("change", function () {
+                    fetchTaskLogs(this.value);
                 });
             }
 
