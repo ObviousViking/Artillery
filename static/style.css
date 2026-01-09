@@ -243,13 +243,12 @@ code {
     word-wrap: break-word;
 }
 
-/* ANSI Color codes matching gallery-dl scheme - higher specificity to override pre color */
-#logContainer .ansi-success { color: #32FF32; font-weight: bold; }      /* 1;32 - bright green */
-#logContainer .ansi-skip    { opacity: 0.5; }                            /* 2 - dim/faint */
-#logContainer .ansi-debug   { color: #F0F0F0; }                          /* 0;37 - white */
-#logContainer .ansi-info    { color: #FFFFFF; font-weight: bold; }      /* 1;37 - bright white */
-#logContainer .ansi-warning { color: #FFFF00; font-weight: bold; }      /* 1;33 - bright yellow */
-#logContainer .ansi-error   { color: #FF3333; font-weight: bold; }      /* 1;31 - bright red */
+/* Log level color classes */
+#logContainer .log-success { color: #32FF32; font-weight: bold; }  /* green */
+#logContainer .log-error   { color: #FF3333; font-weight: bold; }  /* red */
+#logContainer .log-warning { color: #FFFF00; font-weight: bold; }  /* yellow */
+#logContainer .log-info    { color: #FFFFFF; font-weight: bold; }  /* bright white */
+#logContainer .log-debug   { color: #F0F0F0; }                     /* white */
 
 #taskSelector.form-control {
     background-color: #050505;

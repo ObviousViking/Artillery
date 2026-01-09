@@ -382,76 +382,26 @@ https://example.com/image2" required></textarea>
             }
         }
 
-        function parseANSIColors(text) {
+        function parseLogColors(text) {
             // Map log level patterns to CSS classes
             const levelMap = {
-                'warning': 'ansi-warning',      // yellow
-                'error': 'ansi-error',          // red
-                'success': 'ansi-success',      // green
-                'info': 'ansi-info',            // bright white
-                'debug': 'ansi-debug'           // white
+                'warning': 'log-warning',
+                'error': 'log-error',
+                'success': 'log-success',
+                'info': 'log-info',
+                'debug': 'log-debug'
             };
             
-            // Escape HTML first
+            // Escape HTML
             text = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
             
-            // Split by lines
-            const lines = text.split('\n');
-            let result = '';
-            
-            for (let line of lines) {
-                // Match bracketed patterns like [warning], [error], [success], etc.
-                let coloredLine = line;
-                
-                // Check for each level pattern
-                for (const [level, cssClass] of Object.entries(levelMap)) {
-                    const pattern = new RegExp(`\\[(${level})\\]`, 'gi');
-                    coloredLine = coloredLine.replace(pattern, `<span class="${cssClass}">[$1]</span>`);
-                }
-                
-                // Also handle ANSI escape codes if present
-                const ansiRegex = /(\x1b|\u001b)\[([0-9;]*)m/g;
-                if (ansiRegex.test(coloredLine)) {
-                    // Reset regex for actual replacement
-                    ansiRegex.lastIndex = 0;
-                    const ansiMap = {
-                        '1;32': 'ansi-success',
-                        '2': 'ansi-skip',
-                        '0;37': 'ansi-debug',
-                        '1;37': 'ansi-info',
-                        '1;33': 'ansi-warning',
-                        '1;31': 'ansi-error'
-                    };
-                    
-                    const parts = coloredLine.split(ansiRegex);
-                    let ansiResult = '';
-                    let currentClass = '';
-                    
-                    for (let i = 0; i < parts.length; i++) {
-                        if (i % 3 === 0) {
-                            // Regular text
-                            if (currentClass && parts[i]) {
-                                ansiResult += `<span class="${currentClass}">${parts[i]}</span>`;
-                            } else {
-                                ansiResult += parts[i];
-                            }
-                        } else if (i % 3 === 2) {
-                            // ANSI code (second capture group)
-                            const code = parts[i];
-                            if (code === '0' || code === '') {
-                                currentClass = '';
-                            } else if (ansiMap[code]) {
-                                currentClass = ansiMap[code];
-                            }
-                        }
-                    }
-                    coloredLine = ansiResult;
-                }
-                
-                result += coloredLine + '\n';
+            // Color log level patterns like [warning], [error], etc.
+            for (const [level, cssClass] of Object.entries(levelMap)) {
+                const pattern = new RegExp(`\\[${level}\\]`, 'gi');
+                text = text.replace(pattern, `<span class="${cssClass}">[$&]</span>`);
             }
             
-            return result;
+            return text;
         }
         
         function fetchTaskLogs(slug) {
@@ -467,7 +417,7 @@ https://example.com/image2" required></textarea>
                         logContainer.innerHTML = `<p class="text-danger mb-0">Error: ${data.error}</p>`;
                     } else {
                         // Parse ANSI colors and create HTML
-                        const coloredContent = parseANSIColors(data.content || "");
+                        const coloredContent = parseLogColors(data.content || "");
                         logContainer.innerHTML = `<pre>${coloredContent}</pre>`;
                         // Auto-scroll to bottom only if enabled
                         if (shouldAutoScroll) {
