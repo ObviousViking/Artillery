@@ -135,7 +135,7 @@
                     <p class="text-muted mb-0">Select a task to view its output...</p>
                 </div>
                 <div class="mt-2">
-                    <small class="text-muted">Auto-refreshing every 2 seconds</small>
+                    <small class="text-muted">Auto-refreshing every 1 second</small>
                 </div>
             </div>
         </div>
@@ -381,6 +381,35 @@ https://example.com/image2" required></textarea>
             }
         }
 
+        function parseANSIColors(text) {
+            // Map ANSI codes to CSS classes based on gallery-dl color scheme
+            const ansiMap = {
+                '1;32': 'ansi-success',  // success - bright green
+                '2': 'ansi-skip',        // skip - dim
+                '0;37': 'ansi-debug',    // debug - white
+                '1;37': 'ansi-info',     // info - bright white
+                '1;33': 'ansi-warning',  // warning - bright yellow
+                '1;31': 'ansi-error'     // error - bright red
+            };
+            
+            // Escape HTML first
+            text = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            
+            // Replace ANSI codes with HTML spans
+            text = text.replace(/\x1b\[([0-9;]+)m/g, (match, code) => {
+                const cssClass = ansiMap[code];
+                return cssClass ? `</span><span class="${cssClass}">` : match;
+            });
+            
+            // Handle reset codes
+            text = text.replace(/\x1b\[0m/g, '</span><span>');
+            
+            // Wrap in initial span
+            text = `<span>${text}</span>`;
+            
+            return text;
+        }
+        
         function fetchTaskLogs(slug) {
             if (!slug) {
                 logContainer.innerHTML = '<p class="text-muted mb-0">Select a task to view its output...</p>';
@@ -393,9 +422,9 @@ https://example.com/image2" required></textarea>
                     if (data.error) {
                         logContainer.innerHTML = `<p class="text-danger mb-0">Error: ${data.error}</p>`;
                     } else {
-                        // Escape HTML and preserve whitespace
-                        const escapedContent = (data.content || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                        logContainer.innerHTML = `<pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;">${escapedContent}</pre>`;
+                        // Parse ANSI colors and create HTML
+                        const coloredContent = parseANSIColors(data.content || "");
+                        logContainer.innerHTML = `<pre>${coloredContent}</pre>`;
                         // Auto-scroll to bottom
                         logContainer.scrollTop = logContainer.scrollHeight;
                     }
@@ -412,7 +441,7 @@ https://example.com/image2" required></textarea>
                 if (slug) {
                     fetchTaskLogs(slug);
                 }
-            }, 2000); // Poll every 2 seconds
+            }, 1000); // Poll every 1 second for real-time updates
         }
 
         function stopOutputPolling() {

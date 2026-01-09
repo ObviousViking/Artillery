@@ -231,14 +231,24 @@ code {
 }
 
 #logContainer {
-    color: #c2c2c2;
     background-color: #050505 !important;
     word-break: break-word;
 }
 
 #logContainer pre {
-    color: #e5e7eb;
+    color: #d4d4d4;
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
 }
+
+/* ANSI Color codes matching gallery-dl scheme */
+.ansi-success { color: #32FF32; font-weight: bold; }      /* 1;32 - bright green */
+.ansi-skip    { opacity: 0.5; }                            /* 2 - dim/faint */
+.ansi-debug   { color: #F0F0F0; }                          /* 0;37 - white */
+.ansi-info    { color: #FFFFFF; font-weight: bold; }      /* 1;37 - bright white */
+.ansi-warning { color: #FFFF00; font-weight: bold; }      /* 1;33 - bright yellow */
+.ansi-error   { color: #FF3333; font-weight: bold; }      /* 1;31 - bright red */
 
 #taskSelector.form-control {
     background-color: #050505;
