@@ -228,6 +228,7 @@ code {
 .card-header {
     background-color: #0f172a;
     border-bottom: 1px solid #374151;
+    color: #f8f9fa;
 }
 
 #logContainer {
