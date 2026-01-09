@@ -396,19 +396,32 @@ https://example.com/image2" required></textarea>
             // Escape HTML first
             text = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
             
-            // Replace ANSI codes with HTML spans
-            text = text.replace(/\x1b\[([0-9;]+)m/g, (match, code) => {
-                const cssClass = ansiMap[code];
-                return cssClass ? `</span><span class="${cssClass}">` : match;
-            });
+            // Split by ANSI codes and process
+            const parts = text.split(/(\x1b\[[0-9;]*m)/);
+            let result = '';
+            let currentClass = '';
             
-            // Handle reset codes
-            text = text.replace(/\x1b\[0m/g, '</span><span>');
+            for (let part of parts) {
+                const match = part.match(/\x1b\[([0-9;]*)m/);
+                if (match) {
+                    const code = match[1];
+                    if (code === '0' || code === '') {
+                        // Reset code
+                        currentClass = '';
+                    } else if (ansiMap[code]) {
+                        currentClass = ansiMap[code];
+                    }
+                } else if (part) {
+                    // Regular text
+                    if (currentClass) {
+                        result += `<span class="${currentClass}">${part}</span>`;
+                    } else {
+                        result += part;
+                    }
+                }
+            }
             
-            // Wrap in initial span
-            text = `<span>${text}</span>`;
-            
-            return text;
+            return result;
         }
         
         function fetchTaskLogs(slug) {
