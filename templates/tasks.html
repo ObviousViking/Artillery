@@ -318,6 +318,7 @@ https://example.com/image2" required></textarea>
     (function () {
         let isEditingExistingTask = false;
         let outputPollInterval = null;
+        let shouldAutoScroll = true;  // Track if we should auto-scroll
 
         const nameInput = document.getElementById("name");
         const urlsTextarea = document.getElementById("urls");
@@ -425,8 +426,10 @@ https://example.com/image2" required></textarea>
                         // Parse ANSI colors and create HTML
                         const coloredContent = parseANSIColors(data.content || "");
                         logContainer.innerHTML = `<pre>${coloredContent}</pre>`;
-                        // Auto-scroll to bottom
-                        logContainer.scrollTop = logContainer.scrollHeight;
+                        // Auto-scroll to bottom only if enabled
+                        if (shouldAutoScroll) {
+                            logContainer.scrollTop = logContainer.scrollHeight;
+                        }
                     }
                 })
                 .catch(err => {
@@ -450,6 +453,13 @@ https://example.com/image2" required></textarea>
                 outputPollInterval = null;
             }
         }
+
+        // Detect user scrolling in log container
+        logContainer.addEventListener("scroll", function () {
+            // Check if user is scrolled to the bottom (within 10px tolerance)
+            const isAtBottom = logContainer.scrollTop + logContainer.clientHeight >= logContainer.scrollHeight - 10;
+            shouldAutoScroll = isAtBottom;
+        });
 
         document.addEventListener("DOMContentLoaded", function () {
             // Hook options changes
