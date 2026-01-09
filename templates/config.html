@@ -54,7 +54,7 @@
                 <div class="d-flex flex-wrap gap-2">
                     <form method="post" action="{{ url_for('mediawall_toggle') }}" style="display: inline;">
                         <button type="submit" class="btn {% if media_wall_enabled %}btn-success{% else %}btn-outline-success{% endif %}">
-                            {% if media_wall_enabled %}✓ Media wall enabled{% else %}Media wall disabled{% endif %}
+                            {% if media_wall_enabled %}Media wall enabled{% else %}Media wall disabled{% endif %}
                         </button>
                     </form>
                     {% if media_wall_enabled %}
