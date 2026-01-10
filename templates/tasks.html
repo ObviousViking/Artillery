@@ -96,6 +96,13 @@
                                                 Delete
                                             </button>
                                         </form>
+
+                                        <!-- Download logs -->
+                                        <form method="get" action="{{ url_for('download_task_logs', slug=task.slug) }}" class="m-0">
+                                            <button type="submit" class="btn btn-sm btn-outline-light">
+                                                Download Logs
+                                            </button>
+                                        </form>
                                     </div>
                                 </td>
                             </tr>
@@ -135,7 +142,7 @@
                     <p class="text-muted mb-0">Select a task to view its output...</p>
                 </div>
                 <div class="mt-2">
-                    <small class="text-muted">Auto-refreshing every 1 second</small>
+                    <small class="text-muted">Auto-refreshing every 1 second - Only the last 50 lines shown. Please review logs in full for more detail</small>
                 </div>
             </div>
         </div>

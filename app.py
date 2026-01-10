@@ -20,6 +20,7 @@ from flask import (
     Flask, render_template, request,
     redirect, url_for, flash, send_from_directory, Response
 )
+from flask import send_file
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
@@ -981,6 +982,31 @@ def task_logs(slug):
         return jsonify({"error": str(exc)}), 500
     
     return jsonify({"slug": slug, "content": content})
+
+
+# ---------------------------------------------------------------------
+# Download task logs
+# ---------------------------------------------------------------------
+@app.route("/tasks/<slug>/logs/download")
+def download_task_logs(slug):
+    ensure_data_dirs(ensure_downloads=False)
+
+    task_folder = os.path.join(TASKS_ROOT, slug)
+    if not os.path.isdir(task_folder):
+        return jsonify({"error": "Task not found"}), 404
+
+    logs_path = os.path.join(task_folder, "logs.txt")
+    if not os.path.exists(logs_path):
+        return jsonify({"error": "No logs yet for this task"}), 404
+
+    try:
+        # Prefer modern Flask's download_name, fallback to attachment_filename
+        try:
+            return send_file(logs_path, as_attachment=True, download_name=f"{slug}-logs.txt")
+        except TypeError:
+            return send_file(logs_path, as_attachment=True, attachment_filename=f"{slug}-logs.txt")
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 # ---------------------------------------------------------------------
 # Original media route (serves from /downloads)
