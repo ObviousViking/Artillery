@@ -410,7 +410,7 @@ https://example.com/image2" required></textarea>
                 return;
             }
             
-            fetch(`/tasks/${slug}/logs`)
+            fetch(`/tasks/${slug}/logs?tail=50`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.error) {

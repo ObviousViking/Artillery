@@ -938,10 +938,43 @@ def task_logs(slug):
     
     logs_path = os.path.join(task_folder, "logs.txt")
     
+    def tail_lines(path: str, lines: int = 50) -> str:
+        try:
+            with open(path, 'rb') as f:
+                f.seek(0, os.SEEK_END)
+                file_size = f.tell()
+                block_size = 1024
+                chunks = []
+                lines_found = 0
+                pos = file_size
+
+                while pos > 0 and lines_found <= lines:
+                    read_size = block_size if pos >= block_size else pos
+                    pos -= read_size
+                    f.seek(pos)
+                    chunk = f.read(read_size)
+                    chunks.append(chunk)
+                    lines_found = b"\n".join(chunks).count(b"\n")
+
+                data = b"".join(reversed(chunks))
+                text = data.decode('utf-8', errors='replace')
+                return '\n'.join(text.splitlines()[-lines:])
+        except Exception:
+            # Fallback to reading whole file if anything goes wrong
+            try:
+                with open(path, 'r', encoding='utf-8', errors='replace') as f:
+                    return '\n'.join(f.read().splitlines()[-lines:])
+            except Exception:
+                return ''
+
     try:
         if os.path.exists(logs_path):
-            with open(logs_path, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
+            tail = request.args.get('tail', type=int)
+            if tail and tail > 0:
+                content = tail_lines(logs_path, tail)
+            else:
+                with open(logs_path, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
         else:
             content = "No logs yet. Task has not been run."
     except Exception as exc:
