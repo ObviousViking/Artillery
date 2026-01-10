@@ -223,3 +223,42 @@ code {
         transform: translateY(0);
     }
 }
+
+/* Output panel styles */
+.card-header {
+    background-color: #050505;
+    border-bottom: 1px solid #374151;
+    color: #f8f9fa;
+}
+
+#logContainer {
+    background-color: #050505 !important;
+    word-break: break-word;
+}
+
+#logContainer pre {
+    color: #d4d4d4;
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* Log level color classes */
+#logContainer .log-success { color: #32FF32; font-weight: bold; }  /* green */
+#logContainer .log-error   { color: #FF3333; font-weight: bold; }  /* red */
+#logContainer .log-warning { color: #FFFF00; font-weight: bold; }  /* yellow */
+#logContainer .log-info    { color: #FFFFFF; font-weight: bold; }  /* bright white */
+#logContainer .log-debug   { color: #F0F0F0; }                     /* white */
+
+#taskSelector.form-control {
+    background-color: #050505;
+    color: #e5e7eb;
+    border-color: #374151;
+}
+
+#taskSelector.form-control:focus {
+    background-color: #020617;
+    color: #f9fafb;
+    border-color: #f97316;
+    box-shadow: 0 0 0 0.2rem rgba(249, 115, 22, 0.25);
+}

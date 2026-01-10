@@ -85,6 +85,7 @@ app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
 
 MEDIA_WALL_ROWS = 3
+MEDIA_WALL_ENABLED = os.environ.get("MEDIA_WALL_ENABLED", "1") == "1"
 MEDIA_WALL_ITEMS_ON_PAGE = int(os.environ.get("MEDIA_WALL_ITEMS", "45"))  # what homepage shows
 MEDIA_WALL_CACHE_VIDEOS = os.environ.get("MEDIA_WALL_CACHE_VIDEOS", "0") == "1"
 
@@ -560,6 +561,9 @@ def mediawall_refresh():
 @app.route("/mediawall/seed", methods=["POST"])
 def mediawall_seed():
     """Convenience: rebuild then refresh."""
+    if not MEDIA_WALL_ENABLED:
+        flash("Media wall is disabled", "warning")
+        return redirect(url_for("home"))
     conn = _open_media_db()
     stats = ingest_all_task_logs(conn, full_rescan=False)
     result = refresh_wall_cache(conn, MEDIA_WALL_COPY_LIMIT)
@@ -567,6 +571,17 @@ def mediawall_seed():
     conn.close()
     flash(f"Seeded wall. rebuild={stats} refresh={result} total={status['media_count']}", "success")
     return redirect(url_for("home"))
+
+
+@app.route("/mediawall/toggle", methods=["POST"])
+def mediawall_toggle():
+    """Toggle media wall enabled/disabled."""
+    global MEDIA_WALL_ENABLED
+    MEDIA_WALL_ENABLED = not MEDIA_WALL_ENABLED
+    status = "enabled" if MEDIA_WALL_ENABLED else "disabled"
+    os.environ["MEDIA_WALL_ENABLED"] = "1" if MEDIA_WALL_ENABLED else "0"
+    flash(f"Media wall {status}", "success")
+    return redirect(url_for("config_page"))
 
 # ---------------------------------------------------------------------
 # Cached wall file route (fast: served from /config/media_wall)
@@ -634,25 +649,30 @@ def mediawall_cache_index():
 def home():
     tasks = load_tasks()
 
-    os.makedirs(MEDIA_WALL_DIR, exist_ok=True)
-    cached_files = [
-        fn for fn in os.listdir(MEDIA_WALL_DIR)
-        if os.path.splitext(fn)[1].lower() in MEDIA_EXTS and not fn.endswith(".tmp")
-    ]
-    cached_files = cached_files[:MEDIA_WALL_ITEMS_ON_PAGE]
-
-    urls = [url_for("wall_file", filename=fn) for fn in cached_files]
-    has_media = len(urls) > 0
-
+    urls = []
+    has_media = False
     recent_rows = [[] for _ in range(MEDIA_WALL_ROWS)]
-    for i, u in enumerate(urls):
-        recent_rows[i % MEDIA_WALL_ROWS].append(u)
+
+    if MEDIA_WALL_ENABLED:
+        os.makedirs(MEDIA_WALL_DIR, exist_ok=True)
+        cached_files = [
+            fn for fn in os.listdir(MEDIA_WALL_DIR)
+            if os.path.splitext(fn)[1].lower() in MEDIA_EXTS and not fn.endswith(".tmp")
+        ]
+        cached_files = cached_files[:MEDIA_WALL_ITEMS_ON_PAGE]
+
+        urls = [url_for("wall_file", filename=fn) for fn in cached_files]
+        has_media = len(urls) > 0
+
+        for i, u in enumerate(urls):
+            recent_rows[i % MEDIA_WALL_ROWS].append(u)
 
     return render_template(
         "home.html",
         tasks_count=len(tasks),
         recent_rows=recent_rows,
         has_media=has_media,
+        media_wall_enabled=MEDIA_WALL_ENABLED,
     )
 
 # ---------------------------------------------------------------------
@@ -757,7 +777,7 @@ def config_page():
             except Exception as exc:
                 flash(f"Failed to fetch default config: {exc}", "error")
 
-    return render_template("config.html", config_text=config_text, config_path=CONFIG_FILE)
+    return render_template("config.html", config_text=config_text, config_path=CONFIG_FILE, media_wall_enabled=MEDIA_WALL_ENABLED)
 
 # ---------------------------------------------------------------------
 # Task actions
@@ -899,6 +919,35 @@ def task_action(slug):
 
     flash("Unknown action.", "error")
     return redirect(url_for("tasks"))
+
+# ---------------------------------------------------------------------
+# Task logs endpoint
+# ---------------------------------------------------------------------
+
+@app.route("/tasks/<slug>/logs")
+def task_logs(slug):
+    """
+    Fetch the log content for a task.
+    Returns JSON with the log content and metadata.
+    """
+    ensure_data_dirs(ensure_downloads=False)
+    
+    task_folder = os.path.join(TASKS_ROOT, slug)
+    if not os.path.isdir(task_folder):
+        return jsonify({"error": "Task not found"}), 404
+    
+    logs_path = os.path.join(task_folder, "logs.txt")
+    
+    try:
+        if os.path.exists(logs_path):
+            with open(logs_path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+        else:
+            content = "No logs yet. Task has not been run."
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    
+    return jsonify({"slug": slug, "content": content})
 
 # ---------------------------------------------------------------------
 # Original media route (serves from /downloads)
