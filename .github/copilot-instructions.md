@@ -49,26 +49,27 @@ Artillery is a Flask-based UI for managing `gallery-dl` downloads with schedulin
 - `/tasks` - GET lists all tasks, POST creates new task
 - `/tasks/<slug>/action` - POST for run/pause/delete actions
 - `/tasks/<slug>/logs` - GET returns JSON with task log content (used by real-time output viewer)
-- `/config` - GET shows editor, POST saves gallery-dl.conf
-- `/mediawall/toggle` - POST toggles media wall enabled/disabled
+- `/config` - GET shows editor + media wall controls, POST saves gallery-dl.conf or handles media wall actions
+- `/mediawall/toggle` - POST toggles media wall enabled/disabled (accessible via button on config page)
 - `/mediawall/refresh` - POST refreshes wall cache
-- `/mediawall/seed` - POST rebuilds media index then refreshes cache
+- `/mediawall/seed` - POST rebuilds media index then refreshes cache (accessible via "Refresh media wall" button on config page)
 - `/mediawall/status` - GET returns media wall status
 - `/mediawall/api/cache_index` - returns paginated JSON of cached media
 - `/wall/<filename>` - serves cached media files
 
 **Real-time task output viewer:**
+- Located on `/tasks` page as a collapsible "Output" card panel below the task table
 - `/tasks/<slug>/logs` endpoint returns JSON: `{"slug": slug, "content": log_text}`
 - JavaScript polls every 1 second for live log updates with auto-scroll
-- ANSI color parsing via `parseANSIColors()` function maps codes to CSS classes:
-  - `1;32` → `.ansi-success` (bright green, bold)
-  - `1;31` → `.ansi-error` (bright red, bold)
-  - `1;33` → `.ansi-warning` (bright yellow, bold)
-  - `1;37` → `.ansi-info` (bright white, bold)
-  - `0;37` → `.ansi-debug` (white)
-  - `2` → `.ansi-skip` (dim, opacity 0.5)
-- Collapsible output panel with task selector dropdown (show/hide button)
+- Log level pattern parsing via `parseLogColors()` function maps log level tags to CSS classes:
+  - `[warning]` → `.log-warning`
+  - `[error]` → `.log-error`
+  - `[success]` → `.log-success`
+  - `[info]` → `.log-info`
+  - `[debug]` → `.log-debug`
+- Collapsible output panel with task selector dropdown (Show/Hide button)
 - Auto-refresh stops when panel is hidden to reduce polling overhead
+- Auto-scroll pauses when user manually scrolls up in the log container
 
 ## Critical Developer Workflows
 
@@ -100,8 +101,12 @@ python app.py  # Flask dev server on :5000
 - Verify cache directory: `ls -la /config/media_wall/` - should contain symlinks or copies of recent media
 - Check task offset tracking: `task_offsets` table shows last parsed byte position in each task's log
 - If re-indexing needed: `DELETE FROM task_offsets WHERE task='<slug>'` then trigger refresh button
-- Media wall can be toggled on/off via `/config` page - set `MEDIA_WALL_ENABLED` environment variable or use toggle button
+- Media wall can be toggled on/off via `/config` page - there's a dedicated "Media wall" card section with:
+  - Toggle button that shows "Media wall enabled" (green) or "Media wall disabled" (outline) based on current state
+  - "Refresh media wall" button (only visible when enabled) that triggers `/mediawall/seed` endpoint
+- The toggle button calls `/mediawall/toggle` endpoint which updates the global `MEDIA_WALL_ENABLED` flag
 - When disabled, media wall section is completely hidden from home page and no indexing occurs
+- Media wall controls are located below the gallery-dl config editor on the config page
 
 ## Project-Specific Conventions
 
