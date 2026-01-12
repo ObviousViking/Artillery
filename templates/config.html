@@ -59,7 +59,7 @@
                                value="{{ artillery_config.log_lines_display }}" />
                         <div class="form-text">
                             Number of log lines to show in the real-time output panel (default: 50).
-                            Set higher to see more history, or lower for faster updates.
+                            Set higher to see more history, or lower for faster updates. Only applies when log truncation is enabled.
                         </div>
                     </div>
 
@@ -75,15 +75,15 @@
                     </div>
 
                     <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="gallery_dl_progress" 
-                               name="gallery_dl_progress" value="on"
-                               {% if artillery_config.gallery_dl_progress %}checked{% endif %} />
-                        <label class="form-check-label" for="gallery_dl_progress">
-                            Enable gallery-dl progress output
+                        <input type="checkbox" class="form-check-input" id="truncate_logs" 
+                               name="truncate_logs" value="on"
+                               {% if artillery_config.truncate_logs %}checked{% endif %} />
+                        <label class="form-check-label" for="truncate_logs">
+                            Enable log truncation
                         </label>
                         <div class="form-text">
-                            Show download progress information in task logs (default: enabled).
-                            Disable if you prefer cleaner logs without progress indicators.
+                            Truncate log output in the task output panel to the configured number of lines (default: enabled).
+                            Disable to see the full log output without truncation.
                         </div>
                     </div>
 
