@@ -176,6 +176,7 @@ def load_artillery_config() -> dict:
     ensure_data_dirs(ensure_downloads=False)
     config = {
         "log_lines_display": 50,  # default
+        "error_lines_display": 20,  # default
     }
     
     if os.path.exists(ARTILLERY_CONFIG_FILE):
@@ -194,6 +195,11 @@ def load_artillery_config() -> dict:
                                 config["log_lines_display"] = int(value)
                             except ValueError:
                                 app.logger.warning("Invalid log_lines_display value '%s', using default", value)
+                        elif key == "error_lines_display":
+                            try:
+                                config["error_lines_display"] = int(value)
+                            except ValueError:
+                                app.logger.warning("Invalid error_lines_display value '%s', using default", value)
         except Exception as exc:
             app.logger.warning("Failed to load Artillery config: %s", exc)
     
@@ -207,6 +213,7 @@ def save_artillery_config(config: dict):
         with open(ARTILLERY_CONFIG_FILE, "w", encoding="utf-8") as f:
             f.write("# Artillery Configuration\n")
             f.write(f"log_lines_display={config.get('log_lines_display', 50)}\n")
+            f.write(f"error_lines_display={config.get('error_lines_display', 20)}\n")
     except Exception as exc:
         app.logger.error("Failed to save Artillery config: %s", exc)
         raise
@@ -816,11 +823,13 @@ def config_page():
         elif action == "save_artillery":
             try:
                 log_lines = request.form.get("log_lines_display", "50")
+                error_lines = request.form.get("error_lines_display", "20")
                 artillery_config["log_lines_display"] = int(log_lines)
+                artillery_config["error_lines_display"] = int(error_lines)
                 save_artillery_config(artillery_config)
                 flash("Artillery settings saved.", "success")
             except ValueError:
-                flash("Invalid log lines value. Must be a number.", "error")
+                flash("Invalid value. Both settings must be numbers.", "error")
             except Exception as exc:
                 flash(f"Failed to save Artillery settings: {exc}", "error")
         elif action == "reset":
@@ -1030,7 +1039,8 @@ def task_action(slug):
 def task_logs(slug):
     """
     Fetch the log content for a task.
-    Returns JSON with the log content and metadata.
+    Returns JSON with the log content from the current/latest run log.
+    Per-run logs are stored in /tasks/<slug>/logs/run_YYYYMMDD_HHMMSS.log
     """
     ensure_data_dirs(ensure_downloads=False)
     
@@ -1038,7 +1048,20 @@ def task_logs(slug):
     if not os.path.isdir(task_folder):
         return jsonify({"error": "Task not found"}), 404
     
-    logs_path = os.path.join(task_folder, "logs.txt")
+    # Get the latest run log from the logs directory
+    logs_dir = os.path.join(task_folder, "logs")
+    run_log_path = None
+    
+    if os.path.isdir(logs_dir):
+        # Find the most recent run log
+        run_files = [
+            f for f in os.listdir(logs_dir)
+            if f.startswith("run_") and f.endswith(".log")
+        ]
+        if run_files:
+            # Sort in reverse to get the latest (most recent timestamp)
+            run_files.sort(reverse=True)
+            run_log_path = os.path.join(logs_dir, run_files[0])
     
     def tail_lines(path: str, lines: int = 50) -> str:
         try:
@@ -1070,12 +1093,12 @@ def task_logs(slug):
                 return ''
 
     try:
-        if os.path.exists(logs_path):
+        if run_log_path and os.path.exists(run_log_path):
             tail = request.args.get('tail', type=int)
             if tail and tail > 0:
-                content = tail_lines(logs_path, tail)
+                content = tail_lines(run_log_path, tail)
             else:
-                with open(logs_path, "r", encoding="utf-8", errors="replace") as f:
+                with open(run_log_path, "r", encoding="utf-8", errors="replace") as f:
                     content = f.read()
         else:
             content = "No logs yet. Task has not been run."
@@ -1088,8 +1111,8 @@ def task_logs(slug):
 @app.route("/tasks/<slug>/errors")
 def task_errors(slug):
     """
-    Extract and return error lines from task logs.
-    Returns JSON with error lines and count.
+    Extract and return error lines from task logs (current run).
+    Returns JSON with error lines and count from the latest run log.
     """
     ensure_data_dirs(ensure_downloads=False)
     
@@ -1097,14 +1120,31 @@ def task_errors(slug):
     if not os.path.isdir(task_folder):
         return jsonify({"error": "Task not found"}), 404
     
-    logs_path = os.path.join(task_folder, "logs.txt")
+    # Get the latest run log from the logs directory
+    logs_dir = os.path.join(task_folder, "logs")
+    run_log_path = None
     
-    error_lines = deque(maxlen=20)  # Efficiently maintain last 20 lines
+    if os.path.isdir(logs_dir):
+        # Find the most recent run log
+        run_files = [
+            f for f in os.listdir(logs_dir)
+            if f.startswith("run_") and f.endswith(".log")
+        ]
+        if run_files:
+            # Sort in reverse to get the latest (most recent timestamp)
+            run_files.sort(reverse=True)
+            run_log_path = os.path.join(logs_dir, run_files[0])
+    
+    # Get configured error lines limit
+    artillery_config = load_artillery_config()
+    max_error_lines = artillery_config.get("error_lines_display", 20)
+    
+    error_lines = deque(maxlen=max_error_lines)  # Efficiently maintain last N lines
     error_count = 0
     
     try:
-        if os.path.exists(logs_path):
-            with open(logs_path, "r", encoding="utf-8", errors="replace") as f:
+        if run_log_path and os.path.exists(run_log_path):
+            with open(run_log_path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
                     # Check for gallery-dl error tags: [[error]] or Python exceptions
                     # Examples: [download][[error]] Failed to download...
