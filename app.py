@@ -125,7 +125,7 @@ if DEBUG_REQUEST_TIMING:
 # ---------------------------------------------------------------------
 
 def _utcnow() -> str:
-    return dt.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "") + "Z"
 
 
 def slugify(name: str) -> str:
@@ -681,8 +681,8 @@ def _should_refresh_cache(conn: sqlite3.Connection) -> bool:
         if not row or not row[0]:
             return True
         last = row[0].replace("Z", "")
-        last_dt = dt.datetime.fromisoformat(last)
-        age = (dt.datetime.utcnow() - last_dt).total_seconds()
+        last_dt = dt.datetime.fromisoformat(last).replace(tzinfo=dt.timezone.utc)
+        age = (dt.datetime.now(dt.timezone.utc) - last_dt).total_seconds()
         return age >= MEDIA_WALL_MIN_REFRESH_SECONDS
     except Exception:
         return True
@@ -1018,9 +1018,9 @@ def run_task_background(task_folder: str):
             os.remove(lock_path)
         return
 
-    now = dt.datetime.utcnow().isoformat() + "Z"
+    now = dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "") + "Z"
     # Create timestamped log file for this run
-    timestamp = dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d_%H%M%S")
     run_log_path = os.path.join(logs_dir, f"run_{timestamp}.log")
 
     try:
