@@ -343,6 +343,7 @@ https://example.com/image2" required></textarea>
         let outputPollInterval = null;
         let shouldAutoScroll = true;  // Track if we should auto-scroll
         let logLinesToShow = 50;  // Default, will be loaded from config
+        let hasTextSelected = false;  // Track if user is selecting text
 
         const nameInput = document.getElementById("name");
         const urlsTextarea = document.getElementById("urls");
@@ -445,8 +446,21 @@ https://example.com/image2" required></textarea>
                     if (data.error) {
                         logContainer.innerHTML = `<p class="text-danger mb-0">Error: ${data.error}</p>`;
                     } else {
-                        // Parse ANSI colors and create HTML
-                        const coloredContent = parseLogColors(data.content || "");
+                        let content = data.content || "";
+                        
+                        // Handle carriage returns: split by \r and keep only the last segment per line
+                        // This handles gallery-dl's progress updates that overwrite the same line
+                        content = content.split('\n').map(line => {
+                            if (line.includes('\r')) {
+                                // Split by carriage return and take the last segment (final state of the line)
+                                const segments = line.split('\r');
+                                return segments[segments.length - 1];
+                            }
+                            return line;
+                        }).join('\n');
+                        
+                        // Parse log colors and create HTML
+                        const coloredContent = parseLogColors(content);
                         logContainer.innerHTML = `<pre>${coloredContent}</pre>`;
                         // Auto-scroll to bottom only if enabled
                         if (shouldAutoScroll) {
@@ -494,6 +508,9 @@ https://example.com/image2" required></textarea>
         function startOutputPolling() {
             if (outputPollInterval) return;
             outputPollInterval = setInterval(() => {
+                // Skip polling if user has text selected (allows copying without deselection)
+                if (hasTextSelected) return;
+                
                 const slug = taskSelector.value;
                 if (slug) {
                     fetchTaskLogs(slug);
@@ -514,6 +531,29 @@ https://example.com/image2" required></textarea>
             // Check if user is scrolled to the bottom (within 10px tolerance)
             const isAtBottom = logContainer.scrollTop + logContainer.clientHeight >= logContainer.scrollHeight - 10;
             shouldAutoScroll = isAtBottom;
+        });
+
+        // Detect text selection/deselection in log container
+        logContainer.addEventListener("mousedown", function () {
+            hasTextSelected = true;
+        });
+
+        logContainer.addEventListener("mouseup", function () {
+            // Check if text is actually selected
+            const selection = window.getSelection();
+            hasTextSelected = selection.toString().length > 0;
+        });
+
+        logContainer.addEventListener("mouseleave", function () {
+            // If user leaves the container, check if they still have selection
+            const selection = window.getSelection();
+            hasTextSelected = selection.toString().length > 0;
+        });
+
+        document.addEventListener("selectionchange", function () {
+            // When user clears selection anywhere
+            const selection = window.getSelection();
+            hasTextSelected = selection.toString().length > 0;
         });
 
         document.addEventListener("DOMContentLoaded", function () {
