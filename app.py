@@ -177,7 +177,8 @@ def load_artillery_config() -> dict:
     config = {
         "log_lines_display": 50,  # default
         "error_lines_display": 20,  # default
-        "truncate_logs": True,  # default: enable log truncation
+        "truncate_lines": True,  # default: enable line truncation
+        "max_line_length": 200,  # default: max characters per line
     }
     
     if os.path.exists(ARTILLERY_CONFIG_FILE):
@@ -201,8 +202,13 @@ def load_artillery_config() -> dict:
                                 config["error_lines_display"] = int(value)
                             except ValueError:
                                 app.logger.warning("Invalid error_lines_display value '%s', using default", value)
-                        elif key == "truncate_logs":
-                            config["truncate_logs"] = value.lower() in ("true", "1", "yes", "on")
+                        elif key == "truncate_lines":
+                            config["truncate_lines"] = value.lower() in ("true", "1", "yes", "on")
+                        elif key == "max_line_length":
+                            try:
+                                config["max_line_length"] = int(value)
+                            except ValueError:
+                                app.logger.warning("Invalid max_line_length value '%s', using default", value)
         except Exception as exc:
             app.logger.warning("Failed to load Artillery config: %s", exc)
     
@@ -217,7 +223,8 @@ def save_artillery_config(config: dict):
             f.write("# Artillery Configuration\n")
             f.write(f"log_lines_display={config.get('log_lines_display', 50)}\n")
             f.write(f"error_lines_display={config.get('error_lines_display', 20)}\n")
-            f.write(f"truncate_logs={'true' if config.get('truncate_logs', True) else 'false'}\n")
+            f.write(f"truncate_lines={'true' if config.get('truncate_lines', True) else 'false'}\n")
+            f.write(f"max_line_length={config.get('max_line_length', 200)}\n")
     except Exception as exc:
         app.logger.error("Failed to save Artillery config: %s", exc)
         raise
@@ -828,10 +835,12 @@ def config_page():
             try:
                 log_lines = request.form.get("log_lines_display", "50")
                 error_lines = request.form.get("error_lines_display", "20")
-                truncate_logs = request.form.get("truncate_logs", "off") == "on"
+                truncate_lines = request.form.get("truncate_lines", "off") == "on"
+                max_line_length = request.form.get("max_line_length", "200")
                 artillery_config["log_lines_display"] = int(log_lines)
                 artillery_config["error_lines_display"] = int(error_lines)
-                artillery_config["truncate_logs"] = truncate_logs
+                artillery_config["truncate_lines"] = truncate_lines
+                artillery_config["max_line_length"] = int(max_line_length)
                 save_artillery_config(artillery_config)
                 flash("Artillery settings saved.", "success")
             except ValueError:
@@ -1070,73 +1079,50 @@ def task_logs(slug):
             run_files.sort(reverse=True)
             run_log_path = os.path.join(logs_dir, run_files[0])
     
-    def tail_lines(path: str, lines: int = 50) -> tuple:
-        """Read the last N lines from a file without modifying content. Returns (content, was_truncated)."""
+    def tail_lines(path: str, lines: int = 50) -> str:
+        """Read the last N lines from a file without modifying content."""
         try:
             with open(path, 'r', encoding='utf-8', errors='replace') as f:
                 all_lines = f.readlines()
-                total_lines = len(all_lines)
-                was_truncated = total_lines > lines
                 # Return last N lines, joined without extra newlines
-                return (''.join(all_lines[-lines:]) if all_lines else '', was_truncated, total_lines)
+                return ''.join(all_lines[-lines:]) if all_lines else ''
         except Exception:
-            return ('', False, 0)
+            return ''
     
-    def head_and_tail_lines(path: str, lines_per_section: int = 25) -> tuple:
-        """Read first N and last N lines with truncation indicator. Returns (content, was_truncated)."""
-        try:
-            with open(path, 'r', encoding='utf-8', errors='replace') as f:
-                all_lines = f.readlines()
-                total_lines = len(all_lines)
-                
-                # If total lines fit within 2*lines_per_section, no truncation needed
-                if total_lines <= lines_per_section * 2:
-                    return (''.join(all_lines), False, total_lines)
-                
-                # Get first and last sections
-                first_section = all_lines[:lines_per_section]
-                last_section = all_lines[-lines_per_section:]
-                
-                # Calculate how many lines were truncated
-                truncated_count = total_lines - (2 * lines_per_section)
-                
-                # Combine with truncation indicator
-                content = ''.join(first_section) + f"\n... ({truncated_count} lines truncated) ...\n\n" + ''.join(last_section)
-                return (content, True, total_lines)
-        except Exception:
-            return ('', False, 0)
+    def truncate_line_length(content: str, max_length: int) -> str:
+        """Truncate each line to max_length characters, adding ... if truncated."""
+        lines = content.split('\n')
+        truncated_lines = []
+        for line in lines:
+            if len(line) > max_length:
+                truncated_lines.append(line[:max_length] + '...')
+            else:
+                truncated_lines.append(line)
+        return '\n'.join(truncated_lines)
 
     try:
-        truncated = False
         if run_log_path and os.path.exists(run_log_path):
-            # Load Artillery config to check truncate_logs setting
-            artillery_config = load_artillery_config()
-            truncate_enabled = artillery_config.get("truncate_logs", True)
-            
-            # Only apply tail limit if truncation is enabled
-            if truncate_enabled:
-                tail = request.args.get('tail', type=int)
-                if tail and tail > 0:
-                    # Use head and tail approach for better context
-                    lines_per_section = tail // 2
-                    content, truncated, total = head_and_tail_lines(run_log_path, lines_per_section)
-                else:
-                    # Use default from config if no tail specified
-                    default_lines = artillery_config.get("log_lines_display", 50)
-                    lines_per_section = default_lines // 2
-                    content, truncated, total = head_and_tail_lines(run_log_path, lines_per_section)
+            tail = request.args.get('tail', type=int)
+            if tail and tail > 0:
+                content = tail_lines(run_log_path, tail)
             else:
-                # Truncation disabled - return full log
                 with open(run_log_path, "r", encoding="utf-8", errors="replace") as f:
                     content = f.read()
-                truncated = False
+            
+            # Load Artillery config to check line truncation setting
+            artillery_config = load_artillery_config()
+            truncate_enabled = artillery_config.get("truncate_lines", True)
+            
+            # Apply line truncation if enabled
+            if truncate_enabled:
+                max_length = artillery_config.get("max_line_length", 200)
+                content = truncate_line_length(content, max_length)
         else:
             content = "No logs yet. Task has not been run."
-            truncated = False
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     
-    return jsonify({"slug": slug, "content": content, "truncated": truncated})
+    return jsonify({"slug": slug, "content": content})
 
 
 @app.route("/tasks/<slug>/errors")

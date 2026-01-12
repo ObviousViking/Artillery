@@ -59,7 +59,7 @@
                                value="{{ artillery_config.log_lines_display }}" />
                         <div class="form-text">
                             Number of log lines to show in the real-time output panel (default: 50).
-                            Set higher to see more history, or lower for faster updates. Only applies when log truncation is enabled.
+                            Set higher to see more history, or lower for faster updates.
                         </div>
                     </div>
 
@@ -75,15 +75,26 @@
                     </div>
 
                     <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="truncate_logs" 
-                               name="truncate_logs" value="on"
-                               {% if artillery_config.truncate_logs %}checked{% endif %} />
-                        <label class="form-check-label" for="truncate_logs">
-                            Enable log truncation
+                        <input type="checkbox" class="form-check-input" id="truncate_lines" 
+                               name="truncate_lines" value="on"
+                               {% if artillery_config.truncate_lines %}checked{% endif %} />
+                        <label class="form-check-label" for="truncate_lines">
+                            Enable line truncation
                         </label>
                         <div class="form-text">
-                            Truncate log output in the task output panel to the configured number of lines (default: enabled).
-                            Disable to see the full log output without truncation.
+                            Truncate long lines in log output to the configured maximum length (default: enabled).
+                            Disable to see full lines without truncation.
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="max_line_length">Maximum line length</label>
+                        <input type="number" id="max_line_length" name="max_line_length" 
+                               class="form-control" min="50" max="1000" 
+                               value="{{ artillery_config.max_line_length }}" />
+                        <div class="form-text">
+                            Maximum number of characters per line (default: 200).
+                            Lines longer than this will be truncated with "..." when line truncation is enabled.
                         </div>
                     </div>
 

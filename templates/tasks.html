@@ -461,12 +461,7 @@ https://example.com/image2" required></textarea>
                         
                         // Parse log colors and create HTML
                         const coloredContent = parseLogColors(content);
-                        
-                        // Apply white-space style based on truncation status
-                        // When truncation is disabled, use 'pre' to enable horizontal scroll
-                        // When truncation is enabled, use 'pre-wrap' to allow line wrapping
-                        const whiteSpaceStyle = data.truncated === false ? 'pre' : 'pre-wrap';
-                        logContainer.innerHTML = `<pre style="white-space: ${whiteSpaceStyle};">${coloredContent}</pre>`;
+                        logContainer.innerHTML = `<pre>${coloredContent}</pre>`;
                         
                         // Auto-scroll to bottom only if enabled
                         if (shouldAutoScroll) {
