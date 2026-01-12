@@ -75,15 +75,26 @@
                     </div>
 
                     <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="gallery_dl_progress" 
-                               name="gallery_dl_progress" value="on"
-                               {% if artillery_config.gallery_dl_progress %}checked{% endif %} />
-                        <label class="form-check-label" for="gallery_dl_progress">
-                            Enable gallery-dl progress output
+                        <input type="checkbox" class="form-check-input" id="truncate_lines" 
+                               name="truncate_lines" value="on"
+                               {% if artillery_config.truncate_lines %}checked{% endif %} />
+                        <label class="form-check-label" for="truncate_lines">
+                            Enable line truncation
                         </label>
                         <div class="form-text">
-                            Show download progress information in task logs (default: enabled).
-                            Disable if you prefer cleaner logs without progress indicators.
+                            Truncate long lines in log output to the configured maximum length (default: enabled).
+                            Disable to see full lines without truncation.
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="max_line_length">Maximum line length</label>
+                        <input type="number" id="max_line_length" name="max_line_length" 
+                               class="form-control" min="50" max="1000" 
+                               value="{{ artillery_config.max_line_length }}" />
+                        <div class="form-text">
+                            Maximum number of characters per line (default: 200).
+                            Lines longer than this will be truncated with "..." when line truncation is enabled.
                         </div>
                     </div>
 

@@ -177,7 +177,8 @@ def load_artillery_config() -> dict:
     config = {
         "log_lines_display": 50,  # default
         "error_lines_display": 20,  # default
-        "gallery_dl_progress": True,  # default: enable progress output
+        "truncate_lines": True,  # default: enable line truncation
+        "max_line_length": 200,  # default: max characters per line
     }
     
     if os.path.exists(ARTILLERY_CONFIG_FILE):
@@ -201,8 +202,13 @@ def load_artillery_config() -> dict:
                                 config["error_lines_display"] = int(value)
                             except ValueError:
                                 app.logger.warning("Invalid error_lines_display value '%s', using default", value)
-                        elif key == "gallery_dl_progress":
-                            config["gallery_dl_progress"] = value.lower() in ("true", "1", "yes", "on")
+                        elif key == "truncate_lines":
+                            config["truncate_lines"] = value.lower() in ("true", "1", "yes", "on")
+                        elif key == "max_line_length":
+                            try:
+                                config["max_line_length"] = int(value)
+                            except ValueError:
+                                app.logger.warning("Invalid max_line_length value '%s', using default", value)
         except Exception as exc:
             app.logger.warning("Failed to load Artillery config: %s", exc)
     
@@ -217,7 +223,8 @@ def save_artillery_config(config: dict):
             f.write("# Artillery Configuration\n")
             f.write(f"log_lines_display={config.get('log_lines_display', 50)}\n")
             f.write(f"error_lines_display={config.get('error_lines_display', 20)}\n")
-            f.write(f"gallery_dl_progress={'true' if config.get('gallery_dl_progress', True) else 'false'}\n")
+            f.write(f"truncate_lines={'true' if config.get('truncate_lines', True) else 'false'}\n")
+            f.write(f"max_line_length={config.get('max_line_length', 200)}\n")
     except Exception as exc:
         app.logger.error("Failed to save Artillery config: %s", exc)
         raise
@@ -828,10 +835,12 @@ def config_page():
             try:
                 log_lines = request.form.get("log_lines_display", "50")
                 error_lines = request.form.get("error_lines_display", "20")
-                gallery_dl_progress = request.form.get("gallery_dl_progress", "off") == "on"
+                truncate_lines = request.form.get("truncate_lines", "off") == "on"
+                max_line_length = request.form.get("max_line_length", "200")
                 artillery_config["log_lines_display"] = int(log_lines)
                 artillery_config["error_lines_display"] = int(error_lines)
-                artillery_config["gallery_dl_progress"] = gallery_dl_progress
+                artillery_config["truncate_lines"] = truncate_lines
+                artillery_config["max_line_length"] = int(max_line_length)
                 save_artillery_config(artillery_config)
                 flash("Artillery settings saved.", "success")
             except ValueError:
@@ -894,22 +903,6 @@ def run_task_background(task_folder: str):
     try:
         cmd_parts = shlex.split(command)
         
-        # Load Artillery config to check gallery-dl progress setting
-        artillery_config = load_artillery_config()
-        progress_enabled = artillery_config.get("gallery_dl_progress", True)
-        
-        # Ensure progress output is enabled for gallery-dl (if configured)
-        if cmd_parts and cmd_parts[0] == "gallery-dl":
-            # Add --progress=off|on to control progress output
-            # Check if progress flag already exists
-            has_progress_flag = any(
-                (p in ("--progress", "-p") or p.startswith("--progress=")) for p in cmd_parts
-            )
-            # If not specified, add based on Artillery config
-            if not has_progress_flag:
-                if progress_enabled:
-                    cmd_parts.insert(1, "--progress=info")
-                
     except ValueError as exc:
         with open(logs_path, "a", encoding="utf-8") as logf:
             logf.write(f"\nFailed to parse command: {exc}\n")
@@ -1095,6 +1088,17 @@ def task_logs(slug):
                 return ''.join(all_lines[-lines:]) if all_lines else ''
         except Exception:
             return ''
+    
+    def truncate_line_length(content: str, max_length: int) -> str:
+        """Truncate each line to max_length characters, adding ... if truncated."""
+        lines = content.split('\n')
+        truncated_lines = []
+        for line in lines:
+            if len(line) > max_length:
+                truncated_lines.append(line[:max_length] + '...')
+            else:
+                truncated_lines.append(line)
+        return '\n'.join(truncated_lines)
 
     try:
         if run_log_path and os.path.exists(run_log_path):
@@ -1104,6 +1108,15 @@ def task_logs(slug):
             else:
                 with open(run_log_path, "r", encoding="utf-8", errors="replace") as f:
                     content = f.read()
+            
+            # Load Artillery config to check line truncation setting
+            artillery_config = load_artillery_config()
+            truncate_enabled = artillery_config.get("truncate_lines", True)
+            
+            # Apply line truncation if enabled
+            if truncate_enabled:
+                max_length = artillery_config.get("max_line_length", 200)
+                content = truncate_line_length(content, max_length)
         else:
             content = "No logs yet. Task has not been run."
     except Exception as exc:
