@@ -135,6 +135,126 @@ def slugify(name: str) -> str:
     return name or "task"
 
 
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def strip_ansi(text: Optional[str]) -> Optional[str]:
+    """Remove ANSI escape sequences to prevent raw codes from showing in UI."""
+    if text is None:
+        return None
+    return ANSI_ESCAPE_RE.sub("", text)
+
+
+# Track running gallery-dl processes so we can cancel them.
+RUNNING_PROCS = {}
+RUNNING_PROCS_LOCK = threading.Lock()
+
+
+def _get_proc_for_task(slug: str) -> Optional[subprocess.Popen]:
+    with RUNNING_PROCS_LOCK:
+        proc = RUNNING_PROCS.get(slug)
+        if proc and proc.poll() is None:
+            return proc
+    return None
+
+
+def _get_pid_for_task(slug: str, task_folder: str) -> Optional[int]:
+    """Return PID of running task if known."""
+    # Prefer in-memory process reference
+    proc = _get_proc_for_task(slug)
+    if proc is not None:
+        return proc.pid
+
+    pid_path = os.path.join(task_folder, "pid")
+    pid_text = read_text(pid_path)
+    if not pid_text:
+        return None
+    try:
+        return int(pid_text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _signal_task(slug: str, task_folder: str, sig) -> bool:
+    """Send a signal to a running task process group. Returns True if delivered."""
+    pid = _get_pid_for_task(slug, task_folder)
+    if not pid:
+        return False
+    try:
+        os.killpg(pid, sig)
+        return True
+    except ProcessLookupError:
+        return False
+    except Exception as exc:
+        app.logger.warning("Failed sending signal %s to %s: %s", sig, slug, exc)
+        return False
+
+
+def _cleanup_task_state(slug: str, task_folder: str):
+    """Remove lock/pid and clear in-memory tracking."""
+    with RUNNING_PROCS_LOCK:
+        RUNNING_PROCS.pop(slug, None)
+    pid_path = os.path.join(task_folder, "pid")
+    lock_path = os.path.join(task_folder, "lock")
+    try:
+        if os.path.exists(pid_path):
+            os.remove(pid_path)
+    except Exception:
+        pass
+    try:
+        if os.path.exists(lock_path):
+            os.remove(lock_path)
+    except Exception:
+        pass
+
+
+def _clear_stale_lock(slug: str, task_folder: str):
+    """If lock exists but process is gone, clean up so task can run again."""
+    lock_path = os.path.join(task_folder, "lock")
+    if not os.path.exists(lock_path):
+        return
+    pid = _get_pid_for_task(slug, task_folder)
+    if not pid:
+        _cleanup_task_state(slug, task_folder)
+        return
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        _cleanup_task_state(slug, task_folder)
+
+
+def _kill_task(slug: str, task_folder: str) -> bool:
+    """Attempt to stop a running task politely, escalate if needed."""
+    proc = _get_proc_for_task(slug)
+    pid = _get_pid_for_task(slug, task_folder)
+    if not pid:
+        _cleanup_task_state(slug, task_folder)
+        return False
+
+    for sig, wait_s in ((signal.SIGINT, 1.5), (signal.SIGTERM, 1.5), (signal.SIGKILL, 0.5)):
+        try:
+            os.killpg(pid, sig)
+        except ProcessLookupError:
+            _cleanup_task_state(slug, task_folder)
+            return True
+        except Exception as exc:
+            app.logger.warning("Failed sending signal %s to %s: %s", sig, slug, exc)
+
+        # Wait for exit
+        deadline = time.time() + wait_s
+        while wait_s > 0 and time.time() < deadline:
+            if proc and proc.poll() is not None:
+                _cleanup_task_state(slug, task_folder)
+                return True
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                _cleanup_task_state(slug, task_folder)
+                return True
+            time.sleep(0.1)
+    return False
+
+
 def ensure_data_dirs(ensure_downloads: bool = False):
     """
     Ensure base directories exist.
@@ -252,10 +372,11 @@ def load_tasks():
         lock_path = os.path.join(task_path, "lock")
         paused_path = os.path.join(task_path, "paused")
 
-        if os.path.exists(lock_path):
-            status = "running"
-        elif os.path.exists(paused_path):
+        # If paused flag exists, show paused even if a lock is present (running but halted)
+        if os.path.exists(paused_path):
             status = "paused"
+        elif os.path.exists(lock_path):
+            status = "running"
         else:
             status = "idle"
 
@@ -875,6 +996,8 @@ def run_task_background(task_folder: str):
     last_run_path = os.path.join(task_folder, "last_run.txt")
     command_path = os.path.join(task_folder, "command.txt")
     urls_file = os.path.join(task_folder, "urls.txt")
+    pid_path = os.path.join(task_folder, "pid")
+    slug = os.path.basename(task_folder.rstrip("/"))
     
     # Create logs directory for per-run logs
     logs_dir = os.path.join(task_folder, "logs")
@@ -914,6 +1037,9 @@ def run_task_background(task_folder: str):
     env["GALLERY_DL_CONFIG"] = CONFIG_FILE
     env["PATH"] = env.get("PATH", "") + os.pathsep + "/usr/local/bin"
 
+    proc = None
+    returncode = None
+
     try:
         # Write header to both logs
         config_exists = os.path.exists(CONFIG_FILE)
@@ -930,23 +1056,39 @@ def run_task_background(task_folder: str):
             run_logf.flush()
             
             # Run the command and write to per-run log
-            result = subprocess.run(
+            proc = subprocess.Popen(
                 cmd_parts,
                 cwd=task_folder,
                 stdout=run_logf,
                 stderr=subprocess.STDOUT,
                 text=True,
                 env=env,
+                start_new_session=True,  # allows os.killpg for graceful cancel
             )
+
+        # Track the running process for cancellation
+        if proc is not None:
+            try:
+                write_text(pid_path, str(proc.pid))
+            except Exception:
+                pass
+            with RUNNING_PROCS_LOCK:
+                RUNNING_PROCS[slug] = proc
+
+        if proc is not None:
+            returncode = proc.wait()
+        else:
+            returncode = -1
 
         write_text(last_run_path, now)
         
         # Write completion status to per-run log
-        footer = ""
-        if result.returncode == 0:
+        if returncode == 0:
             footer = "\nTask finished successfully.\n"
+        elif returncode is None:
+            footer = "\nTask ended with unknown status.\n"
         else:
-            footer = f"\nTask exited with code {result.returncode}.\n"
+            footer = f"\nTask exited with code {returncode}.\n"
         
         with open(run_log_path, "a", encoding="utf-8") as run_logf:
             run_logf.write(footer)
@@ -967,10 +1109,19 @@ def run_task_background(task_folder: str):
         with open(run_log_path, "a", encoding="utf-8") as run_logf:
             run_logf.write(f"\nERROR while running task: {exc}\n")
     finally:
+        with RUNNING_PROCS_LOCK:
+            if proc is not None and RUNNING_PROCS.get(slug) is proc:
+                RUNNING_PROCS.pop(slug, None)
+
+        try:
+            if os.path.exists(pid_path):
+                os.remove(pid_path)
+        except Exception:
+            pass
+
         # ---- MEDIA WALL HOOK: ingest + refresh cache (copy up to 100) ----
         if MEDIA_WALL_AUTO_INGEST_ON_TASK_END:
             try:
-                slug = os.path.basename(task_folder.rstrip("/"))
                 conn = _open_media_db()  # creates DB if missing
                 ingest_task_log(conn, slug, logs_path, full_rescan=False)
 
@@ -1010,6 +1161,7 @@ def task_action(slug):
             return redirect(url_for("tasks"))
 
         lock_path = os.path.join(task_folder, "lock")
+        _clear_stale_lock(slug, task_folder)
         if os.path.exists(lock_path):
             flash("Task is already running.", "error")
             return redirect(url_for("tasks"))
@@ -1023,6 +1175,20 @@ def task_action(slug):
         flash("Task started in background. Check logs.txt for progress.", "success")
         return redirect(url_for("tasks"))
 
+    if action == "cancel":
+        lock_path = os.path.join(task_folder, "lock")
+        if not os.path.exists(lock_path):
+            flash("Task is not running.", "error")
+            return redirect(url_for("tasks"))
+
+        if _kill_task(slug, task_folder):
+            flash("Task canceled.", "success")
+        else:
+            flash("Failed to cancel task (process may have already exited or ignored signals).", "error")
+
+        _clear_stale_lock(slug, task_folder)
+        return redirect(url_for("tasks"))
+
     if action == "pause":
         paused_path = os.path.join(task_folder, "paused")
         try:
@@ -1030,7 +1196,12 @@ def task_action(slug):
                 os.remove(paused_path)
                 # Ensure file removal is synced to disk
                 os.sync() if hasattr(os, 'sync') else None
-                flash("Task unpaused.", "success")
+                # Resume process if it's running and was previously stopped
+                if _signal_task(slug, task_folder, signal.SIGCONT):
+                    flash("Task unpaused and resumed.", "success")
+                else:
+                    _clear_stale_lock(slug, task_folder)
+                    flash("Task unpaused (no running process).", "success")
             else:
                 # Create with explicit sync to ensure file is written to disk
                 with open(paused_path, "w") as f:
@@ -1039,7 +1210,12 @@ def task_action(slug):
                     os.fsync(f.fileno())
                 # Ensure creation is synced to disk
                 os.sync() if hasattr(os, 'sync') else None
-                flash("Task paused.", "success")
+                # Send SIGSTOP to running process if present
+                if _signal_task(slug, task_folder, signal.SIGSTOP):
+                    flash("Task paused (process stopped).", "success")
+                else:
+                    _clear_stale_lock(slug, task_folder)
+                    flash("Task paused (process not running).", "success")
         except Exception as exc:
             flash(f"Failed to pause/unpause task: {exc}", "error")
         return redirect(url_for("tasks"))
@@ -1108,7 +1284,9 @@ def task_logs(slug):
             else:
                 with open(run_log_path, "r", encoding="utf-8", errors="replace") as f:
                     content = f.read()
-            
+
+            content = strip_ansi(content)
+
             # Load Artillery config to check line truncation setting
             artillery_config = load_artillery_config()
             truncate_enabled = artillery_config.get("truncate_lines", True)
@@ -1162,7 +1340,8 @@ def task_errors(slug):
     try:
         if run_log_path and os.path.exists(run_log_path):
             with open(run_log_path, "r", encoding="utf-8", errors="replace") as f:
-                for line in f:
+                for raw_line in f:
+                    line = strip_ansi(raw_line)
                     # Check for gallery-dl error tags: [[error]] or Python exceptions
                     # Examples: [download][[error]] Failed to download...
                     #           [error] message
@@ -1212,30 +1391,6 @@ def task_runs(slug):
     
     return jsonify({"slug": slug, "runs": runs})
 
-
-# ---------------------------------------------------------------------
-# Download task logs
-# ---------------------------------------------------------------------
-@app.route("/tasks/<slug>/logs/download")
-def download_task_logs(slug):
-    ensure_data_dirs(ensure_downloads=False)
-
-    task_folder = os.path.join(TASKS_ROOT, slug)
-    if not os.path.isdir(task_folder):
-        return jsonify({"error": "Task not found"}), 404
-
-    logs_path = os.path.join(task_folder, "logs.txt")
-    if not os.path.exists(logs_path):
-        return jsonify({"error": "No logs yet for this task"}), 404
-
-    try:
-        # Prefer modern Flask's download_name, fallback to attachment_filename
-        try:
-            return send_file(logs_path, as_attachment=True, download_name=f"{slug}-logs.txt")
-        except TypeError:
-            return send_file(logs_path, as_attachment=True, attachment_filename=f"{slug}-logs.txt")
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
 
 # ---------------------------------------------------------------------
 # Original media route (serves from /downloads)

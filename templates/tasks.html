@@ -64,6 +64,17 @@
                                             </button>
                                         </form>
 
+                                        <!-- Cancel (Ctrl+C) -->
+                                        <form method="post" action="{{ url_for('task_action', slug=task.slug) }}"
+                                            class="m-0">
+                                            <input type="hidden" name="action" value="cancel">
+                                            <button type="submit" class="btn btn-sm btn-outline-warning" {% if
+                                                status!='running' %}disabled{% endif %}
+                                                onclick="return confirm('Cancel running task {{ task.name }}?');">
+                                                Cancel
+                                            </button>
+                                        </form>
+
                                         <!-- Pause / Unpause -->
                                         <form method="post" action="{{ url_for('task_action', slug=task.slug) }}"
                                             class="m-0">
@@ -97,12 +108,6 @@
                                             </button>
                                         </form>
 
-                                        <!-- Download logs -->
-                                        <form method="get" action="{{ url_for('download_task_logs', slug=task.slug) }}" class="m-0">
-                                            <button type="submit" class="btn btn-sm btn-outline-light">
-                                                Download Logs
-                                            </button>
-                                        </form>
                                     </div>
                                 </td>
                             </tr>
@@ -363,6 +368,20 @@ https://example.com/image2" required></textarea>
         const errorCount = document.getElementById("errorCount");
         const errorLines = document.getElementById("errorLines");
         const logLinesCount = document.getElementById("logLinesCount");
+        const ANSI_REGEX = /\x1B\[[0-9;]*[A-Za-z]/g;
+
+        function stripAnsi(text) {
+            if (!text) return text;
+            return text.replace(ANSI_REGEX, "");
+        }
+
+        function escapeHtml(text) {
+            if (!text) return "";
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
+        }
 
         function buildCommandFromOptions() {
             const flags = [];
@@ -420,14 +439,14 @@ https://example.com/image2" required></textarea>
                 'info': 'log-info',
                 'debug': 'log-debug'
             };
-            
-            // Escape HTML
-            text = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-            
+
+            // Remove ANSI escape codes and escape HTML so only color styling remains
+            text = escapeHtml(stripAnsi(text));
+
             // Color log level patterns like [warning], [error], etc.
             for (const [level, cssClass] of Object.entries(levelMap)) {
                 const pattern = new RegExp(`\\[${level}\\]`, 'gi');
-                text = text.replace(pattern, `<span class="${cssClass}">[$&]</span>`);
+                text = text.replace(pattern, `<span class="${cssClass}">$&</span>`);
             }
             
             return text;

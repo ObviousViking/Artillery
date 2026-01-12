@@ -248,7 +248,7 @@ code {
 #logContainer .log-error   { color: #FF3333; font-weight: bold; }  /* red */
 #logContainer .log-warning { color: #FFFF00; font-weight: bold; }  /* yellow */
 #logContainer .log-info    { color: #FFFFFF; font-weight: bold; }  /* bright white */
-#logContainer .log-debug   { color: #F0F0F0; }                     /* white */
+#logContainer .log-debug   { color: #F0F0F0; font-weight: bold; }  /* white */
 
 #taskSelector.form-control {
     background-color: #050505;
