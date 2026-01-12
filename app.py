@@ -891,6 +891,7 @@ def run_task_background(task_folder: str):
 
     try:
         # Write header to both logs
+        config_exists = os.path.exists(CONFIG_FILE)
         header = f"\n\n==== Run at {now} ====\n"
         header += f"Artillery: using config {CONFIG_FILE} (exists={config_exists})\n"
         header += f"$ {' '.join(cmd_parts)}\n\n"
@@ -999,12 +1000,23 @@ def task_action(slug):
 
     if action == "pause":
         paused_path = os.path.join(task_folder, "paused")
-        if os.path.exists(paused_path):
-            os.remove(paused_path)
-            flash("Task unpaused.", "success")
-        else:
-            open(paused_path, "w").close()
-            flash("Task paused.", "success")
+        try:
+            if os.path.exists(paused_path):
+                os.remove(paused_path)
+                # Ensure file removal is synced to disk
+                os.sync() if hasattr(os, 'sync') else None
+                flash("Task unpaused.", "success")
+            else:
+                # Create with explicit sync to ensure file is written to disk
+                with open(paused_path, "w") as f:
+                    f.write("")
+                    f.flush()
+                    os.fsync(f.fileno())
+                # Ensure creation is synced to disk
+                os.sync() if hasattr(os, 'sync') else None
+                flash("Task paused.", "success")
+        except Exception as exc:
+            flash(f"Failed to pause/unpause task: {exc}", "error")
         return redirect(url_for("tasks"))
 
     flash("Unknown action.", "error")
