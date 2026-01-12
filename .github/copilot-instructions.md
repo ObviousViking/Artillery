@@ -10,9 +10,11 @@ Artillery is a Flask-based UI for managing `gallery-dl` downloads with schedulin
 3. **Media wall indexer** (`mediawall_index.py`) - Scans `gallery-dl` logs to catalog downloads into SQLite, caches thumbnails
 
 **Task isolation model:**
-- Each task lives in `/tasks/<slug>/` with files: `urls.txt`, `command.txt`, `cron.txt`, `logs.txt`, `name.txt`, `lock`, `paused`
-- Lock file (`lock`) indicates task is running; `paused` file means task won't run via cron (manual runs still allowed)
+- Each task lives in `/tasks/<slug>/` with files: `urls.txt`, `command.txt`, `cron.txt`, `logs/run_*.log`, `logs.txt`, `name.txt`, `lock`, `paused`, `pid` (when running)
+- Lock file (`lock`) indicates task is running; `paused` file means task is halted (process stopped via SIGSTOP) and won't run via cron
+- PID file (`pid`) stores the process group ID for signal delivery (cancel, pause, resume)
 - Gallery-dl config is shared globally at `/config/gallery-dl.conf` (editable via UI)
+- Status logic: if paused file exists, show "paused" even if locked; otherwise if locked show "running"; else "idle"
 
 **Data flows:**
 - UI → create task → writes `/tasks/slug/{name.txt,urls.txt,command.txt,cron.txt}`
@@ -30,8 +32,11 @@ Artillery is a Flask-based UI for managing `gallery-dl` downloads with schedulin
 **Subprocess execution (`run_task_background`):**
 - Runs in daemon thread; sets `GALLERY_DL_CONFIG` env var pointing to shared config
 - Command is parsed with `shlex.split()` to handle quoted args; run from task directory
-- All stdout/stderr appended to `logs.txt` with timestamps and exit codes
-- **Lock file removed in finally block** to ensure cleanup even on error
+- Subprocess started with `Popen` and `start_new_session=True` to allow process group signaling
+- PID recorded immediately in task folder and tracked in `RUNNING_PROCS` dict for cancel/pause/resume
+- Per-run log created at `/tasks/<slug>/logs/run_YYYYMMDD_HHMMSS.log`; stdout/stderr written directly
+- Task output then appended to main `logs.txt` after completion
+- **Lock file and PID file cleaned up in finally block** to ensure cleanup even on error or cancellation
 
 **Media wall indexing:**
 - Two separate modules: `app.py` has inline SQLite logic, `mediawall_index.py` is standalone for future background workers
@@ -47,7 +52,7 @@ Artillery is a Flask-based UI for managing `gallery-dl` downloads with schedulin
 **Flask routing patterns:**
 - `/` (home) - renders media wall dashboard (3 rows of cached images, conditional on `MEDIA_WALL_ENABLED`)
 - `/tasks` - GET lists all tasks, POST creates new task
-- `/tasks/<slug>/action` - POST for run/pause/delete actions
+- `/tasks/<slug>/action` - POST for run/cancel/pause/delete actions (cancel sends SIGINT, pause sends SIGSTOP)
 - `/tasks/<slug>/logs` - GET returns JSON with task log content (used by real-time output viewer)
 - `/config` - GET shows editor + media wall controls, POST saves gallery-dl.conf or handles media wall actions
 - `/mediawall/toggle` - POST toggles media wall enabled/disabled (accessible via button on config page)
@@ -60,16 +65,19 @@ Artillery is a Flask-based UI for managing `gallery-dl` downloads with schedulin
 **Real-time task output viewer:**
 - Located on `/tasks` page as a collapsible "Output" card panel below the task table
 - `/tasks/<slug>/logs` endpoint returns JSON: `{"slug": slug, "content": log_text}`
-- JavaScript polls every 1 second for live log updates with auto-scroll
+- Server-side: strips ANSI escape sequences (regex: `\x1b\[[0-9;]*[A-Za-z]`) so only text + color formatting remain
+- Client-side: `stripAnsi()` and `escapeHtml()` ensure safe HTML rendering; `parseLogColors()` re-applies CSS color classes
 - Log level pattern parsing via `parseLogColors()` function maps log level tags to CSS classes:
-  - `[warning]` → `.log-warning`
-  - `[error]` → `.log-error`
-  - `[success]` → `.log-success`
-  - `[info]` → `.log-info`
-  - `[debug]` → `.log-debug`
+  - `[warning]` → `.log-warning` (yellow, bold)
+  - `[error]` → `.log-error` (red, bold)
+  - `[success]` → `.log-success` (green, bold)
+  - `[info]` → `.log-info` (white, bold)
+  - `[debug]` → `.log-debug` (light gray, bold)
+- JavaScript polls every 1 second for live log updates with auto-scroll
 - Collapsible output panel with task selector dropdown (Show/Hide button)
 - Auto-refresh stops when panel is hidden to reduce polling overhead
-- Auto-scroll pauses when user manually scrolls up in the log container
+- Auto-scroll pauses when user manually scrolls up; resumes on down scroll
+- Respects carriage returns (`\r`) in logs for progress line updates
 
 ## Critical Developer Workflows
 
@@ -137,11 +145,23 @@ python app.py  # Flask dev server on :5000
 ## Common Issues & Debugging
 
 **Task won't run:**
-1. Check `paused` file exists → delete it
-2. Check `lock` file stuck (previous crash) → delete it via UI or manually
-3. Check `urls.txt` exists and isn't empty
-4. Check `command.txt` is valid gallery-dl command
-5. Verify config: `GALLERY_DL_CONFIG=/config/gallery-dl.conf gallery-dl --help` succeeds
+1. Check `paused` file exists → unpause via UI or delete manually
+2. Check `lock` file stuck (previous crash) → UI now auto-detects stale lock on Run attempt and clears it
+3. Check `pid` file exists but process is gone → UI pause/cancel/run actions clean up stale state automatically
+4. Check `urls.txt` exists and isn't empty
+5. Check `command.txt` is valid gallery-dl command
+6. Verify config: `GALLERY_DL_CONFIG=/config/gallery-dl.conf gallery-dl --help` succeeds
+
+**Cancel not stopping task:**
+- Cancel uses SIGINT first, then escalates to SIGTERM, then SIGKILL if needed
+- After cancel, lock/pid are always cleaned up so task can run again
+- For stuck processes: check `ps aux | grep gallery-dl` and `ps -o pgrp= -p <pid>` to verify process group
+
+**Pause/resume not working:**
+- Pause sends SIGSTOP to process group (halts execution)
+- Resume sends SIGCONT to process group (resumes from checkpoint)
+- If process not responding, pause/resume actions now detect stale state and clear lock
+- Paused processes still hold file locks (expected); unpause or cancel to release
 
 **Media wall empty:**
 1. Verify `/downloads` has actual files (not just directories)

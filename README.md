@@ -45,7 +45,10 @@ All wrapped in a dark, minimal interface designed to live inside Docker/Unraid.
     * Run automatically by cron
 * Logging
 
-  * Each run appends stdout/stderr to the task’s `logs.txt`
+  * Each run creates a timestamped log file at `/tasks/<slug>/logs/run_YYYYMMDD_HHMMSS.log`
+  * Main `logs.txt` accumulates all runs after completion
+  * ANSI escape sequences stripped for clean display in UI (only color formatting retained)
+  * Real-time log viewer with auto-scroll, level-based coloring, and manual pause support
   * Includes command line + exit code info
 * Media wall dashboard
 
@@ -81,7 +84,7 @@ All wrapped in a dark, minimal interface designed to live inside Docker/Unraid.
   * Status (idle / running / paused)
   * Cron expression
   * Last run time
-  * Actions (Run, Pause/Unpause, Delete)
+  * Actions (Run, Cancel, Pause/Unpause, Edit, Delete)
 * Task editor:
 
   * Task name
