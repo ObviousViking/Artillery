@@ -142,7 +142,23 @@
                     <p class="text-muted mb-0">Select a task to view its output...</p>
                 </div>
                 <div class="mt-2">
-                    <small class="text-muted">Auto-refreshing every 1 second - Only the last 50 lines shown. Please review logs in full for more detail</small>
+                    <small class="text-muted">Auto-refreshing every 1 second - Showing last <span id="logLinesCount">50</span> lines. Please review logs in full for more detail</small>
+                </div>
+                
+                <!-- Error Window -->
+                <div id="errorWindow" class="mt-3" style="display: none;">
+                    <div class="card bg-danger bg-opacity-10 border-danger">
+                        <div class="card-header bg-danger bg-opacity-25 border-danger">
+                            <h6 class="mb-0 text-danger">
+                                <strong>Errors Detected:</strong> <span id="errorCount">0</span>
+                            </h6>
+                        </div>
+                        <div class="card-body p-2">
+                            <div id="errorLines" class="bg-dark p-2 rounded" style="max-height: 150px; overflow-y: auto; font-family: monospace; font-size: 0.75rem; color: #ff6b6b;">
+                                <p class="text-muted mb-0">No errors detected yet...</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -326,6 +342,7 @@ https://example.com/image2" required></textarea>
         let isEditingExistingTask = false;
         let outputPollInterval = null;
         let shouldAutoScroll = true;  // Track if we should auto-scroll
+        let logLinesToShow = 50;  // Default, will be loaded from config
 
         const nameInput = document.getElementById("name");
         const urlsTextarea = document.getElementById("urls");
@@ -341,6 +358,10 @@ https://example.com/image2" required></textarea>
         const outputPanel = document.getElementById("outputPanel");
         const taskSelector = document.getElementById("taskSelector");
         const logContainer = document.getElementById("logContainer");
+        const errorWindow = document.getElementById("errorWindow");
+        const errorCount = document.getElementById("errorCount");
+        const errorLines = document.getElementById("errorLines");
+        const logLinesCount = document.getElementById("logLinesCount");
 
         function buildCommandFromOptions() {
             const flags = [];
@@ -414,10 +435,11 @@ https://example.com/image2" required></textarea>
         function fetchTaskLogs(slug) {
             if (!slug) {
                 logContainer.innerHTML = '<p class="text-muted mb-0">Select a task to view its output...</p>';
+                errorWindow.style.display = 'none';
                 return;
             }
             
-            fetch(`/tasks/${slug}/logs?tail=50`)
+            fetch(`/tasks/${slug}/logs?tail=${logLinesToShow}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.error) {
@@ -437,12 +459,45 @@ https://example.com/image2" required></textarea>
                 });
         }
 
+        function fetchTaskErrors(slug) {
+            if (!slug) {
+                errorWindow.style.display = 'none';
+                return;
+            }
+            
+            fetch(`/tasks/${slug}/errors`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        errorWindow.style.display = 'none';
+                    } else if (data.error_count > 0) {
+                        errorWindow.style.display = 'block';
+                        errorCount.textContent = data.error_count;
+                        
+                        // Display error lines
+                        const errorHtml = data.error_lines.map(line => {
+                            const escaped = line.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                            return escaped;
+                        }).join('\n');
+                        
+                        errorLines.innerHTML = `<pre class="mb-0">${errorHtml}</pre>`;
+                    } else {
+                        errorWindow.style.display = 'none';
+                    }
+                })
+                .catch(err => {
+                    // Silently fail on error fetch to avoid cluttering UI
+                    console.error('Failed to fetch errors:', err);
+                });
+        }
+
         function startOutputPolling() {
             if (outputPollInterval) return;
             outputPollInterval = setInterval(() => {
                 const slug = taskSelector.value;
                 if (slug) {
                     fetchTaskLogs(slug);
+                    fetchTaskErrors(slug);
                 }
             }, 1000); // Poll every 1 second for real-time updates
         }
@@ -462,6 +517,12 @@ https://example.com/image2" required></textarea>
         });
 
         document.addEventListener("DOMContentLoaded", function () {
+            // Load Artillery config
+            logLinesToShow = {{ artillery_config.log_lines_display | tojson }};
+            if (logLinesCount) {
+                logLinesCount.textContent = logLinesToShow;
+            }
+            
             // Hook options changes
             document.querySelectorAll(".gd-option").forEach(function (cb) {
                 cb.addEventListener("change", function () {
@@ -485,7 +546,9 @@ https://example.com/image2" required></textarea>
 
             if (taskSelector) {
                 taskSelector.addEventListener("change", function () {
-                    fetchTaskLogs(this.value);
+                    const slug = this.value;
+                    fetchTaskLogs(slug);
+                    fetchTaskErrors(slug);
                 });
             }
 

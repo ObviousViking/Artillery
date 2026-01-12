@@ -45,6 +45,38 @@
     <div class="col-12">
         <div class="card shadow-sm border-secondary">
             <div class="card-body">
+                <h2 class="card-title mb-3">Artillery settings</h2>
+
+                <p class="text-muted small mb-3">
+                    Configure Artillery application settings.
+                </p>
+
+                <form method="post" action="{{ url_for('config_page') }}">
+                    <div class="mb-3">
+                        <label class="form-label" for="log_lines_display">Log lines to display in output panel</label>
+                        <input type="number" id="log_lines_display" name="log_lines_display" 
+                               class="form-control" min="10" max="1000" 
+                               value="{{ artillery_config.log_lines_display }}" />
+                        <div class="form-text">
+                            Number of log lines to show in the real-time output panel (default: 50).
+                            Set higher to see more history, or lower for faster updates.
+                        </div>
+                    </div>
+
+                    <button type="submit" name="action" value="save_artillery" class="btn btn-danger">
+                        Save Artillery settings
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Media wall controls -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-secondary">
+            <div class="card-body">
                 <h2 class="card-title mb-3">Media wall</h2>
 
                 <p class="text-muted small mb-3">
