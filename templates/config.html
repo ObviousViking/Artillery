@@ -74,6 +74,19 @@
                         </div>
                     </div>
 
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="gallery_dl_progress" 
+                               name="gallery_dl_progress" value="on"
+                               {% if artillery_config.gallery_dl_progress %}checked{% endif %} />
+                        <label class="form-check-label" for="gallery_dl_progress">
+                            Enable gallery-dl progress output
+                        </label>
+                        <div class="form-text">
+                            Show download progress information in task logs (default: enabled).
+                            Disable if you prefer cleaner logs without progress indicators.
+                        </div>
+                    </div>
+
                     <button type="submit" name="action" value="save_artillery" class="btn btn-danger">
                         Save Artillery settings
                     </button>

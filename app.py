@@ -177,6 +177,7 @@ def load_artillery_config() -> dict:
     config = {
         "log_lines_display": 50,  # default
         "error_lines_display": 20,  # default
+        "gallery_dl_progress": True,  # default: enable progress output
     }
     
     if os.path.exists(ARTILLERY_CONFIG_FILE):
@@ -200,6 +201,8 @@ def load_artillery_config() -> dict:
                                 config["error_lines_display"] = int(value)
                             except ValueError:
                                 app.logger.warning("Invalid error_lines_display value '%s', using default", value)
+                        elif key == "gallery_dl_progress":
+                            config["gallery_dl_progress"] = value.lower() in ("true", "1", "yes", "on")
         except Exception as exc:
             app.logger.warning("Failed to load Artillery config: %s", exc)
     
@@ -214,6 +217,7 @@ def save_artillery_config(config: dict):
             f.write("# Artillery Configuration\n")
             f.write(f"log_lines_display={config.get('log_lines_display', 50)}\n")
             f.write(f"error_lines_display={config.get('error_lines_display', 20)}\n")
+            f.write(f"gallery_dl_progress={'true' if config.get('gallery_dl_progress', True) else 'false'}\n")
     except Exception as exc:
         app.logger.error("Failed to save Artillery config: %s", exc)
         raise
@@ -824,8 +828,10 @@ def config_page():
             try:
                 log_lines = request.form.get("log_lines_display", "50")
                 error_lines = request.form.get("error_lines_display", "20")
+                gallery_dl_progress = request.form.get("gallery_dl_progress", "off") == "on"
                 artillery_config["log_lines_display"] = int(log_lines)
                 artillery_config["error_lines_display"] = int(error_lines)
+                artillery_config["gallery_dl_progress"] = gallery_dl_progress
                 save_artillery_config(artillery_config)
                 flash("Artillery settings saved.", "success")
             except ValueError:
@@ -887,6 +893,23 @@ def run_task_background(task_folder: str):
 
     try:
         cmd_parts = shlex.split(command)
+        
+        # Load Artillery config to check gallery-dl progress setting
+        artillery_config = load_artillery_config()
+        progress_enabled = artillery_config.get("gallery_dl_progress", True)
+        
+        # Ensure progress output is enabled for gallery-dl (if configured)
+        if cmd_parts and cmd_parts[0] == "gallery-dl":
+            # Add --progress=off|on to control progress output
+            # Check if progress flag already exists
+            has_progress_flag = any(
+                (p in ("--progress", "-p") or p.startswith("--progress=")) for p in cmd_parts
+            )
+            # If not specified, add based on Artillery config
+            if not has_progress_flag:
+                if progress_enabled:
+                    cmd_parts.insert(1, "--progress=info")
+                
     except ValueError as exc:
         with open(logs_path, "a", encoding="utf-8") as logf:
             logf.write(f"\nFailed to parse command: {exc}\n")
@@ -1064,44 +1087,14 @@ def task_logs(slug):
             run_log_path = os.path.join(logs_dir, run_files[0])
     
     def tail_lines(path: str, lines: int = 50) -> str:
+        """Read the last N lines from a file without modifying content."""
         try:
-            with open(path, 'rb') as f:
-                f.seek(0, os.SEEK_END)
-                file_size = f.tell()
-                block_size = 1024
-                chunks = []
-                lines_found = 0
-                pos = file_size
-
-                while pos > 0 and lines_found <= lines:
-                    read_size = block_size if pos >= block_size else pos
-                    pos -= read_size
-                    f.seek(pos)
-                    chunk = f.read(read_size)
-                    chunks.append(chunk)
-                    lines_found = b"\n".join(chunks).count(b"\n")
-
-                data = b"".join(reversed(chunks))
-                text = data.decode('utf-8', errors='replace')
-                # Handle carriage returns: keep only the last segment per line
-                text = '\n'.join(
-                    line.split('\r')[-1] if '\r' in line else line
-                    for line in text.splitlines()
-                )
-                return '\n'.join(text.splitlines()[-lines:])
+            with open(path, 'r', encoding='utf-8', errors='replace') as f:
+                all_lines = f.readlines()
+                # Return last N lines, joined without extra newlines
+                return ''.join(all_lines[-lines:]) if all_lines else ''
         except Exception:
-            # Fallback to reading whole file if anything goes wrong
-            try:
-                with open(path, 'r', encoding='utf-8', errors='replace') as f:
-                    text = f.read()
-                    # Handle carriage returns: keep only the last segment per line
-                    text = '\n'.join(
-                        line.split('\r')[-1] if '\r' in line else line
-                        for line in text.splitlines()
-                    )
-                    return '\n'.join(text.splitlines()[-lines:])
-            except Exception:
-                return ''
+            return ''
 
     try:
         if run_log_path and os.path.exists(run_log_path):
@@ -1111,11 +1104,6 @@ def task_logs(slug):
             else:
                 with open(run_log_path, "r", encoding="utf-8", errors="replace") as f:
                     content = f.read()
-                    # Handle carriage returns: keep only the last segment per line
-                    content = '\n'.join(
-                        line.split('\r')[-1] if '\r' in line else line
-                        for line in content.splitlines()
-                    )
         else:
             content = "No logs yet. Task has not been run."
     except Exception as exc:
