@@ -1083,12 +1083,23 @@ def task_logs(slug):
 
                 data = b"".join(reversed(chunks))
                 text = data.decode('utf-8', errors='replace')
+                # Handle carriage returns: keep only the last segment per line
+                text = '\n'.join(
+                    line.split('\r')[-1] if '\r' in line else line
+                    for line in text.splitlines()
+                )
                 return '\n'.join(text.splitlines()[-lines:])
         except Exception:
             # Fallback to reading whole file if anything goes wrong
             try:
                 with open(path, 'r', encoding='utf-8', errors='replace') as f:
-                    return '\n'.join(f.read().splitlines()[-lines:])
+                    text = f.read()
+                    # Handle carriage returns: keep only the last segment per line
+                    text = '\n'.join(
+                        line.split('\r')[-1] if '\r' in line else line
+                        for line in text.splitlines()
+                    )
+                    return '\n'.join(text.splitlines()[-lines:])
             except Exception:
                 return ''
 
@@ -1100,6 +1111,11 @@ def task_logs(slug):
             else:
                 with open(run_log_path, "r", encoding="utf-8", errors="replace") as f:
                     content = f.read()
+                    # Handle carriage returns: keep only the last segment per line
+                    content = '\n'.join(
+                        line.split('\r')[-1] if '\r' in line else line
+                        for line in content.splitlines()
+                    )
         else:
             content = "No logs yet. Task has not been run."
     except Exception as exc:
