@@ -56,6 +56,7 @@ CONFIG_ROOT = os.environ.get("CONFIG_DIR") or "/config"
 DOWNLOADS_ROOT = os.environ.get("DOWNLOADS_DIR") or "/downloads"
 
 CONFIG_FILE = os.path.join(CONFIG_ROOT, "gallery-dl.conf")
+ARTILLERY_CONFIG_FILE = os.path.join(CONFIG_ROOT, "artillery.conf")
 
 DEFAULT_CONFIG_URL = os.environ.get(
     "GALLERYDL_DEFAULT_CONFIG_URL",
@@ -167,6 +168,47 @@ def write_text(path: str, content: str):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
+
+
+def load_artillery_config() -> dict:
+    """Load Artillery configuration settings."""
+    ensure_data_dirs(ensure_downloads=False)
+    config = {
+        "log_lines_display": 50,  # default
+    }
+    
+    if os.path.exists(ARTILLERY_CONFIG_FILE):
+        try:
+            with open(ARTILLERY_CONFIG_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        key, value = line.split("=", 1)
+                        key = key.strip()
+                        value = value.strip()
+                        if key == "log_lines_display":
+                            try:
+                                config["log_lines_display"] = int(value)
+                            except ValueError:
+                                pass
+        except Exception as exc:
+            app.logger.warning("Failed to load Artillery config: %s", exc)
+    
+    return config
+
+
+def save_artillery_config(config: dict):
+    """Save Artillery configuration settings."""
+    ensure_data_dirs(ensure_downloads=False)
+    try:
+        with open(ARTILLERY_CONFIG_FILE, "w", encoding="utf-8") as f:
+            f.write("# Artillery Configuration\n")
+            f.write(f"log_lines_display={config.get('log_lines_display', 50)}\n")
+    except Exception as exc:
+        app.logger.error("Failed to save Artillery config: %s", exc)
+        raise
 
 
 def load_tasks():
@@ -751,7 +793,8 @@ def tasks():
 
     ensure_data_dirs(ensure_downloads=False)
     tasks_list = load_tasks()
-    return render_template("tasks.html", tasks=tasks_list)
+    artillery_config = load_artillery_config()
+    return render_template("tasks.html", tasks=tasks_list, artillery_config=artillery_config)
 
 # ---------------------------------------------------------------------
 # Config page
@@ -761,6 +804,7 @@ def tasks():
 def config_page():
     ensure_data_dirs(ensure_downloads=False)
     config_text = read_text(CONFIG_FILE) or ""
+    artillery_config = load_artillery_config()
 
     if request.method == "POST":
         action = request.form.get("action")
@@ -768,6 +812,16 @@ def config_page():
             config_text = request.form.get("config_text", "")
             write_text(CONFIG_FILE, config_text)
             flash("Config saved.", "success")
+        elif action == "save_artillery":
+            try:
+                log_lines = request.form.get("log_lines_display", "50")
+                artillery_config["log_lines_display"] = int(log_lines)
+                save_artillery_config(artillery_config)
+                flash("Artillery settings saved.", "success")
+            except ValueError:
+                flash("Invalid log lines value. Must be a number.", "error")
+            except Exception as exc:
+                flash(f"Failed to save Artillery settings: {exc}", "error")
         elif action == "reset":
             try:
                 with urllib.request.urlopen(DEFAULT_CONFIG_URL, timeout=10) as resp:
@@ -778,7 +832,11 @@ def config_page():
             except Exception as exc:
                 flash(f"Failed to fetch default config: {exc}", "error")
 
-    return render_template("config.html", config_text=config_text, config_path=CONFIG_FILE, media_wall_enabled=MEDIA_WALL_ENABLED)
+    return render_template("config.html", 
+                         config_text=config_text, 
+                         config_path=CONFIG_FILE, 
+                         media_wall_enabled=MEDIA_WALL_ENABLED,
+                         artillery_config=artillery_config)
 
 # ---------------------------------------------------------------------
 # Task actions
@@ -792,6 +850,10 @@ def run_task_background(task_folder: str):
     last_run_path = os.path.join(task_folder, "last_run.txt")
     command_path = os.path.join(task_folder, "command.txt")
     urls_file = os.path.join(task_folder, "urls.txt")
+    
+    # Create logs directory for per-run logs
+    logs_dir = os.path.join(task_folder, "logs")
+    os.makedirs(logs_dir, exist_ok=True)
 
     command = read_text(command_path)
     if not command:
@@ -809,6 +871,9 @@ def run_task_background(task_folder: str):
         return
 
     now = dt.datetime.utcnow().isoformat() + "Z"
+    # Create timestamped log file for this run
+    timestamp = dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    run_log_path = os.path.join(logs_dir, f"run_{timestamp}.log")
 
     try:
         cmd_parts = shlex.split(command)
@@ -824,33 +889,61 @@ def run_task_background(task_folder: str):
     env["PATH"] = env.get("PATH", "") + os.pathsep + "/usr/local/bin"
 
     try:
+        # Write to both the aggregated logs.txt and the per-run log file
+        config_exists = os.path.exists(CONFIG_FILE)
+        header = f"\n\n==== Run at {now} ====\n"
+        header += f"Artillery: using config {CONFIG_FILE} (exists={config_exists})\n"
+        header += f"$ {' '.join(cmd_parts)}\n\n"
+        
         with open(logs_path, "a", encoding="utf-8") as logf:
-            config_exists = os.path.exists(CONFIG_FILE)
-            logf.write(f"\n\n==== Run at {now} ====\n")
-            logf.write(f"Artillery: using config {CONFIG_FILE} (exists={config_exists})\n")
-            logf.write(f"$ {' '.join(cmd_parts)}\n\n")
+            logf.write(header)
             logf.flush()
-
+        
+        with open(run_log_path, "w", encoding="utf-8") as run_logf:
+            run_logf.write(header)
+            run_logf.flush()
+            
+            # Run the command and write to per-run log
             result = subprocess.run(
                 cmd_parts,
                 cwd=task_folder,
-                stdout=logf,
+                stdout=run_logf,
                 stderr=subprocess.STDOUT,
                 text=True,
                 env=env,
             )
 
         write_text(last_run_path, now)
-
+        
+        # Write completion status to per-run log
+        footer = ""
+        if result.returncode == 0:
+            footer = "\nTask finished successfully.\n"
+        else:
+            footer = f"\nTask exited with code {result.returncode}.\n"
+        
+        with open(run_log_path, "a", encoding="utf-8") as run_logf:
+            run_logf.write(footer)
+        
+        # Also append to main logs.txt
         with open(logs_path, "a", encoding="utf-8") as logf:
-            if result.returncode == 0:
-                logf.write("\nTask finished successfully.\n")
-            else:
-                logf.write(f"\nTask exited with code {result.returncode}.\n")
+            # Read the run log and append to main log
+            with open(run_log_path, "r", encoding="utf-8", errors="replace") as run_logf:
+                # Skip the header we already wrote
+                lines = run_logf.readlines()
+                # Find where the actual output starts (after header)
+                start_idx = 0
+                for i, line in enumerate(lines):
+                    if line.startswith("$ "):
+                        start_idx = i + 1
+                        break
+                logf.write("".join(lines[start_idx:]))
 
     except Exception as exc:
         with open(logs_path, "a", encoding="utf-8") as logf:
             logf.write(f"\nERROR while running task: {exc}\n")
+        with open(run_log_path, "a", encoding="utf-8") as run_logf:
+            run_logf.write(f"\nERROR while running task: {exc}\n")
     finally:
         # ---- MEDIA WALL HOOK: ingest + refresh cache (copy up to 100) ----
         if MEDIA_WALL_AUTO_INGEST_ON_TASK_END:
@@ -982,6 +1075,77 @@ def task_logs(slug):
         return jsonify({"error": str(exc)}), 500
     
     return jsonify({"slug": slug, "content": content})
+
+
+@app.route("/tasks/<slug>/errors")
+def task_errors(slug):
+    """
+    Extract and return error lines from task logs.
+    Returns JSON with error lines and count.
+    """
+    ensure_data_dirs(ensure_downloads=False)
+    
+    task_folder = os.path.join(TASKS_ROOT, slug)
+    if not os.path.isdir(task_folder):
+        return jsonify({"error": "Task not found"}), 404
+    
+    logs_path = os.path.join(task_folder, "logs.txt")
+    
+    error_lines = []
+    error_count = 0
+    
+    try:
+        if os.path.exists(logs_path):
+            with open(logs_path, "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    # Check for error indicators
+                    line_lower = line.lower()
+                    if any(indicator in line_lower for indicator in ['error', 'failed', 'exception', 'traceback']):
+                        error_count += 1
+                        # Keep only last 20 error lines for display
+                        error_lines.append(line.rstrip())
+                        if len(error_lines) > 20:
+                            error_lines.pop(0)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    
+    return jsonify({
+        "slug": slug, 
+        "error_count": error_count, 
+        "error_lines": error_lines
+    })
+
+
+@app.route("/tasks/<slug>/runs")
+def task_runs(slug):
+    """
+    List available per-run log files for a task.
+    Returns JSON with list of run logs.
+    """
+    ensure_data_dirs(ensure_downloads=False)
+    
+    task_folder = os.path.join(TASKS_ROOT, slug)
+    if not os.path.isdir(task_folder):
+        return jsonify({"error": "Task not found"}), 404
+    
+    logs_dir = os.path.join(task_folder, "logs")
+    runs = []
+    
+    if os.path.isdir(logs_dir):
+        for filename in sorted(os.listdir(logs_dir), reverse=True):
+            if filename.startswith("run_") and filename.endswith(".log"):
+                filepath = os.path.join(logs_dir, filename)
+                try:
+                    stat = os.stat(filepath)
+                    runs.append({
+                        "filename": filename,
+                        "size": stat.st_size,
+                        "mtime": stat.st_mtime
+                    })
+                except Exception:
+                    pass
+    
+    return jsonify({"slug": slug, "runs": runs})
 
 
 # ---------------------------------------------------------------------
