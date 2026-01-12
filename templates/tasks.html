@@ -518,7 +518,7 @@ https://example.com/image2" required></textarea>
 
         document.addEventListener("DOMContentLoaded", function () {
             // Load Artillery config
-            logLinesToShow = {{ artillery_config.log_lines_display }};
+            logLinesToShow = {{ artillery_config.log_lines_display | tojson }};
             if (logLinesCount) {
                 logLinesCount.textContent = logLinesToShow;
             }

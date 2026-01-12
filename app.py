@@ -14,6 +14,7 @@ import signal
 import faulthandler
 import sqlite3
 import hashlib
+from collections import deque
 from typing import Optional, List, Tuple
 
 from flask import (
@@ -192,7 +193,7 @@ def load_artillery_config() -> dict:
                             try:
                                 config["log_lines_display"] = int(value)
                             except ValueError:
-                                pass
+                                app.logger.warning("Invalid log_lines_display value '%s', using default", value)
         except Exception as exc:
             app.logger.warning("Failed to load Artillery config: %s", exc)
     
@@ -889,8 +890,7 @@ def run_task_background(task_folder: str):
     env["PATH"] = env.get("PATH", "") + os.pathsep + "/usr/local/bin"
 
     try:
-        # Write to both the aggregated logs.txt and the per-run log file
-        config_exists = os.path.exists(CONFIG_FILE)
+        # Write header to both logs
         header = f"\n\n==== Run at {now} ====\n"
         header += f"Artillery: using config {CONFIG_FILE} (exists={config_exists})\n"
         header += f"$ {' '.join(cmd_parts)}\n\n"
@@ -925,19 +925,15 @@ def run_task_background(task_folder: str):
         with open(run_log_path, "a", encoding="utf-8") as run_logf:
             run_logf.write(footer)
         
-        # Also append to main logs.txt
+        # Also append to main logs.txt using more efficient streaming
         with open(logs_path, "a", encoding="utf-8") as logf:
-            # Read the run log and append to main log
             with open(run_log_path, "r", encoding="utf-8", errors="replace") as run_logf:
-                # Skip the header we already wrote
-                lines = run_logf.readlines()
-                # Find where the actual output starts (after header)
-                start_idx = 0
-                for i, line in enumerate(lines):
+                # Skip the header we already wrote by finding the command line
+                for line in run_logf:
                     if line.startswith("$ "):
-                        start_idx = i + 1
-                        break
-                logf.write("".join(lines[start_idx:]))
+                        break  # Skip to next line after command
+                # Stream remaining content efficiently
+                shutil.copyfileobj(run_logf, logf)
 
     except Exception as exc:
         with open(logs_path, "a", encoding="utf-8") as logf:
@@ -1091,7 +1087,7 @@ def task_errors(slug):
     
     logs_path = os.path.join(task_folder, "logs.txt")
     
-    error_lines = []
+    error_lines = deque(maxlen=20)  # Efficiently maintain last 20 lines
     error_count = 0
     
     try:
@@ -1104,15 +1100,13 @@ def task_errors(slug):
                         error_count += 1
                         # Keep only last 20 error lines for display
                         error_lines.append(line.rstrip())
-                        if len(error_lines) > 20:
-                            error_lines.pop(0)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     
     return jsonify({
         "slug": slug, 
         "error_count": error_count, 
-        "error_lines": error_lines
+        "error_lines": list(error_lines)
     })
 
 
