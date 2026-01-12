@@ -1094,9 +1094,11 @@ def task_errors(slug):
         if os.path.exists(logs_path):
             with open(logs_path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
-                    # Check for error indicators
-                    line_lower = line.lower()
-                    if any(indicator in line_lower for indicator in ['error', 'failed', 'exception', 'traceback']):
+                    # Check for gallery-dl error tags: [[error]] or Python exceptions
+                    # Examples: [download][[error]] Failed to download...
+                    #           [error] message
+                    #           Traceback (most recent call last):
+                    if re.search(r'\[\[error\]\]|\[error\]|^Traceback \(most recent call last\):|^[A-Z]\w*Error:', line, re.IGNORECASE):
                         error_count += 1
                         # Keep only last 20 error lines for display
                         error_lines.append(line.rstrip())
