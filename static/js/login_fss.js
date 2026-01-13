@@ -144,6 +144,19 @@ FSS.SVGRenderer.prototype.render = function(scene){ FSS.Renderer.prototype.rende
     speed: 0.00022         // subtle motion
   };
 
+  function meshSegmentsForViewport(width, height) {
+    var minDim = Math.min(width, height);
+    var maxDim = Math.max(width, height);
+
+    // Mobile gets higher detail so facets aren't oversized.
+    var isMobile = minDim < 520;
+    var targetFacetPx = isMobile ? 52 : 86;
+
+    var seg = Math.round(maxDim / targetFacetPx);
+    seg = Math.clamp(seg, isMobile ? 16 : 12, isMobile ? 30 : 22);
+    return seg;
+  }
+
   var LIGHT = {
     count: 6,
     xyScalar: 3,
@@ -214,7 +227,14 @@ FSS.SVGRenderer.prototype.render = function(scene){ FSS.Renderer.prototype.rende
   function createMesh(){
     scene.remove(mesh);
     renderer.clear();
-    geometry = new FSS.Plane(MESH.width*renderer.width, MESH.height*renderer.height, MESH.segments, MESH.slices);
+
+    // Use a square plane based on the larger viewport dimension.
+    // This avoids the "stretched/squashed" look on tall/narrow screens.
+    var maxDim = Math.max(renderer.width, renderer.height);
+    var planeSize = maxDim * MESH.width;
+    var seg = meshSegmentsForViewport(renderer.width, renderer.height);
+    geometry = new FSS.Plane(planeSize, planeSize, seg, seg);
+
     material = new FSS.Material(MESH.ambient, MESH.diffuse);
     mesh = new FSS.Mesh(geometry, material);
     scene.add(mesh);
