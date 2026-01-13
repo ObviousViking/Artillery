@@ -3,8 +3,152 @@ body {
     color: #f8f9fa;
 }
 
+.login-body {
+    position: relative;
+    min-height: 100vh;
+    overflow: hidden;
+    background: #05060a;
+}
+
+.login-body::before,
+.login-body::after {
+    content: "";
+    position: fixed;
+    inset: -10%;
+    z-index: 0;
+    pointer-events: none;
+    /* Remove haze overlay to reveal canvas background clearly */
+    background-image: none;
+    animation: none;
+    filter: none;
+}
+
+.login-body::after {
+    /* Ensure no secondary haze */
+    background-image: none;
+    animation: none;
+    filter: none;
+    opacity: 1;
+}
+
+@keyframes login-facets {
+    0% {
+        background-position: 0% 0%, 20% 10%, 40% 20%, 60% 10%, 10% 40%, 0% 0%;
+    }
+
+    50% {
+        background-position: 80% 40%, 0% 50%, 70% 60%, 20% 70%, 60% 10%, 50% 50%;
+    }
+
+    100% {
+        background-position: 40% 80%, 60% 0%, 20% 10%, 80% 30%, 0% 70%, 100% 100%;
+    }
+}
+
+.login-wrapper {
+    min-height: calc(100vh - 4rem);
+    position: relative;
+    z-index: 1;
+}
+
+/* FSS background layering */
+#fss-container.fss-background {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    min-height: 100vh;
+    z-index: 0; /* behind the card, but above the body background */
+    pointer-events: none; /* allow interactions on the login card */
+}
+
+#fss-output {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+/*
+  Login page glass card
+  NOTE: We use higher specificity (.card.login-card) to avoid being overridden
+  by the global .card rules later in this file.
+*/
+.card.login-card {
+    max-width: 460px;
+    width: 100%;
+    /* Dark-tinted glass so it doesn't look washed out */
+    background: rgba(10, 12, 18, 0.22);
+    backdrop-filter: blur(18px) saturate(135%) brightness(0.90);
+    -webkit-backdrop-filter: blur(18px) saturate(135%) brightness(0.90);
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow:
+        0 14px 46px rgba(0, 0, 0, 0.45),
+        inset 0 1px 0 rgba(255, 255, 255, 0.18),
+        inset 0 -1px 0 rgba(255, 255, 255, 0.06),
+        inset 0 0 0px 0px rgba(255, 255, 255, 0);
+    position: relative;
+    overflow: hidden;
+}
+
+.card.login-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+}
+
+.card.login-card::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 100%;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.30), transparent, rgba(255, 255, 255, 0.12));
+}
+
+.login-card .form-control {
+    border-radius: 18px;
+    padding: 0.75rem 1rem;
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #e5e7eb;
+}
+
+.login-card .form-control::placeholder {
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.login-card h1 {
+    color: #ffffff;
+    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.35);
+}
+
+.login-card .form-control:focus {
+    box-shadow: 0 0 0 0.15rem rgba(59, 130, 246, 0.30);
+    border-color: rgba(59, 130, 246, 0.45);
+}
+
+.login-btn {
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    box-shadow: 0 12px 30px rgba(59, 130, 246, 0.25);
+    border-radius: 18px;
+}
+
+.login-logo img {
+    width: 48px;
+    height: 48px;
+    filter: drop-shadow(0 0 12px rgba(249, 115, 22, 0.35));
+}
+
 /* Cards */
-.card {
+body:not(.login-body) .card {
     background-color: #050505;
     border-color: #111827;
 }
