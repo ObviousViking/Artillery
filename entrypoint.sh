@@ -22,7 +22,8 @@ pip install --no-cache-dir --upgrade gallery-dl
 
 
 # remove stale task lock files from previous container run
-find "$TASKS_DIR" -maxdepth 3 -type f -name "lock" -print -delete || true
+# Only remove lock files in task directories: $TASKS_DIR/<slug>/lock
+find "$TASKS_DIR" -mindepth 2 -maxdepth 2 -type f -name "lock" -print -delete || true
 
 
 # Decide how we run things: as root or as numeric uid:gid
