@@ -3,6 +3,92 @@ body {
     color: #f8f9fa;
 }
 
+.login-body {
+    position: relative;
+    min-height: 100vh;
+    overflow: hidden;
+    background: radial-gradient(circle at 20% 20%, #0b1224 0, #000000 40%),
+        radial-gradient(circle at 80% 0%, #1f2937 0, #000000 35%),
+        #000000;
+}
+
+.login-body::before,
+.login-body::after {
+    content: "";
+    position: fixed;
+    top: -140px;
+    left: -140px;
+    width: 420px;
+    height: 420px;
+    filter: blur(90px);
+    opacity: 0.35;
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgba(249, 115, 22, 0.35), rgba(59, 130, 246, 0.25));
+    animation: login-glow 18s ease-in-out infinite alternate;
+    z-index: 0;
+}
+
+.login-body::after {
+    top: auto;
+    left: auto;
+    right: -120px;
+    bottom: -160px;
+    width: 360px;
+    height: 360px;
+    animation-direction: alternate-reverse;
+    animation-duration: 22s;
+    background: linear-gradient(135deg, rgba(236, 72, 153, 0.28), rgba(56, 189, 248, 0.25));
+}
+
+@keyframes login-glow {
+    0% {
+        transform: translate(-10%, -10%) scale(1);
+    }
+
+    50% {
+        transform: translate(30%, 20%) scale(1.05);
+    }
+
+    100% {
+        transform: translate(5%, 35%) scale(0.95);
+    }
+}
+
+.login-wrapper {
+    min-height: calc(100vh - 4rem);
+    position: relative;
+    z-index: 1;
+}
+
+.login-card {
+    max-width: 460px;
+    width: 100%;
+    background: rgba(5, 5, 5, 0.9);
+    border-color: #111827;
+    box-shadow: 0 20px 70px rgba(0, 0, 0, 0.55);
+}
+
+.login-card .form-control {
+    border-radius: 999px;
+    padding: 0.75rem 1rem;
+}
+
+.login-card .form-control:focus {
+    box-shadow: 0 0 0 0.15rem rgba(249, 115, 22, 0.35);
+}
+
+.login-btn {
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    box-shadow: 0 12px 30px rgba(249, 115, 22, 0.25);
+}
+
+.login-logo img {
+    width: 48px;
+    height: 48px;
+    filter: drop-shadow(0 0 12px rgba(249, 115, 22, 0.35));
+}
+
 /* Cards */
 .card {
     background-color: #050505;

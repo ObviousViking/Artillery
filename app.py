@@ -3,6 +3,7 @@ import json
 import datetime as dt
 import re
 import urllib.request
+import urllib.parse
 import shlex
 import shutil
 import threading
@@ -19,7 +20,7 @@ import mediawall_runtime as mw
 
 from flask import (
     Flask, render_template, request,
-    redirect, url_for, flash, send_from_directory, Response
+    redirect, url_for, flash, send_from_directory, Response, session
 )
 from flask import jsonify
 from werkzeug.exceptions import NotFound
@@ -103,6 +104,17 @@ MEDIA_WALL_AUTO_REFRESH_ON_TASK_END = os.environ.get("MEDIA_WALL_AUTO_REFRESH_ON
 MEDIA_WALL_MIN_REFRESH_SECONDS = int(os.environ.get("MEDIA_WALL_MIN_REFRESH_SECONDS", "300"))
 
 # ---------------------------------------------------------------------
+# Optional login
+# ---------------------------------------------------------------------
+
+LOGIN_REQUIRED = os.environ.get("ARTILLERY_LOGIN_REQUIRED", "0") == "1"
+LOGIN_USERNAME = os.environ.get("ARTILLERY_USERNAME", "admin")
+LOGIN_PASSWORD = os.environ.get("ARTILLERY_PASSWORD", "artillery")
+
+# Endpoints that should remain reachable even when login is required
+LOGIN_EXEMPT_ENDPOINTS = {"login", "healthz", "static"}
+
+# ---------------------------------------------------------------------
 # Optional request timing
 # ---------------------------------------------------------------------
 
@@ -143,6 +155,78 @@ def strip_ansi(text: Optional[str]) -> Optional[str]:
     if text is None:
         return None
     return ANSI_ESCAPE_RE.sub("", text)
+
+
+def _is_safe_redirect(target: Optional[str]) -> bool:
+    """Ensure the redirect target stays on this host."""
+    if not target:
+        return False
+    ref = urllib.parse.urlparse(request.host_url)
+    test = urllib.parse.urlparse(urllib.parse.urljoin(request.host_url, target))
+    return test.scheme in ("http", "https") and ref.netloc == test.netloc
+
+
+@app.context_processor
+def inject_globals():
+    return {
+        "login_required": LOGIN_REQUIRED,
+    }
+
+
+@app.before_request
+def _enforce_login():
+    if not LOGIN_REQUIRED:
+        return
+
+    # Allow essential endpoints without authentication
+    if request.endpoint in LOGIN_EXEMPT_ENDPOINTS:
+        return
+    if request.path.startswith("/static/") or request.path == "/favicon.ico":
+        return
+
+    if session.get("authenticated"):
+        return
+
+    next_target = request.full_path if request.query_string else request.path
+    return redirect(url_for("login", next=next_target))
+
+
+# ---------------------------------------------------------------------
+# Login / Logout
+# ---------------------------------------------------------------------
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not LOGIN_REQUIRED:
+        return redirect(url_for("home"))
+
+    if session.get("authenticated"):
+        return redirect(url_for("home"))
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        if username == LOGIN_USERNAME and password == LOGIN_PASSWORD:
+            session["authenticated"] = True
+            session["username"] = username
+
+            target = request.args.get("next")
+            if not _is_safe_redirect(target):
+                target = url_for("home")
+            return redirect(target)
+
+        flash("Invalid username or password.", "error")
+
+    return render_template("login.html", body_class="login-body")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    if LOGIN_REQUIRED:
+        flash("Signed out.", "success")
+        return redirect(url_for("login"))
+    return redirect(url_for("home"))
 
 
 def _get_pid_for_task(slug: str, task_folder: str) -> Optional[int]:

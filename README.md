@@ -118,8 +118,19 @@ docker run -d \
   -e DOWNLOADS_DIR=/downloads \
   -e PUID=99 \
   -e PGID=100 \
+  # Optional login
+  -e ARTILLERY_LOGIN_REQUIRED=1 \
+  -e ARTILLERY_USERNAME=admin \
+  -e ARTILLERY_PASSWORD=change-me \
   -v /mnt/user/appdata/artillery/config:/config \
   -v /mnt/user/appdata/artillery/tasks:/tasks \
   -v /mnt/user/pictures:/downloads \
   obviousviking/artillery
 ```
+
+### Optional login (username/password)
+
+Authentication is disabled by default. To require a login page:
+
+* `ARTILLERY_LOGIN_REQUIRED=1` – enable the login screen
+* `ARTILLERY_USERNAME` / `ARTILLERY_PASSWORD` – credentials to accept (defaults to `admin` / `artillery` if not set)
