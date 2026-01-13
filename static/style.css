@@ -7,8 +7,8 @@ body {
     position: relative;
     min-height: 100vh;
     overflow: hidden;
-    background: radial-gradient(circle at 20% 20%, #0b1224 0, #000000 40%),
-        radial-gradient(circle at 80% 0%, #1f2937 0, #000000 35%),
+    background: radial-gradient(circle at 15% 20%, rgba(30, 41, 59, 0.45), transparent 32%),
+        radial-gradient(circle at 75% 10%, rgba(59, 130, 246, 0.2), transparent 28%),
         #000000;
 }
 
@@ -16,41 +16,62 @@ body {
 .login-body::after {
     content: "";
     position: fixed;
-    top: -140px;
-    left: -140px;
-    width: 420px;
-    height: 420px;
-    filter: blur(90px);
-    opacity: 0.35;
-    border-radius: 50%;
-    background: linear-gradient(135deg, rgba(249, 115, 22, 0.35), rgba(59, 130, 246, 0.25));
-    animation: login-glow 18s ease-in-out infinite alternate;
+    inset: 0;
     z-index: 0;
+    pointer-events: none;
+    background-size:
+        240px 240px,
+        280px 280px,
+        8px 8px,
+        400px 400px;
+    background-image:
+        linear-gradient(135deg, rgba(59, 130, 246, 0.08) 1px, transparent 1px),
+        linear-gradient(45deg, rgba(249, 115, 22, 0.08) 1px, transparent 1px),
+        radial-gradient(circle, rgba(236, 72, 153, 0.4) 1px, transparent 2px),
+        radial-gradient(circle at 20% 30%, rgba(59, 130, 246, 0.15), transparent 55%);
+    animation: login-lines 24s linear infinite;
+    mix-blend-mode: screen;
 }
 
 .login-body::after {
-    top: auto;
-    left: auto;
-    right: -120px;
-    bottom: -160px;
-    width: 360px;
-    height: 360px;
-    animation-direction: alternate-reverse;
-    animation-duration: 22s;
-    background: linear-gradient(135deg, rgba(236, 72, 153, 0.28), rgba(56, 189, 248, 0.25));
+    background-size:
+        200px 200px,
+        260px 260px,
+        10px 10px,
+        360px 360px;
+    background-image:
+        linear-gradient(-135deg, rgba(16, 185, 129, 0.08) 1px, transparent 1px),
+        linear-gradient(-45deg, rgba(236, 72, 153, 0.08) 1px, transparent 1px),
+        radial-gradient(circle, rgba(56, 189, 248, 0.35) 1px, transparent 2px),
+        radial-gradient(circle at 80% 60%, rgba(249, 115, 22, 0.18), transparent 60%);
+    animation-duration: 30s;
+    animation-direction: reverse;
+    opacity: 0.75;
 }
 
-@keyframes login-glow {
+@keyframes login-lines {
     0% {
-        transform: translate(-10%, -10%) scale(1);
+        background-position:
+            0 0,
+            0 0,
+            0 0,
+            0 0;
     }
 
     50% {
-        transform: translate(30%, 20%) scale(1.05);
+        background-position:
+            120px 80px,
+            -140px 60px,
+            60px -40px,
+            30px 20px;
     }
 
     100% {
-        transform: translate(5%, 35%) scale(0.95);
+        background-position:
+            240px 160px,
+            -280px 120px,
+            120px -80px,
+            60px 40px;
     }
 }
 
@@ -69,7 +90,7 @@ body {
 }
 
 .login-card .form-control {
-    border-radius: 999px;
+    border-radius: 18px;
     padding: 0.75rem 1rem;
 }
 
@@ -81,6 +102,7 @@ body {
     font-weight: 600;
     letter-spacing: 0.4px;
     box-shadow: 0 12px 30px rgba(249, 115, 22, 0.25);
+    border-radius: 18px;
 }
 
 .login-logo img {
