@@ -1,6 +1,16 @@
 {% extends "base.html" %}
 
 {% block content %}
+<!-- FSS-style animated background -->
+<div id="fss-container" class="fss-background">
+    <div id="fss-output" class="fss-output"></div>
+    <!-- optional controls element if needed: <div id="controls"></div> -->
+    <!-- background canvas will be injected here by JS -->
+    <noscript>
+        <style>.login-wrapper{position:relative;}</style>
+    </noscript>
+</div>
+
 <div class="login-wrapper d-flex align-items-center justify-content-center">
     <div class="card login-card shadow-sm p-4">
         <div class="text-center mb-3">
@@ -27,4 +37,5 @@
         </form>
     </div>
 </div>
+<script src="{{ url_for('static', filename='js/login_fss.js') }}"></script>
 {% endblock %}
