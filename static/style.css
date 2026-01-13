@@ -58,6 +58,9 @@ body {
     width: 100vw;
     height: 100vh;
     min-height: 100vh;
+    /* Mobile viewport units (more stable than 100vh on iOS/Android browsers) */
+    height: 100svh;
+    min-height: 100svh;
     z-index: 0; /* behind the card, but above the body background */
     pointer-events: none; /* allow interactions on the login card */
 }
