@@ -118,7 +118,7 @@ docker run -d \
   -e DOWNLOADS_DIR=/downloads \
   -e PUID=99 \
   -e PGID=100 \
-  # Optional login
+  # Optional login (remove these if you don't need auth)
   -e ARTILLERY_LOGIN_REQUIRED=1 \
   -e ARTILLERY_USERNAME=admin \
   -e ARTILLERY_PASSWORD=change-me \
@@ -132,5 +132,6 @@ docker run -d \
 
 Authentication is disabled by default. To require a login page:
 
-* `ARTILLERY_LOGIN_REQUIRED=1` – enable the login screen
-* `ARTILLERY_USERNAME` / `ARTILLERY_PASSWORD` – credentials to accept (defaults to `admin` / `artillery` if not set)
+* `ARTILLERY_LOGIN_REQUIRED=1` – enable the login screen. Omit or set to `0` to leave the app open.
+* `ARTILLERY_USERNAME` / `ARTILLERY_PASSWORD` – optional overrides for the credentials. If not provided, they default to `admin` / `artillery`.
+* You can leave username/password unset in container creation; they are only read when login is enabled.
