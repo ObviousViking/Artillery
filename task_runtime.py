@@ -55,15 +55,17 @@ def write_text(path: str, content: str):
             f.flush()
             try:
                 os.fsync(f.fileno())
-            except Exception:
-                pass
+            except Exception as exc:
+                # fsync failures are non-fatal for our use case; log for diagnostics only.
+                logger.debug("fsync failed for temporary file %s: %s", tmp_path, exc)
         os.replace(tmp_path, path)
     finally:
         try:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
-        except Exception:
-            pass
+        except Exception as exc:
+            # Failure to remove the temporary file is non-fatal; log and continue.
+            logger.debug("Failed to remove temporary file %s: %s", tmp_path, exc)
 
 
 def _get_proc_for_task(slug: str) -> Optional[subprocess.Popen]:
@@ -111,8 +113,13 @@ def cleanup_task_state(slug: str, task_folder: str):
         try:
             if os.path.exists(p):
                 os.remove(p)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "Failed to remove task state file %s for %s: %s",
+                p,
+                slug,
+                exc,
+            )
 
 
 def clear_stale_lock(slug: str, task_folder: str):
@@ -262,8 +269,8 @@ def run_task_background(
         if proc is not None:
             try:
                 write_text(pid_path, str(proc.pid))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed to write PID file %s for task %s: %s", pid_path, slug, exc)
             with RUNNING_PROCS_LOCK:
                 RUNNING_PROCS[slug] = proc
 
@@ -326,5 +333,5 @@ def run_task_background(
         try:
             if os.path.exists(lock_path):
                 os.remove(lock_path)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to remove lock file %s: %s", lock_path, exc)
