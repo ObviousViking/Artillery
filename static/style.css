@@ -7,71 +7,66 @@ body {
     position: relative;
     min-height: 100vh;
     overflow: hidden;
-    background: radial-gradient(circle at 15% 20%, rgba(30, 41, 59, 0.45), transparent 32%),
-        radial-gradient(circle at 75% 10%, rgba(59, 130, 246, 0.2), transparent 28%),
-        #000000;
+    background: #05060a;
 }
 
 .login-body::before,
 .login-body::after {
     content: "";
     position: fixed;
-    inset: 0;
+    inset: -10%;
     z-index: 0;
     pointer-events: none;
-    background-size:
-        240px 240px,
-        280px 280px,
-        8px 8px,
-        400px 400px;
     background-image:
-        linear-gradient(135deg, rgba(59, 130, 246, 0.08) 1px, transparent 1px),
-        linear-gradient(45deg, rgba(249, 115, 22, 0.08) 1px, transparent 1px),
-        radial-gradient(circle, rgba(236, 72, 153, 0.4) 1px, transparent 2px),
-        radial-gradient(circle at 20% 30%, rgba(59, 130, 246, 0.15), transparent 55%);
-    animation: login-lines 24s linear infinite;
+        linear-gradient(135deg, rgba(79, 70, 229, 0.35), transparent 55%),
+        linear-gradient(225deg, rgba(56, 189, 248, 0.35), transparent 60%),
+        linear-gradient(60deg, rgba(236, 72, 153, 0.35), transparent 60%),
+        linear-gradient(120deg, rgba(249, 115, 22, 0.35), transparent 65%),
+        conic-gradient(from 45deg, rgba(255, 255, 255, 0.1), transparent 35%, rgba(255, 255, 255, 0.12) 45%, transparent 65%),
+        repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 12px);
+    background-size:
+        140% 140%,
+        120% 120%,
+        160% 160%,
+        150% 150%,
+        180% 180%,
+        220% 220%;
+    background-blend-mode: screen, screen, screen, lighten, soft-light, overlay;
     mix-blend-mode: screen;
+    filter: drop-shadow(0 0 25px rgba(59, 130, 246, 0.25));
+    animation: login-facets 32s ease-in-out infinite alternate;
 }
 
 .login-body::after {
-    background-size:
-        200px 200px,
-        260px 260px,
-        10px 10px,
-        360px 360px;
     background-image:
-        linear-gradient(-135deg, rgba(16, 185, 129, 0.08) 1px, transparent 1px),
-        linear-gradient(-45deg, rgba(236, 72, 153, 0.08) 1px, transparent 1px),
-        radial-gradient(circle, rgba(56, 189, 248, 0.35) 1px, transparent 2px),
-        radial-gradient(circle at 80% 60%, rgba(249, 115, 22, 0.18), transparent 60%);
-    animation-duration: 30s;
-    animation-direction: reverse;
-    opacity: 0.75;
+        linear-gradient(205deg, rgba(16, 185, 129, 0.35), transparent 60%),
+        linear-gradient(25deg, rgba(14, 165, 233, 0.25), transparent 55%),
+        linear-gradient(-65deg, rgba(248, 113, 113, 0.25), transparent 60%),
+        radial-gradient(circle at 70% 40%, rgba(255, 255, 255, 0.25), transparent 55%),
+        repeating-linear-gradient(-35deg, rgba(255, 255, 255, 0.06) 0 1px, transparent 1px 10px);
+    background-size:
+        150% 150%,
+        130% 130%,
+        170% 170%,
+        200% 200%,
+        240% 240%;
+    background-blend-mode: screen, screen, screen, soft-light, overlay;
+    filter: blur(6px) drop-shadow(0 0 18px rgba(255, 255, 255, 0.15));
+    animation: login-facets 36s ease-in-out infinite alternate-reverse;
+    opacity: 0.85;
 }
 
-@keyframes login-lines {
+@keyframes login-facets {
     0% {
-        background-position:
-            0 0,
-            0 0,
-            0 0,
-            0 0;
+        background-position: 0% 0%, 20% 10%, 40% 20%, 60% 10%, 10% 40%, 0% 0%;
     }
 
     50% {
-        background-position:
-            120px 80px,
-            -140px 60px,
-            60px -40px,
-            30px 20px;
+        background-position: 80% 40%, 0% 50%, 70% 60%, 20% 70%, 60% 10%, 50% 50%;
     }
 
     100% {
-        background-position:
-            240px 160px,
-            -280px 120px,
-            120px -80px,
-            60px 40px;
+        background-position: 40% 80%, 60% 0%, 20% 10%, 80% 30%, 0% 70%, 100% 100%;
     }
 }
 
@@ -84,18 +79,25 @@ body {
 .login-card {
     max-width: 460px;
     width: 100%;
-    background: rgba(5, 5, 5, 0.9);
-    border-color: #111827;
-    box-shadow: 0 20px 70px rgba(0, 0, 0, 0.55);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    border-radius: 16px;
 }
 
 .login-card .form-control {
     border-radius: 18px;
     padding: 0.75rem 1rem;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #e5e7eb;
 }
 
 .login-card .form-control:focus {
     box-shadow: 0 0 0 0.15rem rgba(249, 115, 22, 0.35);
+    border-color: rgba(249, 115, 22, 0.55);
 }
 
 .login-btn {
