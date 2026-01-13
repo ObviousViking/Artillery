@@ -18,18 +18,20 @@ body {
     z-index: 0;
     pointer-events: none;
     background-image:
-        linear-gradient(135deg, rgba(79, 70, 229, 0.35), transparent 55%),
-        linear-gradient(225deg, rgba(56, 189, 248, 0.35), transparent 60%),
-        linear-gradient(60deg, rgba(236, 72, 153, 0.35), transparent 60%),
-        linear-gradient(120deg, rgba(249, 115, 22, 0.35), transparent 65%),
-        conic-gradient(from 45deg, rgba(255, 255, 255, 0.1), transparent 35%, rgba(255, 255, 255, 0.12) 45%, transparent 65%),
+        linear-gradient(130deg, rgba(59, 130, 246, 0.4) 25%, rgba(59, 130, 246, 0.06) 45%, transparent 46%),
+        linear-gradient(-130deg, rgba(16, 185, 129, 0.3) 30%, transparent 55%),
+        linear-gradient(60deg, rgba(236, 72, 153, 0.28) 28%, transparent 55%),
+        linear-gradient(-60deg, rgba(249, 115, 22, 0.28) 35%, transparent 60%),
+        linear-gradient(205deg, rgba(56, 189, 248, 0.35), transparent 60%),
+        conic-gradient(from 45deg, rgba(255, 255, 255, 0.12), transparent 35%, rgba(255, 255, 255, 0.16) 45%, transparent 65%),
         repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 12px);
     background-size:
-        140% 140%,
-        120% 120%,
+        260px 260px,
+        230px 230px,
+        220px 220px,
+        240px 240px,
         160% 160%,
-        150% 150%,
-        180% 180%,
+        200% 200%,
         220% 220%;
     background-blend-mode: screen, screen, screen, lighten, soft-light, overlay;
     mix-blend-mode: screen;
@@ -79,25 +81,25 @@ body {
 .login-card {
     max-width: 460px;
     width: 100%;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.12);
-    backdrop-filter: blur(18px) saturate(160%);
-    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(20px) saturate(165%);
+    -webkit-backdrop-filter: blur(20px) saturate(165%);
     border-radius: 16px;
 }
 
 .login-card .form-control {
     border-radius: 18px;
     padding: 0.75rem 1rem;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     color: #e5e7eb;
 }
 
 .login-card .form-control:focus {
     box-shadow: 0 0 0 0.15rem rgba(249, 115, 22, 0.35);
-    border-color: rgba(249, 115, 22, 0.55);
+    border-color: rgba(249, 115, 22, 0.5);
 }
 
 .login-btn {
