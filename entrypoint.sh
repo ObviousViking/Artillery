@@ -12,16 +12,17 @@ PGID="${PGID:-0}"
 # Ensure directories exist (Unraid maps these)
 : "${TASKS_DIR:=/tasks}"
 : "${CONFIG_DIR:=/config}"
+: "${DOWNLOADS_DIR:=/downloads}"
 
 
-mkdir -p "$TASKS_DIR" "$CONFIG_DIR" 
+mkdir -p "$TASKS_DIR" "$CONFIG_DIR" "$DOWNLOADS_DIR"
 
 log "Updating gallery-dl to latest..."
 pip install --no-cache-dir --upgrade gallery-dl
 
 
-# remove stale lock files from previous container run
-find /tasks -maxdepth 2 -type f -iname "*lock*" -print -delete || true
+# remove stale task lock files from previous container run
+find "$TASKS_DIR" -maxdepth 3 -type f -name "lock" -print -delete || true
 
 
 # Decide how we run things: as root or as numeric uid:gid
