@@ -995,7 +995,7 @@ def task_errors(slug):
                     #           Traceback (most recent call last):
                     if error_re.search(line):
                         error_count += 1
-                        # Keep only last 20 error lines for display
+                        # Keep only the last configured error lines for display (max_error_lines)
                         error_lines.append(line.rstrip())
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
