@@ -109,7 +109,9 @@ MEDIA_WALL_REFRESH_LOCK = mw.MEDIA_WALL_REFRESH_LOCK
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
 MEDIA_WALL_ROWS = 3
-MEDIA_WALL_ENABLED = cfg.media_wall_enabled
+# Load media_wall_enabled from saved config, falling back to environment variable
+_artillery_config = load_artillery_config()
+MEDIA_WALL_ENABLED = _artillery_config.get("media_wall_enabled", cfg.media_wall_enabled)
 MEDIA_WALL_ITEMS_ON_PAGE = cfg.media_wall_items_per_page
 MEDIA_WALL_CACHE_VIDEOS = cfg.media_wall_cache_videos
 MEDIA_WALL_COPY_LIMIT = cfg.media_wall_copy_limit
@@ -363,6 +365,7 @@ def load_artillery_config() -> dict:
         "error_lines_display": 20,  # default
         "truncate_lines": True,  # default: enable line truncation
         "max_line_length": 200,  # default: max characters per line
+        "media_wall_enabled": True,  # default: media wall enabled
     }
     
     if os.path.exists(ARTILLERY_CONFIG_FILE):
@@ -393,6 +396,8 @@ def load_artillery_config() -> dict:
                                 config["max_line_length"] = int(value)
                             except ValueError:
                                 app.logger.warning("Invalid max_line_length value '%s', using default", value)
+                        elif key == "media_wall_enabled":
+                            config["media_wall_enabled"] = value.lower() in ("true", "1", "yes", "on")
         except Exception as exc:
             app.logger.warning("Failed to load Artillery config: %s", exc)
     
@@ -409,6 +414,7 @@ def save_artillery_config(config: dict):
             f.write(f"error_lines_display={config.get('error_lines_display', 20)}\n")
             f.write(f"truncate_lines={'true' if config.get('truncate_lines', True) else 'false'}\n")
             f.write(f"max_line_length={config.get('max_line_length', 200)}\n")
+            f.write(f"media_wall_enabled={'true' if config.get('media_wall_enabled', True) else 'false'}\n")
     except Exception as exc:
         app.logger.error("Failed to save Artillery config: %s", exc)
         raise
@@ -587,11 +593,22 @@ def mediawall_seed():
 
 @app.route("/mediawall/toggle", methods=["POST"])
 def mediawall_toggle():
-    """Toggle media wall enabled/disabled."""
+    """Toggle media wall enabled/disabled and persist to config file."""
     global MEDIA_WALL_ENABLED
     MEDIA_WALL_ENABLED = not MEDIA_WALL_ENABLED
     status = "enabled" if MEDIA_WALL_ENABLED else "disabled"
     os.environ["MEDIA_WALL_ENABLED"] = "1" if MEDIA_WALL_ENABLED else "0"
+    
+    # Persist to artillery.conf
+    try:
+        config = load_artillery_config()
+        config["media_wall_enabled"] = MEDIA_WALL_ENABLED
+        save_artillery_config(config)
+        app.logger.info(f"Media wall {status} and saved to configuration")
+    except Exception as exc:
+        app.logger.error(f"Failed to persist media wall setting: {exc}")
+        # Still show flash even if save failed
+    
     flash(f"Media wall {status}", "success")
     return redirect(url_for("config_page"))
 
