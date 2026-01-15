@@ -300,8 +300,8 @@ def run_task_background(
         try:
             with open(run_log_path, "a", encoding="utf-8") as run_logf:
                 run_logf.write(f"\nERROR while running task: {exc}\n")
-        except Exception:
-            pass
+        except Exception as log_exc:
+            logger.warning("Failed to write error details to run log %s: %s", run_log_path, log_exc)
     finally:
         with RUNNING_PROCS_LOCK:
             if proc is not None and RUNNING_PROCS.get(slug) is proc:

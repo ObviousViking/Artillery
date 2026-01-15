@@ -5,7 +5,7 @@
 */
 
 // Namespace & helpers from provided snippet (trimmed for our usage)
-var FSS = { FRONT:0, BACK:1, DOUBLE:2, SVGNS:"http://www.w3.org/2000/svg" };
+const FSS = { FRONT:0, BACK:1, DOUBLE:2, SVGNS:"http://www.w3.org/2000/svg" };
 FSS.Array = typeof Float32Array === 'function' ? Float32Array : Array;
 FSS.Utils = { isNumber:function(t){return !isNaN(parseFloat(t)) && isFinite(t);} };
 (function(){

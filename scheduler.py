@@ -58,7 +58,8 @@ def main():
 
         # Create lock atomically to avoid races
         try:
-            open(lock_path, "x").close()
+            with open(lock_path, "x"):
+                pass
         except FileExistsError:
             continue
         run_task_background(task_folder)

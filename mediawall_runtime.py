@@ -252,8 +252,10 @@ def _clean_dir(path: str) -> None:
                 try:
                     os.remove(entry.path)
                 except Exception:
+                    # Best-effort cleanup: ignore errors removing individual files (e.g. races, perms).
                     pass
     except Exception:
+        # Best-effort cleanup: ignore errors listing/scanning the directory; failures are non-fatal.
         pass
 
 

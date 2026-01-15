@@ -12,6 +12,7 @@ import logging
 import signal
 import faulthandler
 import sqlite3
+import secrets
 from collections import deque
 from typing import Optional, Tuple
 
@@ -206,7 +207,7 @@ def login():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        if username == LOGIN_USERNAME and password == LOGIN_PASSWORD:
+        if secrets.compare_digest(username, LOGIN_USERNAME) and secrets.compare_digest(password, LOGIN_PASSWORD):
             session["authenticated"] = True
             session["username"] = username
 
