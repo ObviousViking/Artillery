@@ -198,6 +198,7 @@ def ingest_all_task_logs(
     try:
         entries = list(os.scandir(tasks_root))
     except Exception:
+        # If directory scan fails, continue with no tasks; indexing is non-fatal.
         entries = []
 
     for entry in sorted(entries, key=lambda e: e.name):
@@ -269,6 +270,7 @@ def should_refresh_cache(conn: sqlite3.Connection) -> bool:
         age = (dt.datetime.now(dt.timezone.utc) - last_dt).total_seconds()
         return age >= MEDIA_WALL_MIN_REFRESH_SECONDS
     except Exception:
+        # If we can't read/parse last refresh time, assume stale and refresh.
         return True
 
 
@@ -316,11 +318,13 @@ def refresh_wall_cache(
                 os.replace(tmp, dst)
                 copied += 1
             except Exception:
+                # File copy failures (missing source, perms, disk space) are tracked but don't stop cache refresh.
                 failed += 1
                 try:
                     if os.path.exists(tmp):
                         os.remove(tmp)
                 except Exception:
+                    # Ignore cleanup failures on temp files; they'll expire naturally.
                     pass
 
         if copied == 0:
@@ -330,12 +334,14 @@ def refresh_wall_cache(
             if os.path.isdir(MEDIA_WALL_DIR_PREV):
                 shutil.rmtree(MEDIA_WALL_DIR_PREV)
         except Exception:
+            # Ignore old directory removal failures; next refresh will retry.
             pass
 
         try:
             if os.path.isdir(MEDIA_WALL_DIR):
                 os.replace(MEDIA_WALL_DIR, MEDIA_WALL_DIR_PREV)
         except Exception:
+            # If rotation fails, new cache is left in place; old cache remains inaccessible.
             pass
 
         os.replace(MEDIA_WALL_DIR_NEXT, MEDIA_WALL_DIR)
