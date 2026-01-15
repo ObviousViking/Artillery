@@ -14,8 +14,19 @@ PGID="${PGID:-0}"
 : "${CONFIG_DIR:=/config}"
 : "${DOWNLOADS_DIR:=/downloads}"
 
+# Validate directories are accessible
+for dir in "$TASKS_DIR" "$CONFIG_DIR" "$DOWNLOADS_DIR"; do
+  mkdir -p "$dir" || { log "ERROR: Failed to create directory: $dir"; exit 1; }
+  if [ ! -w "$dir" ]; then
+    log "ERROR: Directory is not writable: $dir"
+    exit 1
+  fi
+done
 
-mkdir -p "$TASKS_DIR" "$CONFIG_DIR" "$DOWNLOADS_DIR"
+log "Configuration validated:"
+log "  TASKS_DIR: $TASKS_DIR"
+log "  CONFIG_DIR: $CONFIG_DIR"
+log "  DOWNLOADS_DIR: $DOWNLOADS_DIR"
 
 log "Updating gallery-dl to latest..."
 pip install --no-cache-dir --upgrade gallery-dl

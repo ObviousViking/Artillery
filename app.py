@@ -18,6 +18,7 @@ from typing import Optional, Tuple
 
 import task_runtime as tr
 import mediawall_runtime as mw
+from config import Config
 
 from flask import (
     Flask, render_template, request,
@@ -26,21 +27,22 @@ from flask import (
 from flask import jsonify
 from werkzeug.exceptions import NotFound
 
+# Load and validate configuration from environment variables
+cfg = Config.from_env()
+
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
+app.config["SECRET_KEY"] = cfg.secret_key
 
 # ---------------------------------------------------------------------
 # Logging / Debug toggles
 # ---------------------------------------------------------------------
 
-LOG_LEVEL = os.environ.get("ARTILLERY_LOG_LEVEL", "INFO").upper()
-logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO))
-app.logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+logging.basicConfig(level=getattr(logging, cfg.log_level, logging.INFO))
+app.logger.setLevel(getattr(logging, cfg.log_level, logging.INFO))
 
-DEBUG_REQUEST_TIMING = os.environ.get("ARTILLERY_DEBUG_REQUESTS", "0") == "1"
-DEBUG_FS_TIMING = os.environ.get("ARTILLERY_DEBUG_FS", "0") == "1"
-
-HANG_DUMP_SECONDS = int(os.environ.get("ARTILLERY_HANG_DUMP_SECONDS", "0") or "0")
+DEBUG_REQUEST_TIMING = cfg.debug_requests
+DEBUG_FS_TIMING = cfg.debug_fs
+HANG_DUMP_SECONDS = cfg.hang_dump_seconds
 
 faulthandler.enable()
 try:
@@ -51,25 +53,45 @@ except Exception:
 if HANG_DUMP_SECONDS > 0:
     faulthandler.dump_traceback_later(HANG_DUMP_SECONDS, repeat=True)
 
+# Log loaded configuration
+app.logger.info("Artillery Configuration:")
+app.logger.info(f"  Log Level: {cfg.log_level}")
+app.logger.info(f"  Debug Requests: {DEBUG_REQUEST_TIMING}")
+app.logger.info(f"  Debug FS: {DEBUG_FS_TIMING}")
+app.logger.info(f"  Login Required: {cfg.login_required}")
+app.logger.info(f"  Media Wall Enabled: {cfg.media_wall_enabled}")
+
 # ---------------------------------------------------------------------
 # Base data directories (shared with scheduler)
 # ---------------------------------------------------------------------
 
-TASKS_ROOT = tr.TASKS_ROOT
-CONFIG_ROOT = tr.CONFIG_ROOT
-DOWNLOADS_ROOT = tr.DOWNLOADS_ROOT
+TASKS_ROOT = str(cfg.tasks_dir)
+CONFIG_ROOT = str(cfg.config_dir)
+DOWNLOADS_ROOT = str(cfg.downloads_dir)
 
 CONFIG_FILE = tr.CONFIG_FILE
 ARTILLERY_CONFIG_FILE = os.path.join(CONFIG_ROOT, "artillery.conf")
 
-DEFAULT_CONFIG_URL = os.environ.get(
-    "GALLERYDL_DEFAULT_CONFIG_URL",
-    "https://raw.githubusercontent.com/mikf/gallery-dl/master/docs/gallery-dl.conf",
-)
+DEFAULT_CONFIG_URL = cfg.default_config_url
 
 IMAGE_EXTS = mw.IMAGE_EXTS
 VIDEO_EXTS = mw.VIDEO_EXTS
 MEDIA_EXTS = mw.MEDIA_EXTS
+
+# Update task_runtime and mediawall_runtime with validated paths
+os.environ["TASKS_DIR"] = TASKS_ROOT
+os.environ["CONFIG_DIR"] = CONFIG_ROOT
+os.environ["DOWNLOADS_DIR"] = DOWNLOADS_ROOT
+
+# Re-import to pick up updated environment
+import importlib
+importlib.reload(tr)
+importlib.reload(mw)
+
+# Update references
+TASKS_ROOT = tr.TASKS_ROOT
+CONFIG_ROOT = tr.CONFIG_ROOT
+DOWNLOADS_ROOT = tr.DOWNLOADS_ROOT
 
 # ---------------------------------------------------------------------
 # Media wall (DB + cache folder)
@@ -77,8 +99,6 @@ MEDIA_EXTS = mw.MEDIA_EXTS
 
 MEDIA_DB = mw.MEDIA_DB
 MEDIA_WALL_DIR = mw.MEDIA_WALL_DIR
-
-
 
 MEDIA_WALL_DIR_PREV = mw.MEDIA_WALL_DIR_PREV
 MEDIA_WALL_DIR_NEXT = mw.MEDIA_WALL_DIR_NEXT
@@ -88,29 +108,22 @@ MEDIA_WALL_REFRESH_LOCK = mw.MEDIA_WALL_REFRESH_LOCK
 # Disable aggressive caching of send_from_directory responses
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
-
 MEDIA_WALL_ROWS = 3
-MEDIA_WALL_ENABLED = os.environ.get("MEDIA_WALL_ENABLED", "1") == "1"
-MEDIA_WALL_ITEMS_ON_PAGE = int(os.environ.get("MEDIA_WALL_ITEMS", "45"))  # what homepage shows
-MEDIA_WALL_CACHE_VIDEOS = os.environ.get("MEDIA_WALL_CACHE_VIDEOS", "0") == "1"
-
-# Your requirement: copy up to 100 files into cache after task completion
-MEDIA_WALL_COPY_LIMIT = int(os.environ.get("MEDIA_WALL_COPY_LIMIT", "100"))
-
-# Auto behavior on task completion
-MEDIA_WALL_AUTO_INGEST_ON_TASK_END = os.environ.get("MEDIA_WALL_AUTO_INGEST_ON_TASK_END", "1") == "1"
-MEDIA_WALL_AUTO_REFRESH_ON_TASK_END = os.environ.get("MEDIA_WALL_AUTO_REFRESH_ON_TASK_END", "1") == "1"
-
-# Throttle refresh to avoid copying 100 files for every task finish in rapid succession
-MEDIA_WALL_MIN_REFRESH_SECONDS = int(os.environ.get("MEDIA_WALL_MIN_REFRESH_SECONDS", "300"))
+MEDIA_WALL_ENABLED = cfg.media_wall_enabled
+MEDIA_WALL_ITEMS_ON_PAGE = cfg.media_wall_items_per_page
+MEDIA_WALL_CACHE_VIDEOS = cfg.media_wall_cache_videos
+MEDIA_WALL_COPY_LIMIT = cfg.media_wall_copy_limit
+MEDIA_WALL_AUTO_INGEST_ON_TASK_END = cfg.media_wall_auto_ingest_on_task_end
+MEDIA_WALL_AUTO_REFRESH_ON_TASK_END = cfg.media_wall_auto_refresh_on_task_end
+MEDIA_WALL_MIN_REFRESH_SECONDS = cfg.media_wall_min_refresh_seconds
 
 # ---------------------------------------------------------------------
 # Optional login
 # ---------------------------------------------------------------------
 
-LOGIN_REQUIRED = os.environ.get("ARTILLERY_LOGIN_REQUIRED", "0") == "1"
-LOGIN_USERNAME = os.environ.get("ARTILLERY_USERNAME", "admin")
-LOGIN_PASSWORD = os.environ.get("ARTILLERY_PASSWORD", "artillery")
+LOGIN_REQUIRED = cfg.login_required
+LOGIN_USERNAME = cfg.login_username
+LOGIN_PASSWORD = cfg.login_password
 
 # Endpoints that should remain reachable even when login is required
 LOGIN_EXEMPT_ENDPOINTS = {"login", "healthz", "static"}
