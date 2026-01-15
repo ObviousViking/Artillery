@@ -111,6 +111,27 @@ Artillery is a Flask-based UI for managing `gallery-dl` downloads with schedulin
 - `@require_login` decorator wraps endpoints that need authentication
 - Password can be regenerated via environment variable or changed in UI (if future feature added)
 
+**Login page animation (FSS):**
+- FSS (fluid simulation shader) is a GPU-accelerated WebGL canvas animation rendered on login page background
+- Located in `static/js/login_fss.js` - self-contained module with no external dependencies
+- Animation creates organic fluid-like movement patterns using WebGL shaders and canvas rendering
+- Core components:
+  - `FSS` object: Defines WebGL constants (FRONT, BACK, DOUBLE face rendering modes)
+  - `Stage` component: Creates and manages WebGL canvas, handles resize events and context preservation
+  - `Geometry` component: Generates 3D mesh vertices and face indices for surface rendering
+  - `Renderer` component: Renders geometry to WebGL with light shading and depth cueing
+  - `Vector` component: 3D vector math for vertex transformations and rotations
+  - `Light` component: Ambient light affecting surface rendering
+- Animation loop:
+  - Updates vertex positions with sine-based perturbation to create wave effects
+  - Applies rotational transformations (auto-rotate around Y axis for visual interest)
+  - Renders each frame to canvas with depth-based color gradients
+  - RequestAnimationFrame loop for 60fps smooth animation
+- Performance: GPU-accelerated rendering means minimal CPU overhead; canvas resizes with window
+- Fallback: If WebGL unavailable, page degrades gracefully (login form still functional)
+- CSS integration: Canvas rendered full-screen behind login form with z-index stacking
+- Color scheme: Uses cool colors (blues/cyans) with depth-based shading for visual depth
+
 **Real-time task output viewer:**
 - Located on `/tasks` page as a collapsible "Output" card panel below the task table
 - `/tasks/<slug>/logs` endpoint returns JSON: `{"slug": slug, "content": log_text}`
