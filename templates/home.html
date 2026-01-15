@@ -39,7 +39,8 @@
         <div id="media-wall-container"
              data-rows="3"
              data-limit="150"
-             data-poll-ms="3000">
+             data-poll-ms="15000"
+             data-server-has-media="{{ '1' if has_media else '0' }}">
 
           <p id="media-wall-loader" class="text-muted small mb-2">
             Loading media wall...
@@ -86,7 +87,8 @@
 
           const rows = parseInt(container.dataset.rows || "3", 10);
           const limit = parseInt(container.dataset.limit || "150", 10);
-          const pollMs = parseInt(container.dataset.pollMs || "3000", 10);
+          const pollMs = parseInt(container.dataset.pollMs || "15000", 10);
+          const serverHasMedia = container.dataset.serverHasMedia === "1";
 
           const loader = document.getElementById("media-wall-loader");
           const emptyMsg = document.getElementById("media-wall-empty");
@@ -96,82 +98,54 @@
 
           function hideLoader() { if (loader) loader.style.display = "none"; }
           function setEmpty(isEmpty) { if (emptyMsg) emptyMsg.style.display = isEmpty ? "" : "none"; }
-          function setReady() { if (wall) wall.classList.add("media-wall-ready"); }
+          function setReady(el = wall) { if (el) el.classList.add("media-wall-ready"); }
           function buildUrl(baseUrl, v) { return baseUrl + (baseUrl.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(v); }
 
-          // --- Seamless loop: SUB-PIXEL accurate distance to start of copy #2 ---
+          // marquee helpers (unchanged)
           let _marqueeTimer = null;
-
           function scheduleInitMarquees() {
             clearTimeout(_marqueeTimer);
             _marqueeTimer = setTimeout(initMarquees, 50);
           }
-
           function initMarquees() {
             const strips = document.querySelectorAll(".media-strip");
             strips.forEach(strip => {
               const kids = strip.children;
               if (!kids || kids.length < 2) return;
-
               const half = Math.floor(kids.length / 2);
               if (!kids[half]) return;
-
               const stripRect = strip.getBoundingClientRect();
               const kidRect = kids[half].getBoundingClientRect();
               const distance = kidRect.left - stripRect.left;
-
               if (!(distance > 0)) return;
-
               const speed = 16; // px/sec
               const duration = Math.max(25, distance / speed);
-
               const prev = strip.__loopDistance || 0;
               const prevDur = strip.__loopDuration || 0;
               if (Math.abs(prev - distance) < 0.1 && Math.abs(prevDur - duration) < 0.05) return;
-
               strip.__loopDistance = distance;
               strip.__loopDuration = duration;
-
               strip.style.setProperty("--loop-distance", distance.toFixed(2) + "px");
               strip.style.setProperty("--duration", duration.toFixed(2) + "s");
             });
           }
-          // ---------------------------------------------------------------------
 
-          function render(items) {
-            if (!wall) return;
-
-            wall.innerHTML = "";
-
-            if (!items.length) {
-              setEmpty(true);
-              hideLoader();
-              setReady();
-              return;
-            }
-
-            setEmpty(false);
-
-            // playlist size per row (before duplicating)
+          // build playlist logic (unchanged algorithm)
+          function buildRows(items) {
             const perRow = Math.min(80, Math.max(30, items.length));
-
-            // ---- Shared pool across all rows to reduce duplicates ----
             let pool = items.slice();
             for (let i = pool.length - 1; i > 0; i--) {
               const j = Math.floor(Math.random() * (i + 1));
               [pool[i], pool[j]] = [pool[j], pool[i]];
             }
             let poolIdx = 0;
-
             const usedGlobal = new Set();
-
             function reshufflePool() {
               for (let i = pool.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [pool[i], pool[j]] = [pool[j], pool[i]];
               }
             }
-
             function nextFromPool() {
               if (!pool.length) return null;
               const it = pool[poolIdx++];
@@ -181,88 +155,186 @@
               }
               return it;
             }
-
             function buildPlaylist(count) {
               const out = [];
               let guard = 0;
-
-              // Pass 1: avoid duplicates across rows this render
               while (out.length < count && guard < count * 10) {
                 guard++;
                 const it = nextFromPool();
                 if (!it) break;
-
-                const key = it.name || it.url;
+                const key = (it && (it.name || it.url)) || it;
                 if (usedGlobal.has(key)) continue;
-
                 usedGlobal.add(key);
                 out.push(it);
               }
-
-              // Pass 2: allow repeats if we ran out of uniques
               while (out.length < count) {
                 const it = nextFromPool();
                 if (!it) break;
                 out.push(it);
               }
-
               return out;
             }
-            // ---------------------------------------------------------
 
+            const rowsOut = [];
             for (let rowIdx = 0; rowIdx < rows; rowIdx++) {
               const rowItems = buildPlaylist(perRow);
               if (!rowItems.length) continue;
+              rowsOut.push(rowItems);
+            }
+            return rowsOut;
+          }
 
+          // wait for at least minLoaded images to succeed or timeout
+          function waitForSome(promises, minLoaded, timeoutMs) {
+            return new Promise(resolve => {
+              let loaded = 0;
+              let done = false;
+              const timers = [];
+              promises.forEach(p => {
+                p.then(ok => {
+                  loaded += 1;
+                  if (!done && loaded >= minLoaded) {
+                    done = true;
+                    timers.forEach(t => clearTimeout(t));
+                    resolve(true);
+                  }
+                }).catch(() => {
+                  // ignore individual failures
+                });
+              });
+              timers.push(setTimeout(() => {
+                if (!done) {
+                  done = true;
+                  resolve(false);
+                }
+              }, timeoutMs));
+            });
+          }
+
+          // progressive render: build off-DOM, preload a small set, then cross-fade swap
+          function render(items) {
+            if (!container) return;
+            if (!items || !items.length) {
+              setEmpty(true);
+              hideLoader();
+              setReady();
+              return;
+            }
+            setEmpty(false);
+
+            const rowsData = buildRows(items);
+
+            // build new wall DOM
+            const newWall = document.createElement("div");
+            newWall.className = "media-wall";
+            newWall.style.opacity = "0";
+            newWall.style.transition = "opacity 350ms ease";
+
+            const preloadImgs = [];
+            const preloadLimit = Math.min(12, Math.max(6, Math.floor(items.length * 0.1))); // preload a small sample
+            let preloadCount = 0;
+
+            rowsData.forEach((rowItems, rowIdx) => {
               const rowDiv = document.createElement("div");
               rowDiv.className = "media-wall-row";
-
               const strip = document.createElement("div");
               strip.className = "media-strip " + (rowIdx === 1 ? "media-strip-right" : "media-strip-left");
 
-              // duplicate once to enable seamless loop
               for (let r = 0; r < 2; r++) {
-                for (const it of rowItems) {
+                rowItems.forEach(it => {
                   const itemDiv = document.createElement("div");
                   itemDiv.className = "media-item";
 
                   const a = document.createElement("a");
                   a.className = "d-block";
                   a.target = "_blank";
-                  a.href = buildUrl(it.url, it.mtime);
+                  const url = (typeof it === "string") ? it : (it.url || it);
+                  const mtime = (it && (it.mtime || it.mtime === 0)) ? (it.mtime) : Date.now();
+                  a.href = buildUrl(url, mtime);
 
                   const img = document.createElement("img");
                   img.className = "media-img";
                   img.loading = "lazy";
                   img.alt = "media";
+                  img.style.opacity = "0";
+                  img.style.transition = "opacity 300ms ease";
+                  // don't set src immediately if we plan to preload; set data-src for fallback
+                  const src = buildUrl(url, mtime);
+                  img.dataset.src = src;
 
-                  const setSrc = (v) => { img.src = buildUrl(it.url, v); };
-                  setSrc(it.mtime);
-
-                  img.onerror = () => setTimeout(() => setSrc(Date.now()), 800);
+                  // attach onload to fade in when image is set
+                  img.addEventListener("load", () => {
+                    img.style.opacity = "1";
+                    scheduleInitMarquees();
+                  }, { once: true });
 
                   a.appendChild(img);
                   itemDiv.appendChild(a);
                   strip.appendChild(itemDiv);
-                }
+
+                  // collect preload promises for a small sample
+                  if (preloadCount < preloadLimit) {
+                    preloadCount++;
+                    preloadImgs.push(new Promise((resolve, reject) => {
+                      const p = new Image();
+                      p.onload = () => resolve(true);
+                      p.onerror = () => resolve(false); // resolve on error to avoid blocking
+                      p.src = src;
+                    }));
+                  }
+                });
               }
 
               rowDiv.appendChild(strip);
-              wall.appendChild(rowDiv);
-            }
+              newWall.appendChild(rowDiv);
+            });
 
-            hideLoader();
-            setReady();
+            // once minLoaded or timeout, attach newWall and then set src for all imgs to start actual loading
+            const minNeeded = Math.max(1, Math.floor(preloadImgs.length * 0.4)); // require 40% of sample to be ready
+            waitForSome(preloadImgs, minNeeded, 1200).then(() => {
+              // insert new wall next to old wall
+              if (wall && wall.parentNode) {
+                wall.parentNode.insertBefore(newWall, wall.nextSibling);
+              } else {
+                container.appendChild(newWall);
+              }
 
-            // Recalc once now, then again as images load/layout settles
-            scheduleInitMarquees();
-            setTimeout(scheduleInitMarquees, 250);
-            setTimeout(scheduleInitMarquees, 1000);
+              // trigger actual image loads for all imgs in newWall
+              newWall.querySelectorAll("img.media-img").forEach(imgEl => {
+                if (!imgEl.src) {
+                  imgEl.src = imgEl.dataset.src || "";
+                }
+              });
 
-            // Recalc when images load (subpixel widths can change after load)
-            wall.querySelectorAll("img.media-img").forEach(img => {
-              if (img.complete) return;
-              img.addEventListener("load", scheduleInitMarquees, { once: true });
+              // cross-fade
+              requestAnimationFrame(() => {
+                newWall.style.opacity = "1";
+                if (wall) wall.style.transition = "opacity 300ms ease", wall.style.opacity = "0";
+              });
+
+              // after transition remove old wall and update reference
+              setTimeout(() => {
+                if (wall && wall.parentNode) wall.parentNode.removeChild(wall);
+                // set new wall as the live wall variable for future swaps
+                // mutate the DOM reference used elsewhere
+                // NOTE: we rely on the original id only for initial render; update id for future queries
+                newWall.id = "media-wall";
+                // update our local wall reference
+                // eslint-disable-next-line no-unused-vars
+                window.__ARTILLERY_MEDIA_WALL = newWall;
+                setReady(newWall);
+                hideLoader();
+                scheduleInitMarquees();
+              }, 450);
+            }).catch(() => {
+              // fallback: immediate replacement if something goes wrong
+              wall.innerHTML = newWall.innerHTML;
+              newWall.querySelectorAll("img.media-img").forEach(imgEl => {
+                if (!imgEl.src) imgEl.src = imgEl.dataset.src || "";
+              });
+              hideLoader();
+              setReady();
+              scheduleInitMarquees();
             });
           }
 
@@ -270,34 +342,33 @@
             try {
               const res = await fetch("/mediawall/api/cache_index", { cache: "no-store" });
               if (!res.ok) return;
-
               const data = await res.json();
               const items = (data.items || []).slice(0, limit);
-
-              const sig = items.map(i => i.name + ":" + i.mtime).join("|");
+              const sig = items.map(i => (typeof i === "string" ? i : (i.name || i.url)) + ":" + (i.mtime || "")).join("|");
               if (sig && sig === lastSig) {
                 hideLoader();
                 setReady();
                 return;
               }
               lastSig = sig;
-
               render(items);
             } catch (e) {
-              // keep polling quietly
+              // silent fail
             }
           }
 
           document.addEventListener("DOMContentLoaded", () => {
-            // initialize scrolling for server-rendered content (if present)
             scheduleInitMarquees();
             setTimeout(scheduleInitMarquees, 250);
             setTimeout(scheduleInitMarquees, 1000);
-
             window.addEventListener("resize", () => setTimeout(scheduleInitMarquees, 150));
 
-            // build randomized strips from API + keep updated
-            refresh();
+            if (serverHasMedia) {
+              setTimeout(() => refresh(), Math.max(2000, pollMs));
+            } else {
+              setTimeout(() => refresh(), 2000);
+            }
+
             setInterval(refresh, pollMs);
           });
         })();
