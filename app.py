@@ -109,9 +109,7 @@ MEDIA_WALL_REFRESH_LOCK = mw.MEDIA_WALL_REFRESH_LOCK
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
 MEDIA_WALL_ROWS = 3
-# Load media_wall_enabled from saved config, falling back to environment variable
-_artillery_config = load_artillery_config()
-MEDIA_WALL_ENABLED = _artillery_config.get("media_wall_enabled", cfg.media_wall_enabled)
+MEDIA_WALL_ENABLED = cfg.media_wall_enabled
 MEDIA_WALL_ITEMS_ON_PAGE = cfg.media_wall_items_per_page
 MEDIA_WALL_CACHE_VIDEOS = cfg.media_wall_cache_videos
 MEDIA_WALL_COPY_LIMIT = cfg.media_wall_copy_limit
@@ -402,6 +400,11 @@ def load_artillery_config() -> dict:
             app.logger.warning("Failed to load Artillery config: %s", exc)
     
     return config
+
+
+# Load persisted artillery configuration (overrides validated defaults where present)
+_artillery_config = load_artillery_config()
+MEDIA_WALL_ENABLED = _artillery_config.get("media_wall_enabled", MEDIA_WALL_ENABLED)
 
 
 def save_artillery_config(config: dict):
