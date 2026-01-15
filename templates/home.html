@@ -92,7 +92,8 @@
 
           const loader = document.getElementById("media-wall-loader");
           const emptyMsg = document.getElementById("media-wall-empty");
-          const wall = document.getElementById("media-wall");
+          // changed: make wall mutable so we can update the reference after swaps
+          let wall = document.getElementById("media-wall");
 
           let lastSig = "";
 
@@ -292,7 +293,7 @@
             // once minLoaded or timeout, attach newWall and then set src for all imgs to start actual loading
             const minNeeded = Math.max(1, Math.floor(preloadImgs.length * 0.4)); // require 40% of sample to be ready
             waitForSome(preloadImgs, minNeeded, 1200).then(() => {
-              // insert new wall next to old wall
+              // insert new wall next to old wall (or append if none)
               if (wall && wall.parentNode) {
                 wall.parentNode.insertBefore(newWall, wall.nextSibling);
               } else {
@@ -314,24 +315,40 @@
 
               // after transition remove old wall and update reference
               setTimeout(() => {
-                if (wall && wall.parentNode) wall.parentNode.removeChild(wall);
-                // set new wall as the live wall variable for future swaps
-                // mutate the DOM reference used elsewhere
-                // NOTE: we rely on the original id only for initial render; update id for future queries
+                // remove old wall nodes safely (handle duplicates)
+                if (wall && wall.parentNode) {
+                  try { wall.parentNode.removeChild(wall); } catch (e) { /* ignore */ }
+                }
                 newWall.id = "media-wall";
-                // update our local wall reference
-                // eslint-disable-next-line no-unused-vars
+                // update live reference so future swaps remove the correct element
+                wall = newWall;
+                // expose for debugging/other scripts
                 window.__ARTILLERY_MEDIA_WALL = newWall;
                 setReady(newWall);
                 hideLoader();
                 scheduleInitMarquees();
               }, 450);
             }).catch(() => {
-              // fallback: immediate replacement if something goes wrong
-              wall.innerHTML = newWall.innerHTML;
-              newWall.querySelectorAll("img.media-img").forEach(imgEl => {
-                if (!imgEl.src) imgEl.src = imgEl.dataset.src || "";
-              });
+              // improved fallback: collapse any existing .media-wall nodes and replace content
+              const existing = container.querySelectorAll('.media-wall');
+              if (existing && existing.length) {
+                // replace first, remove extras
+                existing[0].innerHTML = newWall.innerHTML;
+                for (let i = 1; i < existing.length; i++) {
+                  try { existing[i].parentNode.removeChild(existing[i]); } catch (e) {}
+                }
+                // ensure images start loading
+                existing[0].querySelectorAll("img.media-img").forEach(imgEl => {
+                  if (!imgEl.src) imgEl.src = imgEl.dataset.src || "";
+                });
+                wall = existing[0];
+              } else {
+                container.appendChild(newWall);
+                newWall.querySelectorAll("img.media-img").forEach(imgEl => {
+                  if (!imgEl.src) imgEl.src = imgEl.dataset.src || "";
+                });
+                wall = newWall;
+              }
               hideLoader();
               setReady();
               scheduleInitMarquees();
@@ -369,26 +386,15 @@
               setTimeout(() => refresh(), 2000);
             }
 
-            // poll infrequently as fallback
-            const pollHandle = setInterval(refresh, pollMs);
+            setInterval(refresh, pollMs);
 
-            // -- New: SSE integration for immediate refresh when task completes
+            // SSE listener (existing)
             if (window.EventSource) {
               try {
                 const es = new EventSource('/mediawall/events');
-                es.addEventListener('mediawall_update', (ev) => {
-                  // trigger a refresh to preload new images into the wings
-                  // do not cancel fallback polling; refresh handles dedupe via lastSig
-                  refresh();
-                });
-                // if the connection errors, leave fallback polling intact
-                es.addEventListener('error', () => {
-                  // if closed, we keep the polling fallback running
-                });
-                // keep SSE living; no further action required
-              } catch (e) {
-                // ignore - fallback poll will handle updates
-              }
+                es.addEventListener('mediawall_update', (ev) => { refresh(); });
+                es.addEventListener('error', () => { /* keep polling fallback */ });
+              } catch (e) { /* ignore */ }
             }
           });
         })();
