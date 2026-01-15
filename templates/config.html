@@ -40,7 +40,7 @@
         </div>    </div>
 </div>
 
-<!-- Media wall controls -->
+<!-- Single Media wall controls (deduplicated) -->
 <div class="row mt-4">
     <div class="col-12">
         <div class="card shadow-sm border-secondary">
@@ -68,43 +68,10 @@
 
                 <div class="form-text mt-3">
                     Toggle to enable/disable the media wall. When enabled, the <strong>Refresh media wall</strong>
-                    button will rescan all task logs and cache up to 100 media files for display.
+                    button will rescan task logs (only the last 100 lines now) and cache up to 100 media files for display.
                 </div>
             </div>
         </div>    </div>
-</div>
-
-<div class="row mt-4">
-  <div class="col-12">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h3 class="card-title mb-3">Configuration</h3>
-        <!-- ...existing config editor markup... -->
-
-        <hr/>
-
-        <h5 class="mb-2">Media wall</h5>
-        <p class="small text-muted mb-3">
-          Toggle the media wall feature or trigger a refresh of the cached media.
-        </p>
-
-        <div id="media-wall-controls" class="d-flex gap-2 align-items-center">
-          <button id="mw-toggle" class="btn btn-sm {{ 'btn-success' if media_wall_enabled else 'btn-outline-secondary' }}">
-            {{ 'Media wall enabled' if media_wall_enabled else 'Enable media wall' }}
-          </button>
-
-          <button id="mw-refresh" class="btn btn-sm btn-outline-primary">
-            Refresh media wall
-          </button>
-
-          <span id="mw-status" class="small text-muted ms-2">
-            {% if media_wall_enabled %}Enabled{% else %}Disabled{% endif %}
-          </span>
-        </div>
-
-      </div>
-    </div>
-  </div>
 </div>
 
 <script>
