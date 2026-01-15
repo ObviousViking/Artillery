@@ -64,6 +64,17 @@
                                             </button>
                                         </form>
 
+                                        <!-- Cancel (Ctrl+C) -->
+                                        <form method="post" action="{{ url_for('task_action', slug=task.slug) }}"
+                                            class="m-0">
+                                            <input type="hidden" name="action" value="cancel">
+                                            <button type="submit" class="btn btn-sm btn-outline-warning" {% if
+                                                status!='running' %}disabled{% endif %}
+                                                onclick="return confirm('Cancel running task {{ task.name }}?');">
+                                                Cancel
+                                            </button>
+                                        </form>
+
                                         <!-- Pause / Unpause -->
                                         <form method="post" action="{{ url_for('task_action', slug=task.slug) }}"
                                             class="m-0">
@@ -97,12 +108,6 @@
                                             </button>
                                         </form>
 
-                                        <!-- Download logs -->
-                                        <form method="get" action="{{ url_for('download_task_logs', slug=task.slug) }}" class="m-0">
-                                            <button type="submit" class="btn btn-sm btn-outline-light">
-                                                Download Logs
-                                            </button>
-                                        </form>
                                     </div>
                                 </td>
                             </tr>
@@ -138,11 +143,27 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div id="logContainer" class="bg-dark p-3 rounded" style="max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.875rem; border: 1px solid #374151;">
+                <div id="logContainer" class="bg-dark p-3 rounded" style="max-height: 400px; overflow-y: auto; overflow-x: auto; font-family: monospace; font-size: 0.875rem; border: 1px solid #374151;">
                     <p class="text-muted mb-0">Select a task to view its output...</p>
                 </div>
                 <div class="mt-2">
-                    <small class="text-muted">Auto-refreshing every 1 second - Only the last 50 lines shown. Please review logs in full for more detail</small>
+                    <small class="text-muted">Auto-refreshing every 1 second - Showing last <span id="logLinesCount">50</span> lines. Please review logs in full for more detail</small>
+                </div>
+                
+                <!-- Error Window -->
+                <div id="errorWindow" class="mt-3" style="display: none;">
+                    <div class="card bg-danger bg-opacity-10 border-danger">
+                        <div class="card-header bg-danger bg-opacity-25 border-danger">
+                            <h6 class="mb-0 text-danger">
+                                <strong>Errors Detected:</strong> <span id="errorCount">0</span>
+                            </h6>
+                        </div>
+                        <div class="card-body p-2">
+                            <div id="errorLines" class="bg-dark p-2 rounded" style="max-height: 150px; overflow-y: auto; font-family: monospace; font-size: 0.75rem; color: #ff6b6b;">
+                                <p class="text-muted mb-0">No errors detected yet...</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -326,6 +347,8 @@ https://example.com/image2" required></textarea>
         let isEditingExistingTask = false;
         let outputPollInterval = null;
         let shouldAutoScroll = true;  // Track if we should auto-scroll
+        let logLinesToShow = 50;  // Default, will be loaded from config
+        let hasTextSelected = false;  // Track if user is selecting text
 
         const nameInput = document.getElementById("name");
         const urlsTextarea = document.getElementById("urls");
@@ -341,6 +364,24 @@ https://example.com/image2" required></textarea>
         const outputPanel = document.getElementById("outputPanel");
         const taskSelector = document.getElementById("taskSelector");
         const logContainer = document.getElementById("logContainer");
+        const errorWindow = document.getElementById("errorWindow");
+        const errorCount = document.getElementById("errorCount");
+        const errorLines = document.getElementById("errorLines");
+        const logLinesCount = document.getElementById("logLinesCount");
+        const ANSI_REGEX = /\x1B\[[0-9;]*[A-Za-z]/g;
+
+        function stripAnsi(text) {
+            if (!text) return text;
+            return text.replace(ANSI_REGEX, "");
+        }
+
+        function escapeHtml(text) {
+            if (!text) return "";
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
+        }
 
         function buildCommandFromOptions() {
             const flags = [];
@@ -398,14 +439,14 @@ https://example.com/image2" required></textarea>
                 'info': 'log-info',
                 'debug': 'log-debug'
             };
-            
-            // Escape HTML
-            text = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-            
+
+            // Remove ANSI escape codes and escape HTML so only color styling remains
+            text = escapeHtml(stripAnsi(text));
+
             // Color log level patterns like [warning], [error], etc.
             for (const [level, cssClass] of Object.entries(levelMap)) {
                 const pattern = new RegExp(`\\[${level}\\]`, 'gi');
-                text = text.replace(pattern, `<span class="${cssClass}">[$&]</span>`);
+                text = text.replace(pattern, `<span class="${cssClass}">$&</span>`);
             }
             
             return text;
@@ -414,18 +455,33 @@ https://example.com/image2" required></textarea>
         function fetchTaskLogs(slug) {
             if (!slug) {
                 logContainer.innerHTML = '<p class="text-muted mb-0">Select a task to view its output...</p>';
+                errorWindow.style.display = 'none';
                 return;
             }
             
-            fetch(`/tasks/${slug}/logs?tail=50`)
+            fetch(`/tasks/${slug}/logs?tail=${logLinesToShow}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.error) {
                         logContainer.innerHTML = `<p class="text-danger mb-0">Error: ${data.error}</p>`;
                     } else {
-                        // Parse ANSI colors and create HTML
-                        const coloredContent = parseLogColors(data.content || "");
+                        let content = data.content || "";
+                        
+                        // Handle carriage returns: split by \r and keep only the last segment per line
+                        // This handles gallery-dl's progress updates that overwrite the same line
+                        content = content.split('\n').map(line => {
+                            if (line.includes('\r')) {
+                                // Split by carriage return and take the last segment (final state of the line)
+                                const segments = line.split('\r');
+                                return segments[segments.length - 1];
+                            }
+                            return line;
+                        }).join('\n');
+                        
+                        // Parse log colors and create HTML
+                        const coloredContent = parseLogColors(content);
                         logContainer.innerHTML = `<pre>${coloredContent}</pre>`;
+                        
                         // Auto-scroll to bottom only if enabled
                         if (shouldAutoScroll) {
                             logContainer.scrollTop = logContainer.scrollHeight;
@@ -437,12 +493,47 @@ https://example.com/image2" required></textarea>
                 });
         }
 
+        function fetchTaskErrors(slug) {
+            if (!slug) {
+                errorWindow.style.display = 'none';
+                return;
+            }
+            
+            fetch(`/tasks/${slug}/errors`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        errorWindow.style.display = 'none';
+                    } else if (data.error_count > 0) {
+                        errorWindow.style.display = 'block';
+                        errorCount.textContent = data.error_count;
+                        
+                        // Display error lines
+                        const errorHtml = data.error_lines
+                            .map(line => escapeHtml(line))
+                            .join('\n');
+                        
+                        errorLines.innerHTML = `<pre class="mb-0">${errorHtml}</pre>`;
+                    } else {
+                        errorWindow.style.display = 'none';
+                    }
+                })
+                .catch(err => {
+                    // Silently fail on error fetch to avoid cluttering UI
+                    console.error('Failed to fetch errors:', err);
+                });
+        }
+
         function startOutputPolling() {
             if (outputPollInterval) return;
             outputPollInterval = setInterval(() => {
+                // Skip polling if user has text selected (allows copying without deselection)
+                if (hasTextSelected) return;
+                
                 const slug = taskSelector.value;
                 if (slug) {
                     fetchTaskLogs(slug);
+                    fetchTaskErrors(slug);
                 }
             }, 1000); // Poll every 1 second for real-time updates
         }
@@ -461,7 +552,36 @@ https://example.com/image2" required></textarea>
             shouldAutoScroll = isAtBottom;
         });
 
+        // Detect text selection/deselection in log container
+        logContainer.addEventListener("mousedown", function () {
+            hasTextSelected = true;
+        });
+
+        logContainer.addEventListener("mouseup", function () {
+            // Check if text is actually selected
+            const selection = window.getSelection();
+            hasTextSelected = selection.toString().length > 0;
+        });
+
+        logContainer.addEventListener("mouseleave", function () {
+            // If user leaves the container, check if they still have selection
+            const selection = window.getSelection();
+            hasTextSelected = selection.toString().length > 0;
+        });
+
+        document.addEventListener("selectionchange", function () {
+            // When user clears selection anywhere
+            const selection = window.getSelection();
+            hasTextSelected = selection.toString().length > 0;
+        });
+
         document.addEventListener("DOMContentLoaded", function () {
+            // Load Artillery config
+            logLinesToShow = {{ artillery_config.log_lines_display | tojson }};
+            if (logLinesCount) {
+                logLinesCount.textContent = logLinesToShow;
+            }
+            
             // Hook options changes
             document.querySelectorAll(".gd-option").forEach(function (cb) {
                 cb.addEventListener("change", function () {
@@ -485,7 +605,9 @@ https://example.com/image2" required></textarea>
 
             if (taskSelector) {
                 taskSelector.addEventListener("change", function () {
-                    fetchTaskLogs(this.value);
+                    const slug = this.value;
+                    fetchTaskLogs(slug);
+                    fetchTaskErrors(slug);
                 });
             }
 

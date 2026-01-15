@@ -1,10 +1,9 @@
 import os
 import json
-import uuid  # unused for now
 import datetime as dt
 import re
 import urllib.request
-import subprocess
+import urllib.parse
 import shlex
 import shutil
 import threading
@@ -13,30 +12,37 @@ import logging
 import signal
 import faulthandler
 import sqlite3
-import hashlib
-from typing import Optional, List, Tuple
+import secrets
+from collections import deque
+from typing import Optional, Tuple
+
+import task_runtime as tr
+import mediawall_runtime as mw
+from config import Config
 
 from flask import (
     Flask, render_template, request,
-    redirect, url_for, flash, send_from_directory, Response
+    redirect, url_for, flash, send_from_directory, Response, session
 )
-from flask import send_file
+from flask import jsonify
+from werkzeug.exceptions import NotFound
+
+# Load and validate configuration from environment variables
+cfg = Config.from_env()
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
+app.config["SECRET_KEY"] = cfg.secret_key
 
 # ---------------------------------------------------------------------
 # Logging / Debug toggles
 # ---------------------------------------------------------------------
 
-LOG_LEVEL = os.environ.get("ARTILLERY_LOG_LEVEL", "INFO").upper()
-logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO))
-app.logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+logging.basicConfig(level=getattr(logging, cfg.log_level, logging.INFO))
+app.logger.setLevel(getattr(logging, cfg.log_level, logging.INFO))
 
-DEBUG_REQUEST_TIMING = os.environ.get("ARTILLERY_DEBUG_REQUESTS", "0") == "1"
-DEBUG_FS_TIMING = os.environ.get("ARTILLERY_DEBUG_FS", "0") == "1"
-
-HANG_DUMP_SECONDS = int(os.environ.get("ARTILLERY_HANG_DUMP_SECONDS", "0") or "0")
+DEBUG_REQUEST_TIMING = cfg.debug_requests
+DEBUG_FS_TIMING = cfg.debug_fs
+HANG_DUMP_SECONDS = cfg.hang_dump_seconds
 
 faulthandler.enable()
 try:
@@ -47,58 +53,80 @@ except Exception:
 if HANG_DUMP_SECONDS > 0:
     faulthandler.dump_traceback_later(HANG_DUMP_SECONDS, repeat=True)
 
+# Log loaded configuration
+app.logger.info("Artillery Configuration:")
+app.logger.info(f"  Log Level: {cfg.log_level}")
+app.logger.info(f"  Debug Requests: {DEBUG_REQUEST_TIMING}")
+app.logger.info(f"  Debug FS: {DEBUG_FS_TIMING}")
+app.logger.info(f"  Login Required: {cfg.login_required}")
+app.logger.info(f"  Media Wall Enabled: {cfg.media_wall_enabled}")
+
 # ---------------------------------------------------------------------
-# Base data directories
+# Base data directories (shared with scheduler)
 # ---------------------------------------------------------------------
 
-TASKS_ROOT = os.environ.get("TASKS_DIR") or "/tasks"
-CONFIG_ROOT = os.environ.get("CONFIG_DIR") or "/config"
-DOWNLOADS_ROOT = os.environ.get("DOWNLOADS_DIR") or "/downloads"
+TASKS_ROOT = str(cfg.tasks_dir)
+CONFIG_ROOT = str(cfg.config_dir)
+DOWNLOADS_ROOT = str(cfg.downloads_dir)
 
-CONFIG_FILE = os.path.join(CONFIG_ROOT, "gallery-dl.conf")
+CONFIG_FILE = tr.CONFIG_FILE
+ARTILLERY_CONFIG_FILE = os.path.join(CONFIG_ROOT, "artillery.conf")
 
-DEFAULT_CONFIG_URL = os.environ.get(
-    "GALLERYDL_DEFAULT_CONFIG_URL",
-    "https://raw.githubusercontent.com/mikf/gallery-dl/master/docs/gallery-dl.conf",
-)
+DEFAULT_CONFIG_URL = cfg.default_config_url
 
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
-MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
+IMAGE_EXTS = mw.IMAGE_EXTS
+VIDEO_EXTS = mw.VIDEO_EXTS
+MEDIA_EXTS = mw.MEDIA_EXTS
+
+# Update task_runtime and mediawall_runtime with validated paths
+os.environ["TASKS_DIR"] = TASKS_ROOT
+os.environ["CONFIG_DIR"] = CONFIG_ROOT
+os.environ["DOWNLOADS_DIR"] = DOWNLOADS_ROOT
+
+# Re-import to pick up updated environment
+import importlib
+importlib.reload(tr)
+importlib.reload(mw)
+
+# Update references
+TASKS_ROOT = tr.TASKS_ROOT
+CONFIG_ROOT = tr.CONFIG_ROOT
+DOWNLOADS_ROOT = tr.DOWNLOADS_ROOT
 
 # ---------------------------------------------------------------------
 # Media wall (DB + cache folder)
 # ---------------------------------------------------------------------
 
-MEDIA_DB = os.path.join(CONFIG_ROOT, "mediawall.sqlite")
-MEDIA_WALL_DIR = os.path.join(CONFIG_ROOT, "media_wall")
+MEDIA_DB = mw.MEDIA_DB
+MEDIA_WALL_DIR = mw.MEDIA_WALL_DIR
 
-from werkzeug.exceptions import NotFound
-from flask import jsonify
+MEDIA_WALL_DIR_PREV = mw.MEDIA_WALL_DIR_PREV
+MEDIA_WALL_DIR_NEXT = mw.MEDIA_WALL_DIR_NEXT
 
-MEDIA_WALL_DIR_PREV = os.path.join(CONFIG_ROOT, "media_wall_prev")
-MEDIA_WALL_DIR_NEXT = os.path.join(CONFIG_ROOT, "media_wall_next")
-
-MEDIA_WALL_REFRESH_LOCK = threading.Lock()
+MEDIA_WALL_REFRESH_LOCK = mw.MEDIA_WALL_REFRESH_LOCK
 
 # Disable aggressive caching of send_from_directory responses
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
-
 MEDIA_WALL_ROWS = 3
-MEDIA_WALL_ENABLED = os.environ.get("MEDIA_WALL_ENABLED", "1") == "1"
-MEDIA_WALL_ITEMS_ON_PAGE = int(os.environ.get("MEDIA_WALL_ITEMS", "45"))  # what homepage shows
-MEDIA_WALL_CACHE_VIDEOS = os.environ.get("MEDIA_WALL_CACHE_VIDEOS", "0") == "1"
+MEDIA_WALL_ENABLED = cfg.media_wall_enabled
+MEDIA_WALL_ITEMS_ON_PAGE = cfg.media_wall_items_per_page
+MEDIA_WALL_CACHE_VIDEOS = cfg.media_wall_cache_videos
+MEDIA_WALL_COPY_LIMIT = cfg.media_wall_copy_limit
+MEDIA_WALL_AUTO_INGEST_ON_TASK_END = cfg.media_wall_auto_ingest_on_task_end
+MEDIA_WALL_AUTO_REFRESH_ON_TASK_END = cfg.media_wall_auto_refresh_on_task_end
+MEDIA_WALL_MIN_REFRESH_SECONDS = cfg.media_wall_min_refresh_seconds
 
-# Your requirement: copy up to 100 files into cache after task completion
-MEDIA_WALL_COPY_LIMIT = int(os.environ.get("MEDIA_WALL_COPY_LIMIT", "100"))
+# ---------------------------------------------------------------------
+# Optional login
+# ---------------------------------------------------------------------
 
-# Auto behavior on task completion
-MEDIA_WALL_AUTO_INGEST_ON_TASK_END = os.environ.get("MEDIA_WALL_AUTO_INGEST_ON_TASK_END", "1") == "1"
-MEDIA_WALL_AUTO_REFRESH_ON_TASK_END = os.environ.get("MEDIA_WALL_AUTO_REFRESH_ON_TASK_END", "1") == "1"
+LOGIN_REQUIRED = cfg.login_required
+LOGIN_USERNAME = cfg.login_username
+LOGIN_PASSWORD = cfg.login_password
 
-# Throttle refresh to avoid copying 100 files for every task finish in rapid succession
-MEDIA_WALL_MIN_REFRESH_SECONDS = int(os.environ.get("MEDIA_WALL_MIN_REFRESH_SECONDS", "300"))
+# Endpoints that should remain reachable even when login is required
+LOGIN_EXEMPT_ENDPOINTS = {"login", "healthz", "static"}
 
 # ---------------------------------------------------------------------
 # Optional request timing
@@ -123,7 +151,7 @@ if DEBUG_REQUEST_TIMING:
 # ---------------------------------------------------------------------
 
 def _utcnow() -> str:
-    return dt.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "") + "Z"
 
 
 def slugify(name: str) -> str:
@@ -133,6 +161,124 @@ def slugify(name: str) -> str:
     return name or "task"
 
 
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def strip_ansi(text: Optional[str]) -> Optional[str]:
+    """Remove ANSI escape sequences to prevent raw codes from showing in UI."""
+    if text is None:
+        return None
+    return ANSI_ESCAPE_RE.sub("", text)
+
+
+def _is_safe_redirect(target: Optional[str]) -> bool:
+    """Ensure the redirect target stays on this host."""
+    if not target:
+        return False
+    ref = urllib.parse.urlparse(request.host_url)
+    test = urllib.parse.urlparse(urllib.parse.urljoin(request.host_url, target))
+    return test.scheme in ("http", "https") and ref.netloc == test.netloc
+
+
+@app.context_processor
+def inject_globals():
+    return {
+        "login_required": LOGIN_REQUIRED,
+    }
+
+
+@app.before_request
+def _enforce_login():
+    if not LOGIN_REQUIRED:
+        return
+
+    # Allow essential endpoints without authentication
+    if request.endpoint in LOGIN_EXEMPT_ENDPOINTS:
+        return
+    if request.path.startswith("/static/") or request.path == "/favicon.ico":
+        return
+
+    if session.get("authenticated"):
+        return
+
+    next_target = request.full_path if request.query_string else request.path
+    return redirect(url_for("login", next=next_target))
+
+
+# ---------------------------------------------------------------------
+# Login / Logout
+# ---------------------------------------------------------------------
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not LOGIN_REQUIRED:
+        return redirect(url_for("home"))
+
+    if session.get("authenticated"):
+        return redirect(url_for("home"))
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        if secrets.compare_digest(username, LOGIN_USERNAME) and secrets.compare_digest(password, LOGIN_PASSWORD):
+            session["authenticated"] = True
+            session["username"] = username
+
+            target = request.args.get("next")
+            if not _is_safe_redirect(target):
+                target = url_for("home")
+            return redirect(target)
+
+        flash("Invalid username or password.", "error")
+
+    return render_template("login.html", body_class="login-body")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    if LOGIN_REQUIRED:
+        flash("Signed out.", "success")
+        return redirect(url_for("login"))
+    return redirect(url_for("home"))
+
+
+def _get_pid_for_task(slug: str, task_folder: str) -> Optional[int]:
+    """Return PID of running task if known."""
+    try:
+        return tr._get_pid_for_task(slug, task_folder)
+    except Exception:
+        # Fall back to local pid file parsing (best effort)
+        pid_path = os.path.join(task_folder, "pid")
+        pid_text = read_text(pid_path)
+        if not pid_text:
+            return None
+        try:
+            return int(pid_text)
+        except (TypeError, ValueError):
+            return None
+
+
+def _signal_task(slug: str, task_folder: str, sig) -> bool:
+    """Send a signal to a running task process group. Returns True if delivered."""
+    return tr.signal_task(slug, task_folder, sig)
+
+
+def _cleanup_task_state(slug: str, task_folder: str):
+    """Remove lock/pid and clear in-memory tracking."""
+    tr.cleanup_task_state(slug, task_folder)
+
+
+def _clear_stale_lock(slug: str, task_folder: str):
+    """If lock exists but process is gone, clean up so task can run again."""
+    tr.clear_stale_lock(slug, task_folder)
+
+
+def _kill_task(slug: str, task_folder: str) -> bool:
+    """Attempt to stop a running task politely, escalate if needed."""
+    return tr.kill_task(slug, task_folder)
+
+
 def ensure_data_dirs(ensure_downloads: bool = False):
     """
     Ensure base directories exist.
@@ -140,33 +286,141 @@ def ensure_data_dirs(ensure_downloads: bool = False):
     CRITICAL: do not touch /downloads unless explicitly requested.
     """
     t0 = time.perf_counter() if DEBUG_FS_TIMING else None
-
-    os.makedirs(TASKS_ROOT, exist_ok=True)
-    os.makedirs(CONFIG_ROOT, exist_ok=True)
-    os.makedirs(MEDIA_WALL_DIR, exist_ok=True)
-    os.makedirs(MEDIA_WALL_DIR_PREV, exist_ok=True)
-    os.makedirs(MEDIA_WALL_DIR_NEXT, exist_ok=True)
-
-
-    if ensure_downloads:
-        os.makedirs(DOWNLOADS_ROOT, exist_ok=True)
+    tr.ensure_data_dirs(ensure_downloads=ensure_downloads)
 
     if DEBUG_FS_TIMING and t0 is not None:
         ms = (time.perf_counter() - t0) * 1000
         app.logger.info("ensure_data_dirs(downloads=%s) %.1fms", ensure_downloads, ms)
 
 
-def read_text(path: str):
-    if not os.path.exists(path):
-        return None
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read().strip() or None
+def read_text(path: str, *, strip: bool = True) -> Optional[str]:
+    """Read a UTF-8 text file safely.
+
+    Uses errors='replace' to avoid crashing on corrupted log/config bytes.
+    """
+    return tr.read_text(path, strip=strip)
 
 
 def write_text(path: str, content: str):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
+    """Atomically write UTF-8 text to disk (best effort)."""
+    tr.write_text(path, content)
+
+
+def _latest_run_log_path(task_dir: str) -> Optional[str]:
+    logs_dir = os.path.join(task_dir, "logs")
+    if not os.path.isdir(logs_dir):
+        return None
+    try:
+        newest = None
+        for entry in os.scandir(logs_dir):
+            if not entry.is_file():
+                continue
+            name = entry.name
+            if not (name.startswith("run_") and name.endswith(".log")):
+                continue
+            if newest is None or name > newest:
+                newest = name
+        return os.path.join(logs_dir, newest) if newest else None
+    except Exception:
+        return None
+
+
+def _tail_lines_bounded(path: str, lines: int = 50, *, max_bytes: int = 2_000_000) -> str:
+    """Read the last N lines efficiently (bounded by max_bytes)."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            start = max(0, size - int(max_bytes))
+            f.seek(start)
+            data = f.read()
+        text = data.decode("utf-8", errors="replace")
+        parts = text.splitlines()
+        if not parts:
+            return ""
+        return "\n".join(parts[-int(lines):]) + "\n"
+    except Exception:
+        return ""
+
+
+def _truncate_line_length(content: str, max_length: int) -> str:
+    """Truncate each line to max_length characters, adding ... if truncated."""
+    parts = content.split("\n")
+    out = []
+    for line in parts:
+        if len(line) > max_length:
+            out.append(line[:max_length] + "...")
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
+def load_artillery_config() -> dict:
+    """Load Artillery configuration settings."""
+    ensure_data_dirs(ensure_downloads=False)
+    config = {
+        "log_lines_display": 50,  # default
+        "error_lines_display": 20,  # default
+        "truncate_lines": True,  # default: enable line truncation
+        "max_line_length": 200,  # default: max characters per line
+        "media_wall_enabled": True,  # default: media wall enabled
+    }
+    
+    if os.path.exists(ARTILLERY_CONFIG_FILE):
+        try:
+            with open(ARTILLERY_CONFIG_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        key, value = line.split("=", 1)
+                        key = key.strip()
+                        value = value.strip()
+                        if key == "log_lines_display":
+                            try:
+                                config["log_lines_display"] = int(value)
+                            except ValueError:
+                                app.logger.warning("Invalid log_lines_display value '%s', using default", value)
+                        elif key == "error_lines_display":
+                            try:
+                                config["error_lines_display"] = int(value)
+                            except ValueError:
+                                app.logger.warning("Invalid error_lines_display value '%s', using default", value)
+                        elif key == "truncate_lines":
+                            config["truncate_lines"] = value.lower() in ("true", "1", "yes", "on")
+                        elif key == "max_line_length":
+                            try:
+                                config["max_line_length"] = int(value)
+                            except ValueError:
+                                app.logger.warning("Invalid max_line_length value '%s', using default", value)
+                        elif key == "media_wall_enabled":
+                            config["media_wall_enabled"] = value.lower() in ("true", "1", "yes", "on")
+        except Exception as exc:
+            app.logger.warning("Failed to load Artillery config: %s", exc)
+    
+    return config
+
+
+# Load persisted artillery configuration (overrides validated defaults where present)
+_artillery_config = load_artillery_config()
+MEDIA_WALL_ENABLED = _artillery_config.get("media_wall_enabled", MEDIA_WALL_ENABLED)
+
+
+def save_artillery_config(config: dict):
+    """Save Artillery configuration settings."""
+    ensure_data_dirs(ensure_downloads=False)
+    try:
+        with open(ARTILLERY_CONFIG_FILE, "w", encoding="utf-8") as f:
+            f.write("# Artillery Configuration\n")
+            f.write(f"log_lines_display={config.get('log_lines_display', 50)}\n")
+            f.write(f"error_lines_display={config.get('error_lines_display', 20)}\n")
+            f.write(f"truncate_lines={'true' if config.get('truncate_lines', True) else 'false'}\n")
+            f.write(f"max_line_length={config.get('max_line_length', 200)}\n")
+            f.write(f"media_wall_enabled={'true' if config.get('media_wall_enabled', True) else 'false'}\n")
+    except Exception as exc:
+        app.logger.error("Failed to save Artillery config: %s", exc)
+        raise
 
 
 def load_tasks():
@@ -176,12 +430,17 @@ def load_tasks():
     if not os.path.isdir(TASKS_ROOT):
         return tasks
 
-    for entry in sorted(os.listdir(TASKS_ROOT)):
-        task_path = os.path.join(TASKS_ROOT, entry)
-        if not os.path.isdir(task_path):
+    try:
+        entries = list(os.scandir(TASKS_ROOT))
+    except Exception:
+        entries = []
+
+    for entry in sorted(entries, key=lambda e: e.name):
+        if not entry.is_dir():
             continue
 
-        slug = entry
+        slug = entry.name
+        task_path = entry.path
         name = read_text(os.path.join(task_path, "name.txt")) or slug
         schedule = read_text(os.path.join(task_path, "cron.txt"))
         command = read_text(os.path.join(task_path, "command.txt")) or "gallery-dl --input-file urls.txt"
@@ -191,10 +450,11 @@ def load_tasks():
         lock_path = os.path.join(task_path, "lock")
         paused_path = os.path.join(task_path, "paused")
 
-        if os.path.exists(lock_path):
-            status = "running"
-        elif os.path.exists(paused_path):
+        # If paused flag exists, show paused even if a lock is present (running but halted)
+        if os.path.exists(paused_path):
             status = "paused"
+        elif os.path.exists(lock_path):
+            status = "running"
         else:
             status = "idle"
 
@@ -219,185 +479,38 @@ def load_tasks():
 
 def _open_media_db() -> sqlite3.Connection:
     ensure_data_dirs(ensure_downloads=False)
-    os.makedirs(os.path.dirname(MEDIA_DB), exist_ok=True)
-
-    conn = sqlite3.connect(MEDIA_DB, timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
-
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS media (
-            path TEXT PRIMARY KEY,
-            ext  TEXT NOT NULL,
-            task TEXT,
-            first_seen TEXT NOT NULL,
-            last_seen  TEXT NOT NULL,
-            seen_count INTEGER NOT NULL DEFAULT 1
-        );
-
-        CREATE TABLE IF NOT EXISTS task_offsets (
-            task TEXT PRIMARY KEY,
-            log_path TEXT NOT NULL,
-            offset INTEGER NOT NULL DEFAULT 0,
-            updated TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS meta (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_media_ext ON media(ext);
-        CREATE INDEX IF NOT EXISTS idx_media_last_seen ON media(last_seen);
-    """)
-    conn.commit()
-    return conn
+    return mw.open_db(MEDIA_DB)
 
 
 def _extract_relpath_from_log_line(line: str, downloads_root: str) -> Optional[str]:
-    s = line.strip()
-    if not s:
-        return None
-
-    s = s.replace("\\", "/")
-    dr = downloads_root.replace("\\", "/").rstrip("/")
-
-    if not (s == dr or s.startswith(dr + "/")):
-        return None
-
-    rel = s[len(dr):].lstrip("/")
-    if not rel:
-        return None
-
-    ext = os.path.splitext(rel)[1].lower()
-    if not ext or ext not in MEDIA_EXTS:
-        return None
-
-    return rel
+    return mw.extract_relpath_from_log_line(line, downloads_root)
 
 
 def ingest_task_log(conn: sqlite3.Connection, task_slug: str, log_path: str, *, full_rescan: bool = False) -> Tuple[int, int]:
-    start_offset = 0
-    if not full_rescan:
-        row = conn.execute(
-            "SELECT offset FROM task_offsets WHERE task=? AND log_path=?",
-            (task_slug, log_path),
-        ).fetchone()
-        if row:
-            start_offset = int(row[0])
-
-    try:
-        with open(log_path, "rb") as f:
-            if start_offset > 0:
-                f.seek(start_offset)
-            data = f.read()
-            end_offset = f.tell()
-    except OSError:
-        return (0, 0)
-
-    def upsert_offset(offset: int):
-        conn.execute(
-            """
-            INSERT INTO task_offsets(task, log_path, offset, updated)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(task) DO UPDATE SET
-                log_path=excluded.log_path,
-                offset=excluded.offset,
-                updated=excluded.updated
-            """,
-            (task_slug, log_path, int(offset), _utcnow()),
-        )
-
-    if not data:
-        upsert_offset(start_offset)
-        conn.commit()
-        return (0, 0)
-
-    text = data.decode("utf-8", errors="ignore")
-    now = _utcnow()
-
-    matched = 0
-    inserted = 0
-
-    for line in text.splitlines():
-        rel = _extract_relpath_from_log_line(line, DOWNLOADS_ROOT)
-        if not rel:
-            continue
-
-        matched += 1
-        ext = os.path.splitext(rel)[1].lower()
-
-        cur = conn.execute(
-            """
-            INSERT OR IGNORE INTO media(path, ext, task, first_seen, last_seen, seen_count)
-            VALUES (?, ?, ?, ?, ?, 1)
-            """,
-            (rel, ext, task_slug, now, now),
-        )
-        if cur.rowcount == 1:
-            inserted += 1
-        else:
-            conn.execute(
-                """
-                UPDATE media
-                SET last_seen=?, task=?, ext=?, seen_count=seen_count + 1
-                WHERE path=?
-                """,
-                (now, task_slug, ext, rel),
-            )
-
-    upsert_offset(end_offset)
-
-    conn.execute(
-        """
-        INSERT INTO meta(key, value)
-        VALUES ('last_ingest', ?)
-        ON CONFLICT(key) DO UPDATE SET value=excluded.value
-        """,
-        (now,),
+    return mw.ingest_task_log(
+        conn,
+        task_slug,
+        log_path,
+        downloads_root=DOWNLOADS_ROOT,
+        full_rescan=full_rescan,
     )
-    conn.commit()
-    return (matched, inserted)
 
 
 def ingest_all_task_logs(conn: sqlite3.Connection, *, full_rescan: bool = False) -> dict:
-    tasks_seen = 0
-    matched_total = 0
-    inserted_total = 0
-
-    if not os.path.isdir(TASKS_ROOT):
-        return {"tasks_seen": 0, "matched": 0, "inserted": 0}
-
-    for slug in sorted(os.listdir(TASKS_ROOT)):
-        task_dir = os.path.join(TASKS_ROOT, slug)
-        if not os.path.isdir(task_dir):
-            continue
-
-        log_path = os.path.join(task_dir, "logs.txt")
-        if not os.path.exists(log_path):
-            continue
-
-        tasks_seen += 1
-        matched, inserted = ingest_task_log(conn, slug, log_path, full_rescan=full_rescan)
-        matched_total += matched
-        inserted_total += inserted
-
-    return {"tasks_seen": tasks_seen, "matched": matched_total, "inserted": inserted_total}
+    return mw.ingest_all_task_logs(
+        conn,
+        tasks_root=TASKS_ROOT,
+        downloads_root=DOWNLOADS_ROOT,
+        full_rescan=full_rescan,
+    )
 
 
 def _cache_name_for_relpath(relpath: str) -> str:
-    ext = os.path.splitext(relpath)[1].lower()
-    h = hashlib.sha1(relpath.encode("utf-8", errors="ignore")).hexdigest()
-    return f"{h}{ext}"
+    return mw._cache_name_for_relpath(relpath)
 
 
 def _clean_dir(path: str):
-    os.makedirs(path, exist_ok=True)
-    for fn in os.listdir(path):
-        try:
-            os.remove(os.path.join(path, fn))
-        except Exception:
-            pass
+    mw._clean_dir(path)
 
 
 def refresh_wall_cache(conn: sqlite3.Connection, n: int) -> dict:
@@ -410,114 +523,21 @@ def refresh_wall_cache(conn: sqlite3.Connection, n: int) -> dict:
     Old wall links remain valid for at least one refresh cycle via PREV fallback.
     """
     ensure_data_dirs(ensure_downloads=False)
-
-    with MEDIA_WALL_REFRESH_LOCK:
-        # choose candidates
-        if MEDIA_WALL_CACHE_VIDEOS:
-            rows = conn.execute(
-                "SELECT path, ext FROM media ORDER BY RANDOM() LIMIT ?",
-                (int(n),)
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT path, ext FROM media WHERE ext IN ({}) ORDER BY RANDOM() LIMIT ?".format(
-                    ",".join(["?"] * len(IMAGE_EXTS))
-                ),
-                tuple(sorted(IMAGE_EXTS)) + (int(n),)
-            ).fetchall()
-
-        picked = [(r[0], r[1]) for r in rows]
-        if not picked:
-            return {"picked": 0, "copied": 0, "failed": 0}
-
-        # build next cache
-        _clean_dir(MEDIA_WALL_DIR_NEXT)
-
-        copied = 0
-        failed = 0
-
-        for rel, _ext in picked:
-            src = os.path.join(DOWNLOADS_ROOT, rel)
-            name = _cache_name_for_relpath(rel)
-            dst = os.path.join(MEDIA_WALL_DIR_NEXT, name)
-
-            tmp = dst + ".tmp"
-            try:
-                shutil.copy2(src, tmp)
-                os.replace(tmp, dst)  # atomic file publish
-                copied += 1
-            except Exception as exc:
-                failed += 1
-                app.logger.warning("media wall copy failed: %s -> %s (%s)", src, dst, exc)
-                try:
-                    if os.path.exists(tmp):
-                        os.remove(tmp)
-                except Exception:
-                    pass
-
-        # if we copied nothing, don't swap (avoid wiping current wall)
-        if copied == 0:
-            return {"picked": len(picked), "copied": 0, "failed": failed}
-
-        # rotate: delete old prev, move current->prev, next->current
-        try:
-            if os.path.isdir(MEDIA_WALL_DIR_PREV):
-                shutil.rmtree(MEDIA_WALL_DIR_PREV)
-        except Exception:
-            pass
-
-        try:
-            if os.path.isdir(MEDIA_WALL_DIR):
-                os.replace(MEDIA_WALL_DIR, MEDIA_WALL_DIR_PREV)
-        except Exception:
-            # if replace fails, we still try to proceed safely
-            pass
-
-        os.replace(MEDIA_WALL_DIR_NEXT, MEDIA_WALL_DIR)
-
-        # recreate next dir for next run
-        os.makedirs(MEDIA_WALL_DIR_NEXT, exist_ok=True)
-
-        now = _utcnow()
-        conn.execute(
-            """
-            INSERT INTO meta(key, value)
-            VALUES ('last_cache_refresh', ?)
-            ON CONFLICT(key) DO UPDATE SET value=excluded.value
-            """,
-            (now,),
-        )
-        conn.commit()
-
-        return {"picked": len(picked), "copied": copied, "failed": failed}
+    return mw.refresh_wall_cache(
+        conn,
+        n,
+        downloads_root=DOWNLOADS_ROOT,
+        cache_videos=MEDIA_WALL_CACHE_VIDEOS,
+    )
 
 
 
 def _should_refresh_cache(conn: sqlite3.Connection) -> bool:
-    try:
-        row = conn.execute("SELECT value FROM meta WHERE key='last_cache_refresh'").fetchone()
-        if not row or not row[0]:
-            return True
-        last = row[0].replace("Z", "")
-        last_dt = dt.datetime.fromisoformat(last)
-        age = (dt.datetime.utcnow() - last_dt).total_seconds()
-        return age >= MEDIA_WALL_MIN_REFRESH_SECONDS
-    except Exception:
-        return True
+    return mw.should_refresh_cache(conn)
 
 
 def get_mediawall_status(conn: sqlite3.Connection) -> dict:
-    media_count = conn.execute("SELECT COUNT(*) FROM media").fetchone()[0]
-
-    def _meta(k: str) -> Optional[str]:
-        row = conn.execute("SELECT value FROM meta WHERE key=?", (k,)).fetchone()
-        return row[0] if row else None
-
-    return {
-        "media_count": int(media_count),
-        "last_ingest": _meta("last_ingest"),
-        "last_cache_refresh": _meta("last_cache_refresh"),
-    }
+    return mw.get_status(conn)
 
 # ---------------------------------------------------------------------
 # Health check
@@ -576,11 +596,22 @@ def mediawall_seed():
 
 @app.route("/mediawall/toggle", methods=["POST"])
 def mediawall_toggle():
-    """Toggle media wall enabled/disabled."""
+    """Toggle media wall enabled/disabled and persist to config file."""
     global MEDIA_WALL_ENABLED
     MEDIA_WALL_ENABLED = not MEDIA_WALL_ENABLED
     status = "enabled" if MEDIA_WALL_ENABLED else "disabled"
     os.environ["MEDIA_WALL_ENABLED"] = "1" if MEDIA_WALL_ENABLED else "0"
+    
+    # Persist to artillery.conf
+    try:
+        config = load_artillery_config()
+        config["media_wall_enabled"] = MEDIA_WALL_ENABLED
+        save_artillery_config(config)
+        app.logger.info(f"Media wall {status} and saved to configuration")
+    except Exception as exc:
+        app.logger.error(f"Failed to persist media wall setting: {exc}")
+        # Still show flash even if save failed
+    
     flash(f"Media wall {status}", "success")
     return redirect(url_for("config_page"))
 
@@ -656,11 +687,21 @@ def home():
 
     if MEDIA_WALL_ENABLED:
         os.makedirs(MEDIA_WALL_DIR, exist_ok=True)
-        cached_files = [
-            fn for fn in os.listdir(MEDIA_WALL_DIR)
-            if os.path.splitext(fn)[1].lower() in MEDIA_EXTS and not fn.endswith(".tmp")
-        ]
-        cached_files = cached_files[:MEDIA_WALL_ITEMS_ON_PAGE]
+        cached_files = []
+        try:
+            for entry in os.scandir(MEDIA_WALL_DIR):
+                if not entry.is_file():
+                    continue
+                fn = entry.name
+                if fn.endswith(".tmp"):
+                    continue
+                if os.path.splitext(fn)[1].lower() not in MEDIA_EXTS:
+                    continue
+                cached_files.append(fn)
+                if len(cached_files) >= MEDIA_WALL_ITEMS_ON_PAGE:
+                    break
+        except Exception:
+            cached_files = []
 
         urls = [url_for("wall_file", filename=fn) for fn in cached_files]
         has_media = len(urls) > 0
@@ -751,7 +792,8 @@ def tasks():
 
     ensure_data_dirs(ensure_downloads=False)
     tasks_list = load_tasks()
-    return render_template("tasks.html", tasks=tasks_list)
+    artillery_config = load_artillery_config()
+    return render_template("tasks.html", tasks=tasks_list, artillery_config=artillery_config)
 
 # ---------------------------------------------------------------------
 # Config page
@@ -761,6 +803,7 @@ def tasks():
 def config_page():
     ensure_data_dirs(ensure_downloads=False)
     config_text = read_text(CONFIG_FILE) or ""
+    artillery_config = load_artillery_config()
 
     if request.method == "POST":
         action = request.form.get("action")
@@ -768,6 +811,22 @@ def config_page():
             config_text = request.form.get("config_text", "")
             write_text(CONFIG_FILE, config_text)
             flash("Config saved.", "success")
+        elif action == "save_artillery":
+            try:
+                log_lines = request.form.get("log_lines_display", "50")
+                error_lines = request.form.get("error_lines_display", "20")
+                truncate_lines = request.form.get("truncate_lines", "off") == "on"
+                max_line_length = request.form.get("max_line_length", "200")
+                artillery_config["log_lines_display"] = int(log_lines)
+                artillery_config["error_lines_display"] = int(error_lines)
+                artillery_config["truncate_lines"] = truncate_lines
+                artillery_config["max_line_length"] = int(max_line_length)
+                save_artillery_config(artillery_config)
+                flash("Artillery settings saved.", "success")
+            except ValueError:
+                flash("Invalid value. Both settings must be numbers.", "error")
+            except Exception as exc:
+                flash(f"Failed to save Artillery settings: {exc}", "error")
         elif action == "reset":
             try:
                 with urllib.request.urlopen(DEFAULT_CONFIG_URL, timeout=10) as resp:
@@ -778,96 +837,26 @@ def config_page():
             except Exception as exc:
                 flash(f"Failed to fetch default config: {exc}", "error")
 
-    return render_template("config.html", config_text=config_text, config_path=CONFIG_FILE, media_wall_enabled=MEDIA_WALL_ENABLED)
+    return render_template("config.html", 
+                         config_text=config_text, 
+                         config_path=CONFIG_FILE, 
+                         media_wall_enabled=MEDIA_WALL_ENABLED,
+                         artillery_config=artillery_config)
 
 # ---------------------------------------------------------------------
 # Task actions
 # ---------------------------------------------------------------------
 
 def run_task_background(task_folder: str):
-    ensure_data_dirs(ensure_downloads=True)
-
-    lock_path = os.path.join(task_folder, "lock")
-    logs_path = os.path.join(task_folder, "logs.txt")
-    last_run_path = os.path.join(task_folder, "last_run.txt")
-    command_path = os.path.join(task_folder, "command.txt")
-    urls_file = os.path.join(task_folder, "urls.txt")
-
-    command = read_text(command_path)
-    if not command:
-        with open(logs_path, "a", encoding="utf-8") as logf:
-            logf.write("\nNo command configured for this task.\n")
-        if os.path.exists(lock_path):
-            os.remove(lock_path)
-        return
-
-    if not os.path.exists(urls_file):
-        with open(logs_path, "a", encoding="utf-8") as logf:
-            logf.write("\nurls.txt not found for this task.\n")
-        if os.path.exists(lock_path):
-            os.remove(lock_path)
-        return
-
-    now = dt.datetime.utcnow().isoformat() + "Z"
-
-    try:
-        cmd_parts = shlex.split(command)
-    except ValueError as exc:
-        with open(logs_path, "a", encoding="utf-8") as logf:
-            logf.write(f"\nFailed to parse command: {exc}\n")
-        if os.path.exists(lock_path):
-            os.remove(lock_path)
-        return
-
-    env = os.environ.copy()
-    env["GALLERY_DL_CONFIG"] = CONFIG_FILE
-    env["PATH"] = env.get("PATH", "") + os.pathsep + "/usr/local/bin"
-
-    try:
-        with open(logs_path, "a", encoding="utf-8") as logf:
-            config_exists = os.path.exists(CONFIG_FILE)
-            logf.write(f"\n\n==== Run at {now} ====\n")
-            logf.write(f"Artillery: using config {CONFIG_FILE} (exists={config_exists})\n")
-            logf.write(f"$ {' '.join(cmd_parts)}\n\n")
-            logf.flush()
-
-            result = subprocess.run(
-                cmd_parts,
-                cwd=task_folder,
-                stdout=logf,
-                stderr=subprocess.STDOUT,
-                text=True,
-                env=env,
-            )
-
-        write_text(last_run_path, now)
-
-        with open(logs_path, "a", encoding="utf-8") as logf:
-            if result.returncode == 0:
-                logf.write("\nTask finished successfully.\n")
-            else:
-                logf.write(f"\nTask exited with code {result.returncode}.\n")
-
-    except Exception as exc:
-        with open(logs_path, "a", encoding="utf-8") as logf:
-            logf.write(f"\nERROR while running task: {exc}\n")
-    finally:
-        # ---- MEDIA WALL HOOK: ingest + refresh cache (copy up to 100) ----
-        if MEDIA_WALL_AUTO_INGEST_ON_TASK_END:
-            try:
-                slug = os.path.basename(task_folder.rstrip("/"))
-                conn = _open_media_db()  # creates DB if missing
-                ingest_task_log(conn, slug, logs_path, full_rescan=False)
-
-                if MEDIA_WALL_AUTO_REFRESH_ON_TASK_END and _should_refresh_cache(conn):
-                    refresh_wall_cache(conn, min(MEDIA_WALL_COPY_LIMIT, 100))
-
-                conn.close()
-            except Exception as exc:
-                app.logger.warning("Media wall update failed: %s", exc)
-
-        if os.path.exists(lock_path):
-            os.remove(lock_path)
+    # Delegate to the shared runtime module so scheduler.py doesn't need to import Flask.
+    return tr.run_task_background(
+        task_folder,
+        media_wall_enabled=MEDIA_WALL_ENABLED,
+        media_wall_cache_videos=MEDIA_WALL_CACHE_VIDEOS,
+        media_wall_copy_limit=MEDIA_WALL_COPY_LIMIT,
+        media_wall_auto_ingest=MEDIA_WALL_AUTO_INGEST_ON_TASK_END,
+        media_wall_auto_refresh=MEDIA_WALL_AUTO_REFRESH_ON_TASK_END,
+    )
 
 
 @app.route("/tasks/<slug>/action", methods=["POST"])
@@ -895,6 +884,7 @@ def task_action(slug):
             return redirect(url_for("tasks"))
 
         lock_path = os.path.join(task_folder, "lock")
+        _clear_stale_lock(slug, task_folder)
         if os.path.exists(lock_path):
             flash("Task is already running.", "error")
             return redirect(url_for("tasks"))
@@ -908,14 +898,51 @@ def task_action(slug):
         flash("Task started in background. Check logs.txt for progress.", "success")
         return redirect(url_for("tasks"))
 
+    if action == "cancel":
+        lock_path = os.path.join(task_folder, "lock")
+        if not os.path.exists(lock_path):
+            flash("Task is not running.", "error")
+            return redirect(url_for("tasks"))
+
+        if _kill_task(slug, task_folder):
+            flash("Task canceled.", "success")
+        else:
+            flash("Failed to cancel task (process may have already exited or ignored signals).", "error")
+
+        _clear_stale_lock(slug, task_folder)
+        return redirect(url_for("tasks"))
+
     if action == "pause":
         paused_path = os.path.join(task_folder, "paused")
-        if os.path.exists(paused_path):
-            os.remove(paused_path)
-            flash("Task unpaused.", "success")
-        else:
-            open(paused_path, "w").close()
-            flash("Task paused.", "success")
+        try:
+            if os.path.exists(paused_path):
+                os.remove(paused_path)
+                # Ensure file removal is synced to disk
+                if hasattr(os, 'sync'):
+                    os.sync()
+                # Resume process if it's running and was previously stopped
+                if _signal_task(slug, task_folder, signal.SIGCONT):
+                    flash("Task unpaused and resumed.", "success")
+                else:
+                    _clear_stale_lock(slug, task_folder)
+                    flash("Task unpaused (no running process).", "success")
+            else:
+                # Create with explicit sync to ensure file is written to disk
+                with open(paused_path, "w") as f:
+                    f.write("")
+                    f.flush()
+                    os.fsync(f.fileno())
+                # Ensure creation is synced to disk
+                if hasattr(os, 'sync'):
+                    os.sync()
+                # Send SIGSTOP to running process if present
+                if _signal_task(slug, task_folder, signal.SIGSTOP):
+                    flash("Task paused (process stopped).", "success")
+                else:
+                    _clear_stale_lock(slug, task_folder)
+                    flash("Task paused (process not running).", "success")
+        except Exception as exc:
+            flash(f"Failed to pause/unpause task: {exc}", "error")
         return redirect(url_for("tasks"))
 
     flash("Unknown action.", "error")
@@ -929,7 +956,8 @@ def task_action(slug):
 def task_logs(slug):
     """
     Fetch the log content for a task.
-    Returns JSON with the log content and metadata.
+    Returns JSON with the log content from the current/latest run log.
+    Per-run logs are stored in /tasks/<slug>/logs/run_YYYYMMDD_HHMMSS.log
     """
     ensure_data_dirs(ensure_downloads=False)
     
@@ -937,45 +965,27 @@ def task_logs(slug):
     if not os.path.isdir(task_folder):
         return jsonify({"error": "Task not found"}), 404
     
-    logs_path = os.path.join(task_folder, "logs.txt")
-    
-    def tail_lines(path: str, lines: int = 50) -> str:
-        try:
-            with open(path, 'rb') as f:
-                f.seek(0, os.SEEK_END)
-                file_size = f.tell()
-                block_size = 1024
-                chunks = []
-                lines_found = 0
-                pos = file_size
-
-                while pos > 0 and lines_found <= lines:
-                    read_size = block_size if pos >= block_size else pos
-                    pos -= read_size
-                    f.seek(pos)
-                    chunk = f.read(read_size)
-                    chunks.append(chunk)
-                    lines_found = b"\n".join(chunks).count(b"\n")
-
-                data = b"".join(reversed(chunks))
-                text = data.decode('utf-8', errors='replace')
-                return '\n'.join(text.splitlines()[-lines:])
-        except Exception:
-            # Fallback to reading whole file if anything goes wrong
-            try:
-                with open(path, 'r', encoding='utf-8', errors='replace') as f:
-                    return '\n'.join(f.read().splitlines()[-lines:])
-            except Exception:
-                return ''
+    run_log_path = _latest_run_log_path(task_folder)
 
     try:
-        if os.path.exists(logs_path):
+        if run_log_path and os.path.exists(run_log_path):
             tail = request.args.get('tail', type=int)
             if tail and tail > 0:
-                content = tail_lines(logs_path, tail)
+                content = _tail_lines_bounded(run_log_path, tail)
             else:
-                with open(logs_path, "r", encoding="utf-8", errors="replace") as f:
+                with open(run_log_path, "r", encoding="utf-8", errors="replace") as f:
                     content = f.read()
+
+            content = strip_ansi(content)
+
+            # Load Artillery config to check line truncation setting
+            artillery_config = load_artillery_config()
+            truncate_enabled = artillery_config.get("truncate_lines", True)
+            
+            # Apply line truncation if enabled
+            if truncate_enabled:
+                max_length = artillery_config.get("max_line_length", 200)
+                content = _truncate_line_length(content, max_length)
         else:
             content = "No logs yet. Task has not been run."
     except Exception as exc:
@@ -984,29 +994,94 @@ def task_logs(slug):
     return jsonify({"slug": slug, "content": content})
 
 
-# ---------------------------------------------------------------------
-# Download task logs
-# ---------------------------------------------------------------------
-@app.route("/tasks/<slug>/logs/download")
-def download_task_logs(slug):
+@app.route("/tasks/<slug>/errors")
+def task_errors(slug):
+    """
+    Extract and return error lines from task logs (current run).
+    Returns JSON with error lines and count from the latest run log.
+    """
     ensure_data_dirs(ensure_downloads=False)
-
+    
     task_folder = os.path.join(TASKS_ROOT, slug)
     if not os.path.isdir(task_folder):
         return jsonify({"error": "Task not found"}), 404
+    
+    run_log_path = _latest_run_log_path(task_folder)
+    
+    # Get configured error lines limit
+    artillery_config = load_artillery_config()
+    max_error_lines = artillery_config.get("error_lines_display", 20)
+    
+    error_lines = deque(maxlen=max_error_lines)  # Efficiently maintain last N lines
+    error_count = 0
 
-    logs_path = os.path.join(task_folder, "logs.txt")
-    if not os.path.exists(logs_path):
-        return jsonify({"error": "No logs yet for this task"}), 404
-
+    error_re = re.compile(
+        r"\[\[error\]\]|\[error\]|^Traceback \(most recent call last\):|^[A-Z]\w*Error:",
+        re.IGNORECASE,
+    )
+    
     try:
-        # Prefer modern Flask's download_name, fallback to attachment_filename
-        try:
-            return send_file(logs_path, as_attachment=True, download_name=f"{slug}-logs.txt")
-        except TypeError:
-            return send_file(logs_path, as_attachment=True, attachment_filename=f"{slug}-logs.txt")
+        if run_log_path and os.path.exists(run_log_path):
+            with open(run_log_path, "r", encoding="utf-8", errors="replace") as f:
+                for raw_line in f:
+                    line = strip_ansi(raw_line)
+                    # Check for gallery-dl error tags: [[error]] or Python exceptions
+                    # Examples: [download][[error]] Failed to download...
+                    #           [error] message
+                    #           Traceback (most recent call last):
+                    if error_re.search(line):
+                        error_count += 1
+                        # Keep only the last configured error lines for display (max_error_lines)
+                        error_lines.append(line.rstrip())
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+    
+    return jsonify({
+        "slug": slug, 
+        "error_count": error_count, 
+        "error_lines": list(error_lines)
+    })
+
+
+@app.route("/tasks/<slug>/runs")
+def task_runs(slug):
+    """
+    List available per-run log files for a task.
+    Returns JSON with list of run logs.
+    """
+    ensure_data_dirs(ensure_downloads=False)
+    
+    task_folder = os.path.join(TASKS_ROOT, slug)
+    if not os.path.isdir(task_folder):
+        return jsonify({"error": "Task not found"}), 404
+    
+    logs_dir = os.path.join(task_folder, "logs")
+    runs = []
+
+    if os.path.isdir(logs_dir):
+        try:
+            for entry in os.scandir(logs_dir):
+                if not entry.is_file():
+                    continue
+                filename = entry.name
+                if not (filename.startswith("run_") and filename.endswith(".log")):
+                    continue
+                try:
+                    stat = entry.stat()
+                except FileNotFoundError:
+                    continue
+                runs.append({
+                    "filename": filename,
+                    "size": int(stat.st_size),
+                    "mtime": float(stat.st_mtime),
+                })
+        except Exception:
+            pass
+
+    runs.sort(key=lambda r: r["filename"], reverse=True)
+    
+    return jsonify({"slug": slug, "runs": runs})
+
 
 # ---------------------------------------------------------------------
 # Original media route (serves from /downloads)

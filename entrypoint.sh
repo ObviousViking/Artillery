@@ -12,16 +12,29 @@ PGID="${PGID:-0}"
 # Ensure directories exist (Unraid maps these)
 : "${TASKS_DIR:=/tasks}"
 : "${CONFIG_DIR:=/config}"
+: "${DOWNLOADS_DIR:=/downloads}"
 
+# Validate directories are accessible
+for dir in "$TASKS_DIR" "$CONFIG_DIR" "$DOWNLOADS_DIR"; do
+  mkdir -p "$dir" || { log "ERROR: Failed to create directory: $dir"; exit 1; }
+  if [ ! -w "$dir" ]; then
+    log "ERROR: Directory is not writable: $dir"
+    exit 1
+  fi
+done
 
-mkdir -p "$TASKS_DIR" "$CONFIG_DIR" 
+log "Configuration validated:"
+log "  TASKS_DIR: $TASKS_DIR"
+log "  CONFIG_DIR: $CONFIG_DIR"
+log "  DOWNLOADS_DIR: $DOWNLOADS_DIR"
 
 log "Updating gallery-dl to latest..."
 pip install --no-cache-dir --upgrade gallery-dl
 
 
-# remove stale lock files from previous container run
-find /tasks -maxdepth 2 -type f -iname "*lock*" -print -delete || true
+# remove stale task lock files from previous container run
+# Only remove lock files in task directories: $TASKS_DIR/<slug>/lock
+find "$TASKS_DIR" -mindepth 2 -maxdepth 2 -type f -name "lock" -print -delete || true
 
 
 # Decide how we run things: as root or as numeric uid:gid

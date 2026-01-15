@@ -45,7 +45,10 @@ All wrapped in a dark, minimal interface designed to live inside Docker/Unraid.
     * Run automatically by cron
 * Logging
 
-  * Each run appends stdout/stderr to the task’s `logs.txt`
+  * Each run creates a timestamped log file at `/tasks/<slug>/logs/run_YYYYMMDD_HHMMSS.log`
+  * Main `logs.txt` accumulates all runs after completion
+  * ANSI escape sequences stripped for clean display in UI (only color formatting retained)
+  * Real-time log viewer with auto-scroll, level-based coloring, and manual pause support
   * Includes command line + exit code info
 * Media wall dashboard
 
@@ -81,7 +84,7 @@ All wrapped in a dark, minimal interface designed to live inside Docker/Unraid.
   * Status (idle / running / paused)
   * Cron expression
   * Last run time
-  * Actions (Run, Pause/Unpause, Delete)
+  * Actions (Run, Cancel, Pause/Unpause, Edit, Delete)
 * Task editor:
 
   * Task name
@@ -115,8 +118,20 @@ docker run -d \
   -e DOWNLOADS_DIR=/downloads \
   -e PUID=99 \
   -e PGID=100 \
+  # Optional login (remove these if you don't need auth)
+  -e ARTILLERY_LOGIN_REQUIRED=1 \
+  -e ARTILLERY_USERNAME=admin \
+  -e ARTILLERY_PASSWORD=change-me \
   -v /mnt/user/appdata/artillery/config:/config \
   -v /mnt/user/appdata/artillery/tasks:/tasks \
   -v /mnt/user/pictures:/downloads \
   obviousviking/artillery
 ```
+
+### Optional login (username/password)
+
+Authentication is disabled by default. To require a login page:
+
+* `ARTILLERY_LOGIN_REQUIRED=1` – enable the login screen. Omit or set to `0` to leave the app open.
+* `ARTILLERY_USERNAME` / `ARTILLERY_PASSWORD` – optional overrides for the credentials. If not provided, they default to `admin` / `artillery`.
+* You can leave username/password unset in container creation; they are only read when login is enabled.
