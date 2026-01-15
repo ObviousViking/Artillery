@@ -206,6 +206,7 @@ def run_task_background(
             if os.path.exists(lock_path):
                 os.remove(lock_path)
         except Exception:
+            # Best-effort lock cleanup; failure is non-fatal on early exit.
             pass
         return
 
@@ -216,6 +217,7 @@ def run_task_background(
             if os.path.exists(lock_path):
                 os.remove(lock_path)
         except Exception:
+            # Best-effort lock cleanup; failure is non-fatal on early exit.
             pass
         return
 
@@ -232,6 +234,7 @@ def run_task_background(
             if os.path.exists(lock_path):
                 os.remove(lock_path)
         except Exception:
+            # Best-effort lock cleanup; failure is non-fatal on early exit.
             pass
         return
 
@@ -311,6 +314,7 @@ def run_task_background(
             if os.path.exists(pid_path):
                 os.remove(pid_path)
         except Exception:
+            # Best-effort PID file cleanup in finally block; failure is non-fatal.
             pass
 
         if media_wall_enabled and media_wall_auto_ingest:
