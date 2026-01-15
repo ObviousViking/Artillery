@@ -92,7 +92,6 @@
 
           const loader = document.getElementById("media-wall-loader");
           const emptyMsg = document.getElementById("media-wall-empty");
-          // changed: make wall mutable so we can update the reference after swaps
           let wall = document.getElementById("media-wall");
 
           let lastSig = "";
@@ -104,10 +103,7 @@
 
           // marquee helpers (unchanged)
           let _marqueeTimer = null;
-          function scheduleInitMarquees() {
-            clearTimeout(_marqueeTimer);
-            _marqueeTimer = setTimeout(initMarquees, 50);
-          }
+          function scheduleInitMarquees() { clearTimeout(_marqueeTimer); _marqueeTimer = setTimeout(initMarquees, 50); }
           function initMarquees() {
             const strips = document.querySelectorAll(".media-strip");
             strips.forEach(strip => {
@@ -185,7 +181,7 @@
             return rowsOut;
           }
 
-          // wait for at least minLoaded images to succeed or timeout
+          // waitForSome helper (unchanged)
           function waitForSome(promises, minLoaded, timeoutMs) {
             return new Promise(resolve => {
               let loaded = 0;
@@ -212,14 +208,69 @@
             });
           }
 
+          // --- NEW: throttled lazy loader -------------------------------------------------
+          const MAX_CONCURRENT_LOADS = 6;
+          let activeLoads = 0;
+          const loadQueue = [];
+
+          function processQueue() {
+            while (activeLoads < MAX_CONCURRENT_LOADS && loadQueue.length) {
+              const fn = loadQueue.shift();
+              activeLoads++;
+              fn().finally(() => {
+                activeLoads--;
+                // continue processing
+                setTimeout(processQueue, 0);
+              });
+            }
+          }
+
+          function enqueueImageLoad(imgEl, src) {
+            return new Promise(resolve => {
+              loadQueue.push(() => new Promise(innerResolve => {
+                // actually set src to start load
+                imgEl.src = src;
+                // resolve when loaded/error
+                function finish() {
+                  imgEl.removeEventListener('load', onload);
+                  imgEl.removeEventListener('error', onerr);
+                  innerResolve();
+                  resolve();
+                }
+                function onload() { finish(); }
+                function onerr() { finish(); }
+                imgEl.addEventListener('load', onload, { once: true });
+                imgEl.addEventListener('error', onerr, { once: true });
+              }));
+              processQueue();
+            });
+          }
+
+          // IntersectionObserver to lazy-load when images approach viewport
+          let io = null;
+          function ensureObserver() {
+            if (io) return io;
+            io = new IntersectionObserver((entries) => {
+              entries.forEach(en => {
+                if (!en.isIntersecting) return;
+                const img = en.target;
+                const src = img.dataset.src;
+                if (src && !img.src) {
+                  // enqueue load via throttled queue
+                  enqueueImageLoad(img, src);
+                }
+                io.unobserve(img);
+              });
+            }, { root: null, rootMargin: '800px 0px 800px 0px', threshold: 0.01 }); // large margin to keep wings populated
+            return io;
+          }
+          // -------------------------------------------------------------------------------
+
           // progressive render: build off-DOM, preload a small set, then cross-fade swap
           function render(items) {
             if (!container) return;
             if (!items || !items.length) {
-              setEmpty(true);
-              hideLoader();
-              setReady();
-              return;
+              setEmpty(true); hideLoader(); setReady(); return;
             }
             setEmpty(false);
 
@@ -232,7 +283,7 @@
             newWall.style.transition = "opacity 350ms ease";
 
             const preloadImgs = [];
-            const preloadLimit = Math.min(12, Math.max(6, Math.floor(items.length * 0.1))); // preload a small sample
+            const preloadLimit = Math.min(12, Math.max(6, Math.floor(items.length * 0.1)));
             let preloadCount = 0;
 
             rowsData.forEach((rowItems, rowIdx) => {
@@ -259,94 +310,103 @@
                   img.alt = "media";
                   img.style.opacity = "0";
                   img.style.transition = "opacity 300ms ease";
-                  // don't set src immediately if we plan to preload; set data-src for fallback
                   const src = buildUrl(url, mtime);
+                  // do not set img.src here — use data-src and lazy loader
                   img.dataset.src = src;
 
-                  // attach onload to fade in when image is set
-                  img.addEventListener("load", () => {
-                    img.style.opacity = "1";
-                    scheduleInitMarquees();
-                  }, { once: true });
+                  // fade-in when image loaded
+                  img.addEventListener("load", () => { img.style.opacity = "1"; scheduleInitMarquees(); }, { once: true });
 
                   a.appendChild(img);
                   itemDiv.appendChild(a);
                   strip.appendChild(itemDiv);
 
-                  // collect preload promises for a small sample
+                  // collect preload promises for a small sample (background preloader only)
                   if (preloadCount < preloadLimit) {
                     preloadCount++;
-                    preloadImgs.push(new Promise((resolve, reject) => {
+                    preloadImgs.push(new Promise((resolve) => {
                       const p = new Image();
                       p.onload = () => resolve(true);
-                      p.onerror = () => resolve(false); // resolve on error to avoid blocking
+                      p.onerror = () => resolve(false);
                       p.src = src;
                     }));
                   }
                 });
               }
-
               rowDiv.appendChild(strip);
               newWall.appendChild(rowDiv);
             });
 
-            // once minLoaded or timeout, attach newWall and then set src for all imgs to start actual loading
-            const minNeeded = Math.max(1, Math.floor(preloadImgs.length * 0.4)); // require 40% of sample to be ready
+            const minNeeded = Math.max(1, Math.floor(preloadImgs.length * 0.4));
             waitForSome(preloadImgs, minNeeded, 1200).then(() => {
-              // insert new wall next to old wall (or append if none)
               if (wall && wall.parentNode) {
                 wall.parentNode.insertBefore(newWall, wall.nextSibling);
               } else {
                 container.appendChild(newWall);
               }
 
-              // trigger actual image loads for all imgs in newWall
-              newWall.querySelectorAll("img.media-img").forEach(imgEl => {
-                if (!imgEl.src) {
-                  imgEl.src = imgEl.dataset.src || "";
+              // Instead of forcing all images to load, start a small immediate batch
+              const allImgs = Array.from(newWall.querySelectorAll("img.media-img"));
+              ensureObserver();
+
+              // Kick off immediate loads for first visible-ish batch (fill viewport + wings)
+              const immediateCount = Math.min(12, Math.max(6, Math.floor(allImgs.length * 0.08)));
+              for (let i = 0; i < immediateCount && i < allImgs.length; i++) {
+                const imgEl = allImgs[i];
+                if (imgEl.dataset.src && !imgEl.src) {
+                  enqueueImageLoad(imgEl, imgEl.dataset.src);
+                }
+              }
+
+              // Observe remaining images so they load as they approach (large rootMargin keeps wings populated)
+              allImgs.slice(immediateCount).forEach(imgEl => {
+                if (imgEl.dataset && imgEl.dataset.src) {
+                  ensureObserver().observe(imgEl);
                 }
               });
 
               // cross-fade
               requestAnimationFrame(() => {
                 newWall.style.opacity = "1";
-                if (wall) wall.style.transition = "opacity 300ms ease", wall.style.opacity = "0";
+                if (wall) { wall.style.transition = "opacity 300ms ease"; wall.style.opacity = "0"; }
               });
 
-              // after transition remove old wall and update reference
               setTimeout(() => {
-                // remove old wall nodes safely (handle duplicates)
-                if (wall && wall.parentNode) {
-                  try { wall.parentNode.removeChild(wall); } catch (e) { /* ignore */ }
-                }
+                if (wall && wall.parentNode) { try { wall.parentNode.removeChild(wall); } catch (e) {} }
                 newWall.id = "media-wall";
-                // update live reference so future swaps remove the correct element
                 wall = newWall;
-                // expose for debugging/other scripts
                 window.__ARTILLERY_MEDIA_WALL = newWall;
                 setReady(newWall);
                 hideLoader();
                 scheduleInitMarquees();
               }, 450);
             }).catch(() => {
-              // improved fallback: collapse any existing .media-wall nodes and replace content
+              // fallback: replace first .media-wall and remove extras, but do not set all srcs at once
               const existing = container.querySelectorAll('.media-wall');
               if (existing && existing.length) {
-                // replace first, remove extras
                 existing[0].innerHTML = newWall.innerHTML;
                 for (let i = 1; i < existing.length; i++) {
                   try { existing[i].parentNode.removeChild(existing[i]); } catch (e) {}
                 }
-                // ensure images start loading
-                existing[0].querySelectorAll("img.media-img").forEach(imgEl => {
-                  if (!imgEl.src) imgEl.src = imgEl.dataset.src || "";
-                });
+                const replacedImgs = Array.from(existing[0].querySelectorAll("img.media-img"));
+                ensureObserver();
+                const immediateCount = Math.min(12, Math.max(6, Math.floor(replacedImgs.length * 0.08)));
+                for (let i = 0; i < immediateCount && i < replacedImgs.length; i++) {
+                  const imgEl = replacedImgs[i];
+                  if (imgEl.dataset.src && !imgEl.src) enqueueImageLoad(imgEl, imgEl.dataset.src);
+                }
+                replacedImgs.slice(immediateCount).forEach(imgEl => ensureObserver().observe(imgEl));
                 wall = existing[0];
               } else {
                 container.appendChild(newWall);
-                newWall.querySelectorAll("img.media-img").forEach(imgEl => {
-                  if (!imgEl.src) imgEl.src = imgEl.dataset.src || "";
-                });
+                const appendedImgs = Array.from(newWall.querySelectorAll("img.media-img"));
+                ensureObserver();
+                const immediateCount = Math.min(12, Math.max(6, Math.floor(appendedImgs.length * 0.08)));
+                for (let i = 0; i < immediateCount && i < appendedImgs.length; i++) {
+                  const imgEl = appendedImgs[i];
+                  if (imgEl.dataset.src && !imgEl.src) enqueueImageLoad(imgEl, imgEl.dataset.src);
+                }
+                appendedImgs.slice(immediateCount).forEach(imgEl => ensureObserver().observe(imgEl));
                 wall = newWall;
               }
               hideLoader();
@@ -362,11 +422,7 @@
               const data = await res.json();
               const items = (data.items || []).slice(0, limit);
               const sig = items.map(i => (typeof i === "string" ? i : (i.name || i.url)) + ":" + (i.mtime || "")).join("|");
-              if (sig && sig === lastSig) {
-                hideLoader();
-                setReady();
-                return;
-              }
+              if (sig && sig === lastSig) { hideLoader(); setReady(); return; }
               lastSig = sig;
               render(items);
             } catch (e) {
