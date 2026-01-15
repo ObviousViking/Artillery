@@ -509,10 +509,9 @@ https://example.com/image2" required></textarea>
                         errorCount.textContent = data.error_count;
                         
                         // Display error lines
-                        const errorHtml = data.error_lines.map(line => {
-                            const escaped = line.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                            return escaped;
-                        }).join('\n');
+                        const errorHtml = data.error_lines
+                            .map(line => escapeHtml(line))
+                            .join('\n');
                         
                         errorLines.innerHTML = `<pre class="mb-0">${errorHtml}</pre>`;
                     } else {
