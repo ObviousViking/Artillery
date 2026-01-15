@@ -869,6 +869,12 @@ def run_task_background(task_folder: str):
         if os.path.exists(lock_path):
             os.remove(lock_path)
 
+        # ensure we notify mediawall indexer / clients that a task finished
+        try:
+            touch_mediawall_notify()
+        except Exception:
+            pass
+
 
 @app.route("/tasks/<slug>/action", methods=["POST"])
 def task_action(slug):

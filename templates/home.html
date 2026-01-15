@@ -369,7 +369,27 @@
               setTimeout(() => refresh(), 2000);
             }
 
-            setInterval(refresh, pollMs);
+            // poll infrequently as fallback
+            const pollHandle = setInterval(refresh, pollMs);
+
+            // -- New: SSE integration for immediate refresh when task completes
+            if (window.EventSource) {
+              try {
+                const es = new EventSource('/mediawall/events');
+                es.addEventListener('mediawall_update', (ev) => {
+                  // trigger a refresh to preload new images into the wings
+                  // do not cancel fallback polling; refresh handles dedupe via lastSig
+                  refresh();
+                });
+                // if the connection errors, leave fallback polling intact
+                es.addEventListener('error', () => {
+                  // if closed, we keep the polling fallback running
+                });
+                // keep SSE living; no further action required
+              } catch (e) {
+                // ignore - fallback poll will handle updates
+              }
+            }
           });
         })();
         </script>
