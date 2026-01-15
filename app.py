@@ -885,7 +885,8 @@ def task_action(slug):
             if os.path.exists(paused_path):
                 os.remove(paused_path)
                 # Ensure file removal is synced to disk
-                os.sync() if hasattr(os, 'sync') else None
+                if hasattr(os, 'sync'):
+                    os.sync()
                 # Resume process if it's running and was previously stopped
                 if _signal_task(slug, task_folder, signal.SIGCONT):
                     flash("Task unpaused and resumed.", "success")
@@ -899,7 +900,8 @@ def task_action(slug):
                     f.flush()
                     os.fsync(f.fileno())
                 # Ensure creation is synced to disk
-                os.sync() if hasattr(os, 'sync') else None
+                if hasattr(os, 'sync'):
+                    os.sync()
                 # Send SIGSTOP to running process if present
                 if _signal_task(slug, task_folder, signal.SIGSTOP):
                     flash("Task paused (process stopped).", "success")
