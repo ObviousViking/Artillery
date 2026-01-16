@@ -88,6 +88,7 @@ MEDIA_WALL_COPY_LIMIT = int(os.environ.get("MEDIA_WALL_COPY_LIMIT", "100"))
 MEDIA_WALL_AUTO_INGEST_ON_TASK_END = os.environ.get("MEDIA_WALL_AUTO_INGEST_ON_TASK_END", "1") == "1"
 MEDIA_WALL_AUTO_REFRESH_ON_TASK_END = os.environ.get("MEDIA_WALL_AUTO_REFRESH_ON_TASK_END", "1") == "1"
 MEDIA_WALL_MIN_REFRESH_SECONDS = int(os.environ.get("MEDIA_WALL_MIN_REFRESH_SECONDS", "300"))
+MEDIA_WALL_SSE_ENABLED = os.environ.get("MEDIA_WALL_SSE", "0") == "1"
 
 # Media wall notify file for SSE
 MEDIAWALL_NOTIFY_FILE = os.path.join(os.environ.get('CONFIG_DIR', '/config'), 'mediawall.notify')
@@ -316,6 +317,8 @@ def mediawall_list_cache():
 @app.route("/mediawall/events")
 def mediawall_events():
     """SSE endpoint that emits mediawall_update when notify file mtime changes."""
+    if not MEDIA_WALL_SSE_ENABLED:
+        return Response("", status=204)
     def gen():
         last_mtime = 0
         try:
@@ -367,6 +370,7 @@ def home():
         has_media=has_media,
         media_wall_enabled=MEDIA_WALL_ENABLED,
         media_wall_scan_interval=scan_interval,
+        media_wall_sse_enabled=MEDIA_WALL_SSE_ENABLED,
     )
 
 # ---------------------------------------------------------------------
