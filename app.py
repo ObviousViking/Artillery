@@ -377,13 +377,21 @@ def healthz():
 
 @app.route("/mediawall/toggle", methods=["POST"])
 def mediawall_toggle():
-    """Toggle media wall enabled/disabled."""
+    """Toggle media wall enabled/disabled. Returns JSON for AJAX or redirects back for normal form submit."""
     global MEDIA_WALL_ENABLED
     MEDIA_WALL_ENABLED = not MEDIA_WALL_ENABLED
-    status = "enabled" if MEDIA_WALL_ENABLED else "disabled"
     os.environ["MEDIA_WALL_ENABLED"] = "1" if MEDIA_WALL_ENABLED else "0"
+    status = "enabled" if MEDIA_WALL_ENABLED else "disabled"
+    # flash for non-AJAX flows
     flash(f"Media wall {status}", "success")
-    return redirect(url_for("config_page"))
+
+    # If AJAX request, return JSON and do not redirect
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:
+        return jsonify({"success": True, "media_wall_enabled": MEDIA_WALL_ENABLED})
+
+    # fallback redirect to referrer or home
+    ref = request.referrer or url_for("home")
+    return redirect(ref)
 
 # ---------------------------------------------------------------------
 # Cached wall file route (fast: served from /config/media_wall)
