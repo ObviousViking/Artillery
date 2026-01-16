@@ -620,12 +620,11 @@ def config_page():
             except Exception as exc:
                 flash(f"Failed to fetch default config: {exc}", "error")
 
-    # Add current interval to template context so config page can render it
+    # NOTE: do not call get_media_wall_interval() here (DB can block). Client will fetch interval via AJAX.
     return render_template(
         "config.html",
         config_text=config_text,
         config_path=CONFIG_FILE,
-        media_wall_interval=get_media_wall_interval()
     )
 
 # ---------------------------------------------------------------------

@@ -43,8 +43,9 @@
                 <h5 class="card-title">Media wall refresh interval</h5>
                 <p class="text-muted">Set how often (minutes) the media wall can auto-refresh after changes.</p>
                 <div class="d-flex gap-2 align-items-center">
+                    <!-- Removed server-side value="{{ media_wall_interval }}" to avoid blocking render -->
                     <input id="cfg-media-interval" type="number" min="1" class="form-control"
-                        style="width:120px;" value="{{ media_wall_interval }}">
+                        style="width:120px;" value="">
                     <button id="cfg-media-interval-save" class="btn btn-sm btn-primary">Save</button>
                     <span id="cfg-media-interval-msg" class="text-success"
                         style="display:none;margin-left:8px;">Saved</span>
@@ -85,8 +86,17 @@
               btn.disabled = false;
             }
           });
+
+          // populate current interval from server via AJAX (non-blocking)
+          (async () => {
+            try {
+              const res = await fetch('/mediawall/interval', { cache: 'no-store' });
+              const d = await res.json();
+              if (d && typeof d.interval !== 'undefined') input.value = parseInt(d.interval, 10);
+            } catch (e) { /* ignore: leave default empty */ }
+          })();
         });
         </script>
     </div>
 </div>
-{% endblock %} 
+{% endblock %}
