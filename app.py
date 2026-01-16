@@ -189,6 +189,22 @@ def _get_media_wall_scan_cron() -> str:
 def _set_media_wall_scan_cron(expr: str) -> None:
     write_text(MEDIA_WALL_SCAN_CRON_FILE, expr.strip())
 
+def _task_mtimes(task_path: str) -> dict:
+    def _mt(p):
+        try:
+            return os.path.getmtime(p)
+        except Exception:
+            return None
+    return {
+        "name": _mt(os.path.join(task_path, "name.txt")),
+        "cron": _mt(os.path.join(task_path, "cron.txt")),
+        "command": _mt(os.path.join(task_path, "command.txt")),
+        "last_run": _mt(os.path.join(task_path, "last_run.txt")),
+        "urls": _mt(os.path.join(task_path, "urls.txt")),
+        "lock": _mt(os.path.join(task_path, "lock")),
+        "paused": _mt(os.path.join(task_path, "paused")),
+    }
+
 def _cache_name_for_relpath(relpath: str) -> str:
     ext = os.path.splitext(relpath)[1].lower()
     h = hashlib.sha1(relpath.encode("utf-8", errors="ignore")).hexdigest()
