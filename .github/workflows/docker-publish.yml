@@ -12,6 +12,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # ── NEW: This creates a proper Buildx builder with docker-container driver ──
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3   # v3 is current stable as of 2026
+
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
@@ -19,13 +23,9 @@ jobs:
           images: |
             obviousviking/artillery
           tags: |
-            # :latest only on main
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            # :dev on dev branch
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
-            # Always add the branch name (useful for debugging)
             type=ref,event=branch
-            # Add short commit sha (very useful for traceability)
             type=sha,prefix=sha-
 
       - name: Log in to Docker Hub
@@ -35,12 +35,12 @@ jobs:
           password: ${{ secrets.DOCKER_TOKEN }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6        # ← updated to latest major version
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Optional but recommended: better caching
+          # Cache configuration – now works with the proper driver
           cache-from: type=gha
           cache-to: type=gha,mode=max
