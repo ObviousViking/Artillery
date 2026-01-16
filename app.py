@@ -83,20 +83,26 @@ MEDIA_WALL_REFRESH_LOCK = threading.Lock()
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
 
+# Media wall constants
 MEDIA_WALL_ROWS = 3
 MEDIA_WALL_ENABLED = os.environ.get("MEDIA_WALL_ENABLED", "1") == "1"
-MEDIA_WALL_ITEMS_ON_PAGE = int(os.environ.get("MEDIA_WALL_ITEMS", "45"))  # what homepage shows
+MEDIA_WALL_ITEMS_ON_PAGE = int(os.environ.get("MEDIA_WALL_ITEMS", "45"))
 MEDIA_WALL_CACHE_VIDEOS = os.environ.get("MEDIA_WALL_CACHE_VIDEOS", "0") == "1"
-
-# Your requirement: copy up to 100 files into cache after task completion
 MEDIA_WALL_COPY_LIMIT = int(os.environ.get("MEDIA_WALL_COPY_LIMIT", "100"))
-
-# Auto behavior on task completion
 MEDIA_WALL_AUTO_INGEST_ON_TASK_END = os.environ.get("MEDIA_WALL_AUTO_INGEST_ON_TASK_END", "1") == "1"
 MEDIA_WALL_AUTO_REFRESH_ON_TASK_END = os.environ.get("MEDIA_WALL_AUTO_REFRESH_ON_TASK_END", "1") == "1"
-
-# Throttle refresh to avoid copying 100 files for every task finish in rapid succession
 MEDIA_WALL_MIN_REFRESH_SECONDS = int(os.environ.get("MEDIA_WALL_MIN_REFRESH_SECONDS", "300"))
+
+# Media wall notify file for SSE
+MEDIAWALL_NOTIFY_FILE = os.path.join(os.environ.get('CONFIG_DIR', '/config'), 'mediawall.notify')
+
+def touch_mediawall_notify():
+    try:
+        os.makedirs(os.path.dirname(MEDIAWALL_NOTIFY_FILE), exist_ok=True)
+        with open(MEDIAWALL_NOTIFY_FILE, 'a'):
+            os.utime(MEDIAWALL_NOTIFY_FILE, None)
+    except Exception:
+        pass
 
 # ---------------------------------------------------------------------
 # Optional request timing

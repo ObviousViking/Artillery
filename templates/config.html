@@ -19,8 +19,6 @@
                             spellcheck="false">{{ config_text }}</textarea>
                     </div>
 
-                    
-
                     <div class="d-flex flex-wrap gap-2">
                         <button type="submit" name="action" value="save" class="btn btn-danger">
                             Save config
@@ -33,14 +31,15 @@
                     <div class="form-text mt-2">
                         “Load default config from GitHub” downloads the example
                         <code>gallery-dl.conf</code> from the official gallery-dl repository
-                        and overwrites the current file (scan interval is left unchanged).
+                        and overwrites the current file.
                     </div>
                 </form>
             </div>
-        </div>    </div>
+        </div>
+    </div>
 </div>
 
-<!-- Single Media wall controls (deduplicated) -->
+<!-- Single Media wall controls -->
 <div class="row mt-4">
     <div class="col-12">
         <div class="card shadow-sm border-secondary">
@@ -57,85 +56,15 @@
                             {% if media_wall_enabled %}Media wall enabled{% else %}Media wall disabled{% endif %}
                         </button>
                     </form>
-                    {% if media_wall_enabled %}
-                    <form method="post" action="{{ url_for('mediawall_seed') }}" style="display: inline;">
-                        <button type="submit" class="btn btn-info">
-                            Refresh media wall
-                        </button>
-                    </form>
-                    {% endif %}
                 </div>
 
                 <div class="form-text mt-3">
-                    Toggle to enable/disable the media wall. When enabled, the <strong>Refresh media wall</strong>
-                    button will rescan task logs (only the last 100 lines now) and cache up to 100 media files for display.
+                    Toggle to enable/disable the media wall. When enabled, images in the
+                    <code>/config/media_wall</code> folder will be displayed on the home page.
                 </div>
             </div>
-        </div>    </div>
+        </div>
+    </div>
 </div>
-
-<script>
-(function () {
-  const btnToggle = document.getElementById('mw-toggle');
-  const btnRefresh = document.getElementById('mw-refresh');
-  const status = document.getElementById('mw-status');
-
-  if (!btnToggle || !btnRefresh) return;
-
-  async function postJson(url) {
-    const res = await fetch(url, { method: 'POST', headers: { 'Accept': 'application/json' } });
-    if (!res.ok) throw new Error('request failed');
-    return res.json().catch(() => ({}));
-  }
-
-  btnToggle.addEventListener('click', async () => {
-    btnToggle.disabled = true;
-    try {
-      const data = await postJson('/mediawall/toggle');
-      const enabled = ('enabled' in data) ? !!data.enabled : null;
-      if (enabled === true) {
-        btnToggle.classList.remove('btn-outline-secondary');
-        btnToggle.classList.add('btn-success');
-        btnToggle.textContent = 'Media wall enabled';
-        status.textContent = 'Enabled';
-      } else if (enabled === false) {
-        btnToggle.classList.remove('btn-success');
-        btnToggle.classList.add('btn-outline-secondary');
-        btnToggle.textContent = 'Enable media wall';
-        status.textContent = 'Disabled';
-      } else {
-        // If server didn't return JSON, toggle label locally
-        const isNow = btnToggle.classList.contains('btn-success') ? false : true;
-        btnToggle.classList.toggle('btn-success', isNow);
-        btnToggle.classList.toggle('btn-outline-secondary', !isNow);
-        btnToggle.textContent = isNow ? 'Media wall enabled' : 'Enable media wall';
-        status.textContent = isNow ? 'Enabled' : 'Disabled';
-      }
-    } catch (e) {
-      // silent failure, small visual hint
-      status.textContent = 'Action failed';
-    } finally {
-      btnToggle.disabled = false;
-    }
-  });
-
-  btnRefresh.addEventListener('click', async () => {
-    btnRefresh.disabled = true;
-    const prevText = btnRefresh.textContent;
-    btnRefresh.textContent = 'Refreshing...';
-    try {
-      await postJson('/mediawall/refresh');
-      // small success hint
-      btnRefresh.textContent = 'Refresh queued';
-      setTimeout(() => btnRefresh.textContent = prevText, 1500);
-    } catch (e) {
-      btnRefresh.textContent = 'Refresh failed';
-      setTimeout(() => btnRefresh.textContent = prevText, 1500);
-    } finally {
-      btnRefresh.disabled = false;
-    }
-  });
-})();
-</script>
 
 {% endblock %}
