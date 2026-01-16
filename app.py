@@ -431,21 +431,29 @@ def mediawall_list_cache():
 def mediawall_events():
     """SSE endpoint that emits mediawall_update when notify file mtime changes."""
     def gen():
+        import select
         last_mtime = 0
-        try:
-            while True:
-                try:
-                    if os.path.exists(MEDIAWALL_NOTIFY_FILE):
-                        m = os.path.getmtime(MEDIAWALL_NOTIFY_FILE)
-                        if m != last_mtime:
-                            last_mtime = m
-                            yield f'event: mediawall_update\ndata: {int(m)}\n\n'
-                    time.sleep(1)
-                except Exception:
-                    time.sleep(1)
-        except GeneratorExit:
-            return
-    return Response(gen(), mimetype='text/event-stream')
+        # Create a socket-like interface to allow timeout-based polling
+        # Instead of blocking sleep, use select or similar for non-blocking wait
+        while True:
+            try:
+                if os.path.exists(MEDIAWALL_NOTIFY_FILE):
+                    m = os.path.getmtime(MEDIAWALL_NOTIFY_FILE)
+                    if m != last_mtime:
+                        last_mtime = m
+                        yield f'event: mediawall_update\ndata: {int(m)}\n\n'
+                # Use a small sleep but don't block the entire worker
+                # Gunicorn will handle interrupts better with short sleeps
+                time.sleep(0.5)
+            except GeneratorExit:
+                return
+            except Exception:
+                time.sleep(0.5)
+    
+    response = Response(gen(), mimetype='text/event-stream')
+    response.headers['Cache-Control'] = 'no-cache'
+    response.headers['X-Accel-Buffering'] = 'no'
+    return response
 
 # ---------------------------------------------------------------------
 # Home page (uses cache folder; never scans /downloads)

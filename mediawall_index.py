@@ -107,6 +107,7 @@ def _ingest_task_log_conn(
     log_path: str,
     downloads_root: str,
     full_rescan: bool,
+    last_lines: int = 100,
 ) -> Tuple[int, int]:
     start_offset = 0
     if not full_rescan:
@@ -145,12 +146,18 @@ def _ingest_task_log_conn(
         return (0, 0)
 
     text = data.decode("utf-8", errors="ignore")
+    
+    # Only process last N lines to avoid scanning millions of lines
+    lines = text.splitlines()
+    if len(lines) > last_lines:
+        lines = lines[-last_lines:]
+    
     now = _utcnow()
 
     matched = 0
     inserted = 0
 
-    for line in text.splitlines():
+    for line in lines:
         rel = _extract_relpath_from_log_line(line, downloads_root)
         if not rel:
             continue

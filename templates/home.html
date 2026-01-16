@@ -132,7 +132,7 @@
     height: 100%;
     overflow: hidden;
     border-radius: 4px;
-    background: #e8e8e8;
+    background: transparent;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -142,7 +142,7 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
-    background: #f0f0f0;
+    background: transparent;
   }
 
   .media-item a {
@@ -269,8 +269,10 @@
           newStrip.className = "media-strip";
           newStrip.id = `strip-${r}`;
 
-          // add items 4x to ensure no gaps in infinite scroll
-          for (let dup = 0; dup < 4; dup++) {
+          // add items 8x to ensure no gaps in infinite scroll, especially for small datasets
+          // with only a few images per row, duplication keeps scroll seamless
+          const duplications = Math.max(8, Math.ceil(1200 / (rows[r].length * 200 || 1)));
+          for (let dup = 0; dup < duplications; dup++) {
             newStrip.appendChild(createItemsDOM(rows[r]).cloneNode(true));
           }
 
@@ -294,7 +296,8 @@
           const newStrip = document.createElement("div");
           newStrip.className = "media-strip";
           newStrip.id = `strip-${r}`;
-          for (let dup = 0; dup < 4; dup++) {
+          const duplications = Math.max(8, Math.ceil(1200 / (rows[r].length * 200 || 1)));
+          for (let dup = 0; dup < duplications; dup++) {
             newStrip.appendChild(createItemsDOM(rows[r]).cloneNode(true));
           }
           if (oldStrip && oldStrip.parentNode) {
