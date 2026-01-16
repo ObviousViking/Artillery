@@ -20,7 +20,7 @@ from flask import (
     Flask, render_template, request,
     redirect, url_for, flash, send_from_directory, Response
 )
-from flask import send_file
+from flask import send_file, jsonify, url_for
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
@@ -74,7 +74,6 @@ MEDIA_DB = os.path.join(CONFIG_ROOT, "mediawall.sqlite")
 MEDIA_WALL_DIR = os.path.join(CONFIG_ROOT, "media_wall")
 
 from werkzeug.exceptions import NotFound
-from flask import jsonify
 
 MEDIA_WALL_DIR_PREV = os.path.join(CONFIG_ROOT, "media_wall_prev")
 MEDIA_WALL_DIR_NEXT = os.path.join(CONFIG_ROOT, "media_wall_next")
@@ -643,6 +642,42 @@ def mediawall_cache_index():
 
 
 # ---------------------------------------------------------------------
+# New: list files directly from config/media_wall to avoid SQLite dependency
+@app.route('/mediawall/api/list_cache')
+def mediawall_list_cache():
+    """
+    Return JSON: { items: [{ name, url, mtime }, ...] }
+    Reads files from CONFIG_DIR/media_wall and exposes via url_for('wall')
+    """
+    config_dir = os.environ.get('CONFIG_DIR', '/config')
+    media_dir = os.path.join(config_dir, 'media_wall')
+    items = []
+    try:
+        allowed_img_ext = {'jpg','jpeg','png','gif','webp'}
+        allowed_vid_ext = {'mp4','webm','mkv'}
+        cache_videos = os.environ.get('MEDIA_WALL_CACHE_VIDEOS', '0') in ('1','true','True')
+        if os.path.isdir(media_dir):
+            for fname in sorted(os.listdir(media_dir), reverse=True):
+                fpath = os.path.join(media_dir, fname)
+                if not os.path.isfile(fpath):
+                    continue
+                ext = (fname.rsplit('.',1)[-1] or "").lower()
+                if ext in allowed_img_ext or (cache_videos and ext in allowed_vid_ext):
+                    try:
+                        mtime = int(os.path.getmtime(fpath))
+                    except Exception:
+                        mtime = 0
+                    try:
+                        file_url = url_for('wall', filename=fname)
+                    except Exception:
+                        # fallback to manual path if route not present
+                        file_url = '/wall/' + fname
+                    items.append({'name': fname, 'url': file_url, 'mtime': mtime})
+    except Exception:
+        pass
+    return jsonify({'items': items})
+
+# ---------------------------------------------------------------------
 # Home page (uses cache folder; never scans /downloads)
 # ---------------------------------------------------------------------
 
@@ -1006,26 +1041,3 @@ def download_task_logs(slug):
         return jsonify({"error": "No logs yet for this task"}), 404
 
     try:
-        # Prefer modern Flask's download_name, fallback to attachment_filename
-        try:
-            return send_file(logs_path, as_attachment=True, download_name=f"{slug}-logs.txt")
-        except TypeError:
-            return send_file(logs_path, as_attachment=True, attachment_filename=f"{slug}-logs.txt")
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
-
-# ---------------------------------------------------------------------
-# Original media route (serves from /downloads)
-# ---------------------------------------------------------------------
-
-@app.route("/media/<path:subpath>")
-def media_file(subpath):
-    ensure_data_dirs(ensure_downloads=True)
-    return send_from_directory(DOWNLOADS_ROOT, subpath)
-
-# ---------------------------------------------------------------------
-# Main (dev only)
-# ---------------------------------------------------------------------
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)

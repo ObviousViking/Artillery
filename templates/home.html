@@ -417,13 +417,21 @@
 
           async function refresh() {
             try {
-              const res = await fetch("/mediawall/api/cache_index", { cache: "no-store" });
+              // use direct folder listing (no sqlite) for faster responses
+              const res = await fetch("/mediawall/api/list_cache", { cache: "no-store" });
               if (!res.ok) return;
+
               const data = await res.json();
+              // items: [{name,url,mtime}, ...]
               const items = (data.items || []).slice(0, limit);
               const sig = items.map(i => (typeof i === "string" ? i : (i.name || i.url)) + ":" + (i.mtime || "")).join("|");
-              if (sig && sig === lastSig) { hideLoader(); setReady(); return; }
+              if (sig && sig === lastSig) {
+                hideLoader();
+                setReady();
+                return;
+              }
               lastSig = sig;
+
               render(items);
             } catch (e) {
               // silent fail
