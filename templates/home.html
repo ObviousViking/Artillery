@@ -29,7 +29,7 @@
 </div>
 
 {% if media_wall_enabled %}
-<!-- Media wall with Swiper -->
+<!-- Media wall with Swiper Grid -->
 <div class="row">
   <div class="col-12">
     <div class="card shadow-sm">
@@ -44,7 +44,7 @@
           No media cached yet. Run a task, then refresh the media wall.
         </div>
 
-        <!-- Swiper carousel -->
+        <!-- Swiper grid carousel -->
         <div class="swiper" id="media-swiper" style="display:none;">
           <div class="swiper-wrapper" id="media-swiper-wrapper">
             <!-- slides populated by JS -->
@@ -54,6 +54,10 @@
           <div class="swiper-button-prev"></div>
         </div>
 
+        <p class="text-center small text-muted mt-2" style="font-size: 0.75rem;">
+          Powered by <a href="https://swiperjs.com/" target="_blank" style="color: inherit;">Swiper</a>
+        </p>
+
       </div>
     </div>
   </div>
@@ -62,18 +66,34 @@
 <style>
   #media-swiper {
     width: 100%;
-    height: 400px;
+    height: 500px;
+  }
+  .swiper-wrapper {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+    padding: 10px;
   }
   .swiper-slide {
     display: flex;
     justify-content: center;
     align-items: center;
     overflow: hidden;
+    border-radius: 4px;
+    background: #f0f0f0;
+    aspect-ratio: 1;
   }
   .swiper-slide img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .swiper-slide a {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
   }
 </style>
 
@@ -114,7 +134,7 @@
       }
       lastSig = sig;
 
-      // build slides
+      // build grid slides (all items in a single slide for grid layout)
       wrapper.innerHTML = "";
       items.forEach(item => {
         const url = item.url || item;
@@ -132,7 +152,6 @@
         const a = document.createElement("a");
         a.href = src;
         a.target = "_blank";
-        a.style.display = "contents";
         a.appendChild(img);
 
         slide.appendChild(a);
@@ -142,16 +161,18 @@
       setEmpty(false);
       swiperEl.style.display = "";
 
-      // init or reinit swiper
+      // init or reinit swiper (grid layout with continuous scroll)
       if (!swiper) {
         swiper = new Swiper("#media-swiper", {
           loop: true,
-          autoplay: { delay: 5000, disableOnInteraction: false },
+          autoplay: { delay: 3000, disableOnInteraction: false },
           navigation: {
             nextEl: ".swiper-button-next",
             prevEl: ".swiper-button-prev"
           },
-          lazy: { loadPrevNext: true, loadPrevNextAmount: 2 }
+          spaceBetween: 10,
+          slidesPerView: 1,
+          lazy: { loadPrevNext: true }
         });
       } else {
         swiper.update();
