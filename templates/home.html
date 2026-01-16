@@ -35,7 +35,7 @@
 <div class="row">
   <div class="col-12">
     <div class="card shadow-sm"
-         data-media-wall-scan-interval="{{ media_wall_scan_interval|default(60) }}"
+         data-media-wall-poll-interval="{{ media_wall_poll_interval|default(60) }}"
          data-media-wall-sse="{{ '1' if media_wall_sse_enabled else '0' }}">
       <div class="card-body">
         <h5 class="card-title mb-3">Media wall</h5>
@@ -339,10 +339,10 @@
     refresh();
 
     const card = container?.closest(".card");
-    const scanIntervalAttr = card?.getAttribute("data-media-wall-scan-interval");
+    const pollIntervalAttr = card?.getAttribute("data-media-wall-poll-interval");
     const sseEnabledAttr = card?.getAttribute("data-media-wall-sse") === "1";
-    const scanIntervalSec = Math.max(1, parseInt(scanIntervalAttr || "60", 10));
-    refreshTimer = setInterval(refresh, scanIntervalSec * 1000);
+    const pollIntervalSec = Math.max(1, parseInt(pollIntervalAttr || "60", 10));
+    refreshTimer = setInterval(refresh, pollIntervalSec * 1000);
 
     if (sseEnabledAttr && window.EventSource) {
       try {

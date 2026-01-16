@@ -12,7 +12,9 @@ import time
 import logging
 import signal
 import faulthandler
+import hashlib
 from typing import Optional, List, Tuple
+from croniter import croniter
 
 from flask import (
     Flask, render_template, request,
@@ -69,7 +71,7 @@ MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 # ---------------------------------------------------------------------
 
 MEDIA_WALL_DIR = os.path.join(CONFIG_ROOT, "media_wall")
-MEDIA_WALL_SCAN_INTERVAL_FILE = os.path.join(CONFIG_ROOT, "mediawall_scan_interval.txt")
+MEDIA_WALL_SCAN_CRON_FILE = os.path.join(CONFIG_ROOT, "mediawall_scan_cron.txt")
 MEDIA_WALL_ENABLED_FILE = os.path.join(CONFIG_ROOT, "mediawall_enabled.txt")
 
 from werkzeug.exceptions import NotFound
@@ -90,6 +92,8 @@ MEDIA_WALL_AUTO_INGEST_ON_TASK_END = os.environ.get("MEDIA_WALL_AUTO_INGEST_ON_T
 MEDIA_WALL_AUTO_REFRESH_ON_TASK_END = os.environ.get("MEDIA_WALL_AUTO_REFRESH_ON_TASK_END", "1") == "1"
 MEDIA_WALL_MIN_REFRESH_SECONDS = int(os.environ.get("MEDIA_WALL_MIN_REFRESH_SECONDS", "300"))
 MEDIA_WALL_SSE_ENABLED = os.environ.get("MEDIA_WALL_SSE", "0") == "1"
+MEDIA_WALL_SCAN_CRON_DEFAULT = os.environ.get("MEDIA_WALL_SCAN_CRON", "*/1 * * * *")
+MEDIA_WALL_POLL_INTERVAL = int(os.environ.get("MEDIA_WALL_POLL_INTERVAL", "60"))
 
 # Media wall notify file for SSE
 MEDIAWALL_NOTIFY_FILE = os.path.join(os.environ.get('CONFIG_DIR', '/config'), 'mediawall.notify')
@@ -177,39 +181,111 @@ def _get_media_wall_enabled() -> bool:
 def _set_media_wall_enabled(value: bool) -> None:
     write_text(MEDIA_WALL_ENABLED_FILE, "1" if value else "0")
 
-def _get_media_wall_scan_interval() -> int:
-    default = int(os.environ.get("MEDIA_WALL_SCAN_INTERVAL", "60"))
-    raw = read_text(MEDIA_WALL_SCAN_INTERVAL_FILE)
-    try:
-        value = int(raw) if raw is not None else default
-        return value if value >= 1 else default
-    except Exception:
-        return default
+def _get_media_wall_scan_cron() -> str:
+    raw = read_text(MEDIA_WALL_SCAN_CRON_FILE)
+    expr = (raw or MEDIA_WALL_SCAN_CRON_DEFAULT).strip()
+    return expr if croniter.is_valid(expr) else MEDIA_WALL_SCAN_CRON_DEFAULT
 
-def _set_media_wall_scan_interval(value: int) -> None:
-    write_text(MEDIA_WALL_SCAN_INTERVAL_FILE, str(int(value)))
+def _set_media_wall_scan_cron(expr: str) -> None:
+    write_text(MEDIA_WALL_SCAN_CRON_FILE, expr.strip())
 
-def _task_mtimes(task_path: str) -> dict:
-    def _mt(p):
+def _cache_name_for_relpath(relpath: str) -> str:
+    ext = os.path.splitext(relpath)[1].lower()
+    h = hashlib.sha1(relpath.encode("utf-8", errors="ignore")).hexdigest()
+    return f"{h}{ext}"
+
+def _clean_dir(path: str):
+    os.makedirs(path, exist_ok=True)
+    for fn in os.listdir(path):
         try:
-            return os.path.getmtime(p)
+            os.remove(os.path.join(path, fn))
         except Exception:
-            return None
-    return {
-        "name": _mt(os.path.join(task_path, "name.txt")),
-        "cron": _mt(os.path.join(task_path, "cron.txt")),
-        "command": _mt(os.path.join(task_path, "command.txt")),
-        "last_run": _mt(os.path.join(task_path, "last_run.txt")),
-        "urls": _mt(os.path.join(task_path, "urls.txt")),
-        "lock": _mt(os.path.join(task_path, "lock")),
-        "paused": _mt(os.path.join(task_path, "paused")),
-    }
+            pass
 
-# In-memory cache to reduce repeated disk reads on /tasks
-_TASK_CACHE = {}
+def _refresh_media_wall_cache_from_downloads() -> dict:
+    ensure_data_dirs(ensure_downloads=True)
+
+    allowed = set(IMAGE_EXTS)
+    if MEDIA_WALL_CACHE_VIDEOS:
+        allowed |= set(VIDEO_EXTS)
+
+    with MEDIA_WALL_REFRESH_LOCK:
+        items = []
+        for root, _dirs, files in os.walk(DOWNLOADS_ROOT):
+            for fn in files:
+                ext = os.path.splitext(fn)[1].lower()
+                if ext not in allowed:
+                    continue
+                path = os.path.join(root, fn)
+                try:
+                    mtime = os.path.getmtime(path)
+                except Exception:
+                    continue
+                rel = os.path.relpath(path, DOWNLOADS_ROOT)
+                items.append((mtime, rel))
+
+        if not items:
+            return {"picked": 0, "copied": 0}
+
+        items.sort(key=lambda x: x[0], reverse=True)
+        picked = items[:MEDIA_WALL_COPY_LIMIT]
+
+        _clean_dir(MEDIA_WALL_DIR)
+
+        copied = 0
+        for _mtime, rel in picked:
+            src = os.path.join(DOWNLOADS_ROOT, rel)
+            dst = os.path.join(MEDIA_WALL_DIR, _cache_name_for_relpath(rel))
+            tmp = dst + ".tmp"
+            try:
+                shutil.copy2(src, tmp)
+                os.replace(tmp, dst)
+                copied += 1
+            except Exception:
+                try:
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
+                except Exception:
+                    pass
+
+        return {"picked": len(picked), "copied": copied}
+
+_MEDIA_WALL_SCAN_THREAD_STARTED = False
+
+def _media_wall_scan_worker():
+    last_minute = None
+
+    # one-time warmup if enabled and cache empty
+    if MEDIA_WALL_ENABLED and not os.listdir(MEDIA_WALL_DIR):
+        _refresh_media_wall_cache_from_downloads()
+        touch_mediawall_notify()
+
+    while True:
+        if not MEDIA_WALL_ENABLED:
+            time.sleep(2)
+            continue
+
+        expr = _get_media_wall_scan_cron()
+        now = dt.datetime.now()
+        minute_key = now.strftime("%Y-%m-%d %H:%M")
+
+        if croniter.match(expr, now) and minute_key != last_minute:
+            last_minute = minute_key
+            _refresh_media_wall_cache_from_downloads()
+            touch_mediawall_notify()
+
+        time.sleep(5)
+
+def _start_media_wall_scan_thread():
+    global _MEDIA_WALL_SCAN_THREAD_STARTED
+    if _MEDIA_WALL_SCAN_THREAD_STARTED:
+        return
+    _MEDIA_WALL_SCAN_THREAD_STARTED = True
+    threading.Thread(target=_media_wall_scan_worker, daemon=True).start()
 
 # Initialize persisted media wall state
 MEDIA_WALL_ENABLED = _get_media_wall_enabled()
+_start_media_wall_scan_thread()
 
 def load_tasks():
     ensure_data_dirs(ensure_downloads=False)
@@ -281,6 +357,8 @@ def mediawall_toggle():
     global MEDIA_WALL_ENABLED
     MEDIA_WALL_ENABLED = not MEDIA_WALL_ENABLED
     _set_media_wall_enabled(MEDIA_WALL_ENABLED)
+    if MEDIA_WALL_ENABLED:
+        _start_media_wall_scan_thread()
     status = "enabled" if MEDIA_WALL_ENABLED else "disabled"
     os.environ["MEDIA_WALL_ENABLED"] = "1" if MEDIA_WALL_ENABLED else "0"
     flash(f"Media wall {status}", "success")
@@ -357,7 +435,6 @@ def mediawall_events():
 @app.route("/")
 def home():
     tasks = load_tasks()
-    scan_interval = _get_media_wall_scan_interval()
 
     urls = []
     has_media = False
@@ -383,7 +460,8 @@ def home():
         recent_rows=recent_rows,
         has_media=has_media,
         media_wall_enabled=MEDIA_WALL_ENABLED,
-        media_wall_scan_interval=scan_interval,
+        media_wall_scan_cron=_get_media_wall_scan_cron(),
+        media_wall_poll_interval=MEDIA_WALL_POLL_INTERVAL,
         media_wall_sse_enabled=MEDIA_WALL_SSE_ENABLED,
     )
 
@@ -472,7 +550,7 @@ def tasks():
 def config_page():
     ensure_data_dirs(ensure_downloads=False)
     config_text = read_text(CONFIG_FILE) or ""
-    scan_interval = _get_media_wall_scan_interval()
+    scan_cron = _get_media_wall_scan_cron()
 
     if request.method == "POST":
         action = request.form.get("action")
@@ -490,23 +568,20 @@ def config_page():
             except Exception as exc:
                 flash(f"Failed to fetch default config: {exc}", "error")
         elif action == "mediawall_settings":
-            raw = request.form.get("media_wall_scan_interval", "").strip()
-            try:
-                value = int(raw)
-                if value < 1:
-                    raise ValueError("must be >= 1")
-                _set_media_wall_scan_interval(value)
-                scan_interval = value
-                flash("Media wall settings saved.", "success")
-            except Exception:
-                flash("Invalid scan interval. Use a number >= 1.", "error")
+            raw = request.form.get("media_wall_scan_cron", "").strip()
+            if croniter.is_valid(raw):
+                _set_media_wall_scan_cron(raw)
+                scan_cron = raw
+                flash("Media wall schedule saved.", "success")
+            else:
+                flash("Invalid cron schedule.", "error")
 
     return render_template(
         "config.html",
         config_text=config_text,
         config_path=CONFIG_FILE,
         media_wall_enabled=MEDIA_WALL_ENABLED,
-        media_wall_scan_interval=scan_interval,
+        media_wall_scan_cron=scan_cron,
     )
 
 # ---------------------------------------------------------------------

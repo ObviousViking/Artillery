@@ -62,16 +62,20 @@
                 <form method="post" action="{{ url_for('config_page') }}" class="row g-2 align-items-center">
                     <input type="hidden" name="action" value="mediawall_settings">
                     <div class="col-auto">
-                        <label class="form-label mb-0" for="mediaWallScanInterval">Scan interval (seconds)</label>
+                        <label class="form-label mb-0" for="mediaWallScanCron">Scan schedule (cron)</label>
                     </div>
                     <div class="col-auto">
-                        <input type="number" class="form-control form-control-sm" id="mediaWallScanInterval"
-                            name="media_wall_scan_interval" min="1" value="{{ media_wall_scan_interval }}">
+                        <input type="text" class="form-control form-control-sm" id="mediaWallScanCron"
+                            name="media_wall_scan_cron" value="{{ media_wall_scan_cron }}">
                     </div>
                     <div class="col-auto">
                         <button type="submit" class="btn btn-sm btn-outline-light">Save</button>
                     </div>
                 </form>
+
+                <div class="form-text mt-2">
+                    Example: <code>*/1 * * * *</code> (every minute), <code>*/5 * * * *</code> (every 5 minutes)
+                </div>
 
                 <div class="form-text mt-3">
                     Toggle to enable/disable the media wall. When enabled, images in the
