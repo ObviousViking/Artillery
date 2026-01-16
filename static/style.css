@@ -262,3 +262,41 @@ code {
     border-color: #f97316;
     box-shadow: 0 0 0 0.2rem rgba(249, 115, 22, 0.25);
 }
+
+/* Media wall loading indicator */
+.media-wall-loading {
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    min-height: 400px;
+    gap: 1rem;
+    color: #e5e7eb;
+}
+
+.media-wall-loading p {
+    margin: 0;
+    font-size: 1rem;
+    color: #e5e7eb;
+    text-align: center;
+}
+
+/* Spinner animation */
+.loading-spinner {
+    width: 60px;
+    height: 60px;
+    border: 4px solid #374151;
+    border-top-color: #f97316;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
