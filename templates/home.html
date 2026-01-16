@@ -29,27 +29,25 @@
 </div>
 
 {% if media_wall_enabled %}
-<!-- Media wall - vertical infinite scroll grid -->
 <div class="row">
   <div class="col-12">
     <div class="card shadow-sm">
-      <div class="card-body">
-        <h5 class="card-title mb-3">Media wall</h5>
+      <div class="card-body" style="position:relative;"> <!-- made positioned so loader overlay works -->
 
-        <div id="media-wall-loader" class="media-wall-loading" style="display: none;">
-          <div class="loading-spinner"></div>
-          <p class="mt-3">Preparing media wall...</p>
+        <!-- moved loader inside the container so it overlays the wall -->
+        <div id="media-wall-container" class="media-wall-scroll-container" style="display:none;">
+          <div id="media-wall-loader" class="media-wall-loading" style="display: none;">
+            <div class="loading-spinner"></div>
+            <p class="mt-3">Preparing media wall...</p>
+          </div>
+
+          <div id="media-wall-scroll" class="media-wall-scroll">
+            <!-- Images will be populated here -->
+          </div>
         </div>
 
         <div id="media-wall-empty" class="text-muted mb-0" {% if has_media %}style="display:none"{% endif %}>
           No media cached yet. Run a task, then refresh the media wall.
-        </div>
-
-        <!-- Vertical scroll container -->
-        <div id="media-wall-container" class="media-wall-scroll-container" style="display:none;">
-          <div id="media-wall-scroll" class="media-wall-scroll">
-            <!-- Images will be populated here -->
-          </div>
         </div>
 
       </div>
@@ -58,6 +56,37 @@
 </div>
 
 <style>
+/* loader overlay inside the container */
+.media-wall-loading {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  display: none;
+  align-items: center;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(0,0,0,0.6);
+  padding: 18px;
+  border-radius: 8px;
+  color: #ddd;
+  min-width: 220px;
+  text-align: center;
+}
+.media-wall-loading .loading-spinner {
+  width: 36px;
+  height: 36px;
+  border: 4px solid rgba(255,255,255,0.12);
+  border-top-color: rgba(255,255,255,0.9);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ensure the container is positioned so overlay aligns */
+.media-wall-scroll-container { position: relative; }
+
 /* Media wall container - fixed height with vertical scroll */
 .media-wall-scroll-container {
   width: 100%;
@@ -130,11 +159,21 @@
   const container = document.getElementById("media-wall-container");
   const scrollWrapperId = "media-wall-scroll";
   let lastSig = "";
-  let rafHandle = null;
+  // use a property on window to store raf id so footer code can stop it
+  window.__artillery_mediawall_raf = null;
 
-  function showLoader() { if (loader) loader.style.display = "flex"; }
-  function hideLoader() { if (loader) loader.style.display = "none"; }
-  function setEmpty(isEmpty) { if (emptyMsg) emptyMsg.style.display = isEmpty ? "" : "none"; }
+  function showLoader() {
+    if (emptyMsg) emptyMsg.style.display = "none";
+    if (loader) loader.style.display = "flex";
+  }
+  function hideLoader() {
+    if (loader) loader.style.display = "none";
+  }
+  function setEmpty(isEmpty, text) {
+    if (!emptyMsg) return;
+    emptyMsg.textContent = text || "No media cached yet. Run a task, then refresh the media wall.";
+    emptyMsg.style.display = isEmpty ? "" : "none";
+  }
 
   function createItemsDOM(items) {
     const fragment = document.createDocumentFragment();
@@ -163,19 +202,39 @@
     return fragment;
   }
 
-  function stopAnimation(el) {
-    if (rafHandle) {
-      cancelAnimationFrame(rafHandle);
-      rafHandle = null;
+  function cancelWallAnimation() {
+    if (window.__artillery_mediawall_raf) {
+      cancelAnimationFrame(window.__artillery_mediawall_raf);
+      window.__artillery_mediawall_raf = null;
     }
-    if (el && el._mw_running) {
+    const el = document.getElementById(scrollWrapperId);
+    if (el) {
+      el.style.transform = "";
       el._mw_running = false;
     }
   }
 
-  function enableContinuousScroll(wallEl) {
-    stopAnimation(wallEl);
+  // expose helpers for footer toggle to control the UI
+  window.__artillery_mediawall_disable_ui = function() {
+    cancelWallAnimation();
+    const wall = document.getElementById(scrollWrapperId);
+    if (wall && wall.parentNode) wall.parentNode.removeChild(wall);
+    if (container) container.style.display = "none";
+    setEmpty(true, "Media wall is disabled.");
+    // disable refresh button if present
+    const rb = document.getElementById('footer-refresh-btn');
+    if (rb) rb.disabled = true;
+  };
 
+  window.__artillery_mediawall_enable_ui = function() {
+    // enable refresh button and trigger a refresh
+    const rb = document.getElementById('footer-refresh-btn');
+    if (rb) rb.disabled = false;
+    if (window.__artillery_mediawall_refresh) window.__artillery_mediawall_refresh();
+  };
+
+  function enableContinuousScroll(wallEl) {
+    // start rAF loop and store id on window so other code can cancel
     const DURATION = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--mediawall-scroll-duration-ms')) || 120000;
     if (!localStorage.getItem('mediawall_start_ts')) {
       localStorage.setItem('mediawall_start_ts', Date.now().toString());
@@ -187,23 +246,20 @@
       const elapsed = (Date.now() - start) % DURATION;
       const progress = elapsed / DURATION;
 
-      // compute half-height because we duplicate the items
       const totalHeight = wallEl.scrollHeight || 1;
-      const half = Math.floor(totalHeight / 2);
+      const half = Math.floor(totalHeight / 2) || 1;
       const y = -Math.round(progress * half);
 
       wallEl.style.transform = `translateY(${y}px)`;
-      rafHandle = requestAnimationFrame(frame);
+      window.__artillery_mediawall_raf = requestAnimationFrame(frame);
     }
 
     wallEl._mw_running = true;
     frame();
 
-    // on visibility change ensure position is updated immediately (so when returning it jumps to correct spot)
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) {
-        // nothing special; the rAF will update; ensure we have a valid start_ts
-        if (!localStorage.getItem('mediawall_start_ts')) localStorage.setItem('mediawall_start_ts', Date.now().toString());
+      if (!document.hidden && !localStorage.getItem('mediawall_start_ts')) {
+        localStorage.setItem('mediawall_start_ts', Date.now().toString());
       }
     }, { once: false });
   }
@@ -230,7 +286,6 @@
       }
       lastSig = sig;
 
-      // preload small sample
       const preload = [];
       for (let i = 0; i < Math.min(6, items.length); i++) {
         preload.push(new Promise(res => {
@@ -245,7 +300,6 @@
       }
       await Promise.all(preload);
 
-      // build new wall and duplicate for seamless loop
       const newWall = document.createElement("div");
       newWall.id = scrollWrapperId;
       newWall.className = "media-wall-scroll";
@@ -257,7 +311,7 @@
 
       const old = document.getElementById(scrollWrapperId);
       if (old && old.parentNode) {
-        stopAnimation(old);
+        cancelWallAnimation();
         old.parentNode.replaceChild(newWall, old);
       } else if (container) {
         container.querySelector('.media-wall-scroll')?.remove();
@@ -275,29 +329,25 @@
     }
   }
 
-  // UI: toggle + refresh + interval save in footer (wired below)
+  // wire up initial behavior and SSE
   document.addEventListener("DOMContentLoaded", () => {
-    // initial load: only perform an auto-refresh once per browser session
     const autoKey = 'mediawall_auto_refreshed';
     if (!localStorage.getItem(autoKey)) {
       refresh();
       localStorage.setItem(autoKey, '1');
     } else {
-      // load current cache without forcing server-side indexing
       refresh(false);
     }
 
-    // SSE updates trigger refresh
     if (window.EventSource) {
       try {
         const es = new EventSource('/mediawall/events');
         es.addEventListener('mediawall_update', () => { refresh(); });
-        es.addEventListener('error', () => { /* ignore */ });
       } catch (e) { /* ignore */ }
     }
   });
 
-  // expose refresh to external footer controls
+  // expose a client-triggered refresh (used by footer)
   window.__artillery_mediawall_refresh = () => refresh(true);
 
 })();
@@ -305,7 +355,7 @@
 
 {% endif %}
 
-<!-- Footer bar (replace previous footer) -->
+<!-- Footer bar -->
 <footer class="footer-bar">
   <div class="footer-content">
     <div style="display:flex;align-items:center;gap:12px;">
@@ -320,11 +370,7 @@
         <input type="checkbox" id="footer-media-toggle" {% if media_wall_enabled %}checked{% endif %}>
         <span class="slider"></span>
       </label>
-
-      <div style="display:flex;align-items:center;gap:8px;">
-        <input id="footer-interval" type="number" min="1" style="width:80px" value="{{ MEDIA_WALL_MIN_REFRESH_SECONDS // 60 if MEDIA_WALL_MIN_REFRESH_SECONDS else 5 }}">
-        <button id="footer-interval-save" class="btn btn-sm btn-outline-light">Save interval (min)</button>
-      </div>
+      <!-- interval moved to config page per request; footer only has toggle + refresh -->
     </div>
   </div>
 </footer>
@@ -335,7 +381,7 @@
 .toggle-switch input { display:none; }
 .slider { position:absolute; cursor:pointer; inset:0; background:#444; border-radius:24px; transition:0.2s; }
 .slider:before { content:''; position:absolute; left:3px; top:3px; width:18px; height:18px; background:#fff; border-radius:50%; transition:0.2s; }
-.toggle-switch input:checked + .slider { background:#0d6efd; }
+.toggle-switch input:checked + .slider  { background:#0d6efd; }
 .toggle-switch input:checked + .slider:before { transform: translateX(22px); }
 
 /* footer layout */
@@ -350,8 +396,6 @@ body { padding-bottom:84px; }
 document.addEventListener('DOMContentLoaded', function () {
   const toggle = document.getElementById('footer-media-toggle');
   const refreshBtn = document.getElementById('footer-refresh-btn');
-  const intervalInput = document.getElementById('footer-interval');
-  const intervalSave = document.getElementById('footer-interval-save');
 
   async function ajaxPostJson(url, obj) {
     const res = await fetch(url, {
@@ -367,9 +411,16 @@ document.addEventListener('DOMContentLoaded', function () {
       try {
         const data = await ajaxPostJson('/mediawall/toggle', {});
         if (!data || data.success === false) throw new Error(data && data.error ? data.error : 'toggle failed');
+
+        if (data.media_wall_enabled === false) {
+          // immediate UI disable
+          if (window.__artillery_mediawall_disable_ui) window.__artillery_mediawall_disable_ui();
+        } else {
+          // enable UI and refresh
+          if (window.__artillery_mediawall_enable_ui) window.__artillery_mediawall_enable_ui();
+        }
       } catch (e) {
         console.error('toggle failed', e);
-        // revert checkbox on error
         toggle.checked = !toggle.checked;
       }
     });
@@ -378,40 +429,12 @@ document.addEventListener('DOMContentLoaded', function () {
   if (refreshBtn) {
     refreshBtn.addEventListener('click', async function () {
       refreshBtn.disabled = true;
-      try {
-        await ajaxPostJson('/mediawall/refresh', {});
-      } catch (e) { /* ignore server errors */ }
-      if (window.__artillery_mediawall_refresh) {
-        window.__artillery_mediawall_refresh();
-      }
+      try { await ajaxPostJson('/mediawall/refresh', {}); } catch (e) {}
+      if (window.__artillery_mediawall_refresh) window.__artillery_mediawall_refresh();
       refreshBtn.disabled = false;
     });
   }
-
-  if (intervalSave && intervalInput) {
-    intervalSave.addEventListener('click', async function () {
-      intervalSave.disabled = true;
-      const mins = Math.max(1, parseInt(intervalInput.value, 10) || 1);
-      try {
-        const data = await ajaxPostJson('/mediawall/interval', { interval: mins });
-        if (!data || !data.success) throw new Error(data && data.error ? data.error : 'save failed');
-      } catch (e) {
-        console.error('save interval failed', e);
-        // optionally show user feedback
-      } finally {
-        intervalSave.disabled = false;
-      }
-    });
-
-    // populate current interval from server
-    (async () => {
-      try {
-        const res = await fetch('/mediawall/interval', { cache: 'no-store' });
-        const d = await res.json();
-        if (d && typeof d.interval !== 'undefined') intervalInput.value = parseInt(d.interval, 10);
-      } catch (e) { /* ignore */ }
-    })();
-  }
 });
 </script>
+
 {% endblock %}

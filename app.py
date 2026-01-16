@@ -13,6 +13,7 @@ import logging
 import signal
 import faulthandler
 import hashlib
+import sqlite3
 from typing import Optional, List, Tuple
 
 from flask import (
@@ -71,11 +72,13 @@ MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
 MEDIA_DB = os.path.join(CONFIG_ROOT, "mediawall.sqlite")
 MEDIA_WALL_DIR = os.path.join(CONFIG_ROOT, "media_wall")
+MEDIA_WALL_DIR_TMP = os.path.join(CONFIG_ROOT, "media_wall_tmp")
 
 from werkzeug.exceptions import NotFound
 
-MEDIA_WALL_DIR_PREV = os.path.join(CONFIG_ROOT, "media_wall_prev")
-MEDIA_WALL_DIR_NEXT = os.path.join(CONFIG_ROOT, "media_wall_next")
+# Removed unused PREV/NEXT dirs (do not auto-create them anymore)
+# MEDIA_WALL_DIR_PREV = os.path.join(CONFIG_ROOT, "media_wall_prev")
+# MEDIA_WALL_DIR_NEXT = os.path.join(CONFIG_ROOT, "media_wall_next")
 
 MEDIA_WALL_REFRESH_LOCK = threading.Lock()
 
@@ -148,9 +151,8 @@ def ensure_data_dirs(ensure_downloads: bool = False):
     os.makedirs(TASKS_ROOT, exist_ok=True)
     os.makedirs(CONFIG_ROOT, exist_ok=True)
     os.makedirs(MEDIA_WALL_DIR, exist_ok=True)
-    os.makedirs(MEDIA_WALL_DIR_PREV, exist_ok=True)
-    os.makedirs(MEDIA_WALL_DIR_NEXT, exist_ok=True)
-
+    # DO NOT create media_wall_prev / media_wall_next automatically
+    os.makedirs(MEDIA_WALL_DIR_TMP, exist_ok=True)
 
     if ensure_downloads:
         os.makedirs(DOWNLOADS_ROOT, exist_ok=True)
@@ -247,16 +249,12 @@ def _clean_dir(path: str):
 def refresh_wall_cache(conn, n: int) -> dict:
     """
     Pick up to N random items and copy them into cache.
-    Refresh is atomic:
-      - build new cache in MEDIA_WALL_DIR_NEXT
-      - move current -> PREV
-      - move NEXT -> current
-    Old wall links remain valid for at least one refresh cycle via PREV fallback.
+    Refresh is atomic: build new cache in MEDIA_WALL_DIR_TMP then replace MEDIA_WALL_DIR.
     """
     ensure_data_dirs(ensure_downloads=False)
 
     with MEDIA_WALL_REFRESH_LOCK:
-        # choose candidates
+        # choose candidates (unchanged)
         if MEDIA_WALL_CACHE_VIDEOS:
             rows = conn.execute(
                 "SELECT path, ext FROM media ORDER BY RANDOM() LIMIT ?",
@@ -274,8 +272,8 @@ def refresh_wall_cache(conn, n: int) -> dict:
         if not picked:
             return {"picked": 0, "copied": 0, "failed": 0}
 
-        # build next cache
-        _clean_dir(MEDIA_WALL_DIR_NEXT)
+        # build tmp cache
+        _clean_dir(MEDIA_WALL_DIR_TMP)
 
         copied = 0
         failed = 0
@@ -283,7 +281,7 @@ def refresh_wall_cache(conn, n: int) -> dict:
         for rel, _ext in picked:
             src = os.path.join(DOWNLOADS_ROOT, rel)
             name = _cache_name_for_relpath(rel)
-            dst = os.path.join(MEDIA_WALL_DIR_NEXT, name)
+            dst = os.path.join(MEDIA_WALL_DIR_TMP, name)
 
             tmp = dst + ".tmp"
             try:
@@ -303,35 +301,35 @@ def refresh_wall_cache(conn, n: int) -> dict:
         if copied == 0:
             return {"picked": len(picked), "copied": 0, "failed": failed}
 
-        # rotate: delete old prev, move current->prev, next->current
+        # atomically replace current wall with tmp
         try:
-            if os.path.isdir(MEDIA_WALL_DIR_PREV):
-                shutil.rmtree(MEDIA_WALL_DIR_PREV)
+            os.replace(MEDIA_WALL_DIR_TMP, MEDIA_WALL_DIR)
+        except Exception:
+            # fallback: try removing existing and moving
+            try:
+                if os.path.isdir(MEDIA_WALL_DIR):
+                    shutil.rmtree(MEDIA_WALL_DIR)
+                os.replace(MEDIA_WALL_DIR_TMP, MEDIA_WALL_DIR)
+            except Exception as exc:
+                app.logger.warning("media wall rotation failed: %s", exc)
+
+        # recreate tmp dir for next run
+        os.makedirs(MEDIA_WALL_DIR_TMP, exist_ok=True)
+
+        # update meta if possible
+        try:
+            now = _utcnow()
+            conn.execute(
+                """
+                INSERT INTO meta(key, value)
+                VALUES ('last_cache_refresh', ?)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value
+                """,
+                (now,),
+            )
+            conn.commit()
         except Exception:
             pass
-
-        try:
-            if os.path.isdir(MEDIA_WALL_DIR):
-                os.replace(MEDIA_WALL_DIR, MEDIA_WALL_DIR_PREV)
-        except Exception:
-            # if replace fails, we still try to proceed safely
-            pass
-
-        os.replace(MEDIA_WALL_DIR_NEXT, MEDIA_WALL_DIR)
-
-        # recreate next dir for next run
-        os.makedirs(MEDIA_WALL_DIR_NEXT, exist_ok=True)
-
-        now = _utcnow()
-        conn.execute(
-            """
-            INSERT INTO meta(key, value)
-            VALUES ('last_cache_refresh', ?)
-            ON CONFLICT(key) DO UPDATE SET value=excluded.value
-            """,
-            (now,),
-        )
-        conn.commit()
 
         return {"picked": len(picked), "copied": copied, "failed": failed}
 
@@ -392,6 +390,29 @@ def mediawall_toggle():
     # fallback redirect to referrer or home
     ref = request.referrer or url_for("home")
     return redirect(ref)
+
+@app.route("/mediawall/interval", methods=["GET", "POST"])
+def mediawall_interval():
+    """
+    GET -> return JSON with interval minutes
+    POST -> JSON body or form 'interval' to save minutes
+    """
+    if request.method == "POST":
+        try:
+            minutes = request.form.get("interval", None)
+            if minutes is None:
+                data = request.get_json(silent=True) or {}
+                minutes = data.get("interval")
+            minutes = int(minutes)
+            ok = set_media_wall_interval(minutes)
+            if not ok:
+                raise Exception("failed to write interval")
+            return jsonify({"success": True, "interval": minutes})
+        except Exception as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
+
+    # GET
+    return jsonify({"interval": get_media_wall_interval()})
 
 # ---------------------------------------------------------------------
 # Cached wall file route (fast: served from /config/media_wall)
@@ -599,8 +620,13 @@ def config_page():
             except Exception as exc:
                 flash(f"Failed to fetch default config: {exc}", "error")
 
-    # NOTE: removed media_wall_enabled from template context to hide media-wall config options from the config page
-    return render_template("config.html", config_text=config_text, config_path=CONFIG_FILE)
+    # Add current interval to template context so config page can render it
+    return render_template(
+        "config.html",
+        config_text=config_text,
+        config_path=CONFIG_FILE,
+        media_wall_interval=get_media_wall_interval()
+    )
 
 # ---------------------------------------------------------------------
 # Task actions

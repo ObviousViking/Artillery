@@ -36,6 +36,57 @@
                 </form>
             </div>
         </div>
+
+        <!-- Add Media Wall Interval card -->
+        <div class="card mt-3">
+            <div class="card-body">
+                <h5 class="card-title">Media wall refresh interval</h5>
+                <p class="text-muted">Set how often (minutes) the media wall can auto-refresh after changes.</p>
+                <div class="d-flex gap-2 align-items-center">
+                    <input id="cfg-media-interval" type="number" min="1" class="form-control"
+                        style="width:120px;" value="{{ media_wall_interval }}">
+                    <button id="cfg-media-interval-save" class="btn btn-sm btn-primary">Save</button>
+                    <span id="cfg-media-interval-msg" class="text-success"
+                        style="display:none;margin-left:8px;">Saved</span>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        document.addEventListener('DOMContentLoaded', function () {
+          const input = document.getElementById('cfg-media-interval');
+          const btn = document.getElementById('cfg-media-interval-save');
+          const msg = document.getElementById('cfg-media-interval-msg');
+
+          if (!input || !btn) return;
+
+          btn.addEventListener('click', async function () {
+            btn.disabled = true;
+            msg.style.display = 'none';
+            const mins = Math.max(1, parseInt(input.value, 10) || 1);
+            try {
+              const res = await fetch('/mediawall/interval', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                body: JSON.stringify({ interval: mins })
+              });
+              const data = await res.json();
+              if (data && data.success) {
+                msg.style.display = 'inline';
+                setTimeout(() => { msg.style.display = 'none'; }, 2500);
+              } else {
+                console.error('Failed to save interval', data);
+                alert('Failed to save interval');
+              }
+            } catch (e) {
+              console.error(e);
+              alert('Error saving interval');
+            } finally {
+              btn.disabled = false;
+            }
+          });
+        });
+        </script>
     </div>
 </div>
 {% endblock %}
