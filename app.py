@@ -865,3 +865,98 @@ def media_file(subpath):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
+# Replace DB helpers with a cached, fault-tolerant connection to avoid slow repeated connects
+_DB_CONN = None
+_DB_READONLY_FALLBACK = False
+
+def get_db_conn():
+	"""
+	Return a cached sqlite3.Connection. Try file DB with a short timeout,
+	fall back to an in-memory DB on failure (and mark fallback to avoid repeated file attempts).
+	"""
+	global _DB_CONN, _DB_READONLY_FALLBACK
+
+	if _DB_CONN is not None:
+		return _DB_CONN
+
+	# Ensure config dir exists for DB creation attempt
+	try:
+		os.makedirs(CONFIG_ROOT, exist_ok=True)
+	except Exception:
+		# If we can't create CONFIG_ROOT, fall back to in-memory
+		_DB_READONLY_FALLBACK = True
+
+	if not _DB_READONLY_FALLBACK:
+		try:
+			# short timeout to avoid long blocking if DB is locked by another process
+			conn = sqlite3.connect(MEDIA_DB, timeout=1.0, check_same_thread=False)
+			conn.row_factory = sqlite3.Row
+			# improve concurrency a bit
+			try:
+				conn.execute("PRAGMA journal_mode=WAL;")
+				conn.execute("PRAGMA synchronous=NORMAL;")
+			except Exception:
+				pass
+			# ensure required tables
+			cur = conn.cursor()
+			cur.execute("CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT)")
+			cur.execute("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)")
+			conn.commit()
+			_DB_CONN = conn
+			return _DB_CONN
+		except Exception as exc:
+			# mark fallback so we don't keep attempting slow file connects
+			_DB_READONLY_FALLBACK = True
+
+	# fallback: in-memory DB (non-persistent). create tables if needed.
+	try:
+		conn = sqlite3.connect(":memory:", check_same_thread=False)
+		conn.row_factory = sqlite3.Row
+		cur = conn.cursor()
+		cur.execute("CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT)")
+		cur.execute("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)")
+		conn.commit()
+		_DB_CONN = conn
+		return _DB_CONN
+	except Exception:
+		# last-resort: raise so callers can handle
+		raise
+
+def _kv_get(key: str, default: Optional[str] = None) -> Optional[str]:
+	"""Get a key from kv table; swallow errors and return default on failure."""
+	try:
+		conn = get_db_conn()
+		row = conn.execute("SELECT value FROM kv WHERE key=?", (key,)).fetchone()
+		return row[0] if row else default
+	except Exception:
+		return default
+
+def _kv_set(key: str, value: str) -> bool:
+	"""Set a key in kv table; return False on failure."""
+	try:
+		conn = get_db_conn()
+		conn.execute(
+			"INSERT INTO kv(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+			(key, str(value)),
+		)
+		conn.commit()
+		return True
+	except Exception:
+		return False
+
+# media wall interval helpers (minutes)
+DEFAULT_WALL_INTERVAL = 60
+
+def get_media_wall_interval() -> int:
+	try:
+		v = _kv_get("media_wall_interval")
+		return int(v) if v is not None else DEFAULT_WALL_INTERVAL
+	except Exception:
+		return DEFAULT_WALL_INTERVAL
+
+def set_media_wall_interval(minutes: int) -> bool:
+	try:
+		return _kv_set("media_wall_interval", str(int(minutes)))
+	except Exception:
+		return False
