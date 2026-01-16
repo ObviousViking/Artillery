@@ -189,6 +189,9 @@ def _get_media_wall_scan_cron() -> str:
 def _set_media_wall_scan_cron(expr: str) -> None:
     write_text(MEDIA_WALL_SCAN_CRON_FILE, expr.strip())
 
+# In-memory cache to reduce repeated disk reads on /tasks
+_TASK_CACHE = {}
+
 def _task_mtimes(task_path: str) -> dict:
     def _mt(p):
         try:
