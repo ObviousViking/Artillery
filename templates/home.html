@@ -72,6 +72,7 @@
     display: flex;
     gap: 10px;
     width: 100%;
+    --media-scroll-duration: 160s;
   }
 
   .media-column {
@@ -87,7 +88,14 @@
     gap: 8px;
     padding: 8px;
     will-change: transform;
-    animation: scroll-up 160s linear infinite !important;
+    min-height: 120%;
+    animation: scroll-up var(--media-scroll-duration) linear infinite !important;
+    animation-play-state: running !important;
+  }
+
+  @keyframes scroll-up {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(-50%); }
   }
 
   .media-strip-vertical,
