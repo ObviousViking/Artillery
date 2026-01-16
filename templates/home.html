@@ -52,13 +52,13 @@
         <!-- Infinite scroll container -->
         <div id="media-wall-container" class="media-wall-vertical" style="display:none;">
           <div class="media-column">
-            <div class="media-strip media-strip-vertical" id="strip-0"></div>
+            <div class="media-strip-vertical" id="strip-0"></div>
           </div>
           <div class="media-column">
-            <div class="media-strip media-strip-vertical" id="strip-1"></div>
+            <div class="media-strip-vertical" id="strip-1"></div>
           </div>
           <div class="media-column">
-            <div class="media-strip media-strip-vertical" id="strip-2"></div>
+            <div class="media-strip-vertical" id="strip-2"></div>
           </div>
         </div>
 
@@ -87,8 +87,7 @@
     gap: 8px;
     padding: 8px;
     will-change: transform;
-    animation: scroll-up 160s linear infinite;
-    animation-duration: var(--media-scroll-duration, 160s);
+    animation: scroll-up 160s linear infinite !important;
   }
 
   .media-strip-vertical,
@@ -243,7 +242,7 @@
         for (let r = 0; r < rowCount; r++) {
           const oldStrip = document.getElementById(`strip-${r}`);
           const newStrip = document.createElement("div");
-          newStrip.className = "media-strip media-strip-vertical";
+          newStrip.className = "media-strip-vertical";
           newStrip.id = `strip-${r}`;
 
           for (let dup = 0; dup < 4; dup++) {
@@ -251,9 +250,7 @@
           }
 
           if (oldStrip && oldStrip.parentNode) {
-            oldStrip.style.animationPlayState = "paused";
             oldStrip.parentNode.replaceChild(newStrip, oldStrip);
-            newStrip.style.animationPlayState = "running";
           }
         }
 
@@ -261,11 +258,10 @@
         container.style.display = "";
         hideLoader();
       }).catch(() => {
-        // fallback: direct swap without preload
         for (let r = 0; r < rowCount; r++) {
           const oldStrip = document.getElementById(`strip-${r}`);
           const newStrip = document.createElement("div");
-          newStrip.className = "media-strip media-strip-vertical";
+          newStrip.className = "media-strip-vertical";
           newStrip.id = `strip-${r}`;
           for (let dup = 0; dup < 4; dup++) {
             newStrip.appendChild(createItemsDOM(rows[r]).cloneNode(true));
