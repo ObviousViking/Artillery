@@ -16,7 +16,7 @@
           <li>Each task has its own folder under <code>/tasks/&lt;task-name&gt;</code>.</li>
           <li>Downloads go to <code>/downloads</code> using your global <code>gallery-dl.conf</code>.</li>
           <li>Tasks can be run manually, paused, or scheduled via cron.</li>
-          <li>All output is logged to each task’s <code>logs.txt</code> for troubleshooting.</li>
+          <li>All output is logged to each task's <code>logs.txt</code> for troubleshooting.</li>
         </ul>
 
         <div class="d-flex flex-wrap gap-2">
@@ -29,445 +29,160 @@
 </div>
 
 {% if media_wall_enabled %}
-<!-- Media wall -->
+<!-- Media wall with Swiper -->
 <div class="row">
   <div class="col-12">
     <div class="card shadow-sm">
       <div class="card-body">
         <h5 class="card-title mb-3">Media wall</h5>
 
-        <div id="media-wall-container"
-             data-rows="3"
-             data-limit="150"
-             data-poll-ms="15000"
-             data-server-has-media="{{ '1' if has_media else '0' }}">
-
-          <p id="media-wall-loader" class="text-muted small mb-2">
-            Loading media wall...
-          </p>
-
-          <p id="media-wall-empty" class="text-muted mb-0" {% if has_media %}style="display:none"{% endif %}>
-            No media cached yet. Run a task, then refresh the media wall.
-          </p>
-
-          <!-- initial server-render (fast first paint) -->
-          <div class="media-wall {% if has_media %}media-wall-ready{% endif %}" id="media-wall">
-            {% if has_media %}
-              {% for row in recent_rows %}
-                {% if row %}
-                <div class="media-wall-row">
-                  <div class="media-strip
-                    {% if loop.index0 == 1 %}
-                      media-strip-right
-                    {% else %}
-                      media-strip-left
-                    {% endif %}">
-                    {# duplicate items to allow continuous scroll #}
-                    {% for _ in range(2) %}
-                      {% for item in row %}
-                        <div class="media-item">
-                          <a href="{{ item }}" target="_blank" class="d-block">
-                            <img src="{{ item }}" alt="media" class="media-img" loading="lazy" />
-                          </a>
-                        </div>
-                      {% endfor %}
-                    {% endfor %}
-                  </div>
-                </div>
-                {% endif %}
-              {% endfor %}
-            {% endif %}
-          </div>
+        <div id="media-wall-loader" class="text-muted small mb-2" style="display:none;">
+          Loading media wall...
         </div>
 
-        <script>
-        (function () {
-          const container = document.getElementById("media-wall-container");
-          if (!container) return;
+        <div id="media-wall-empty" class="text-muted mb-0" {% if has_media %}style="display:none"{% endif %}>
+          No media cached yet. Run a task, then refresh the media wall.
+        </div>
 
-          const rows = parseInt(container.dataset.rows || "3", 10);
-          const limit = parseInt(container.dataset.limit || "150", 10);
-          const pollMs = parseInt(container.dataset.pollMs || "15000", 10);
-          const serverHasMedia = container.dataset.serverHasMedia === "1";
-
-          const loader = document.getElementById("media-wall-loader");
-          const emptyMsg = document.getElementById("media-wall-empty");
-          let wall = document.getElementById("media-wall");
-
-          let lastSig = "";
-
-          function hideLoader() { if (loader) loader.style.display = "none"; }
-          function setEmpty(isEmpty) { if (emptyMsg) emptyMsg.style.display = isEmpty ? "" : "none"; }
-          function setReady(el = wall) { if (el) el.classList.add("media-wall-ready"); }
-          function buildUrl(baseUrl, v) { return baseUrl + (baseUrl.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(v); }
-
-          // marquee helpers (unchanged)
-          let _marqueeTimer = null;
-          function scheduleInitMarquees() { clearTimeout(_marqueeTimer); _marqueeTimer = setTimeout(initMarquees, 50); }
-          function initMarquees() {
-            const strips = document.querySelectorAll(".media-strip");
-            strips.forEach(strip => {
-              const kids = strip.children;
-              if (!kids || kids.length < 2) return;
-              const half = Math.floor(kids.length / 2);
-              if (!kids[half]) return;
-              const stripRect = strip.getBoundingClientRect();
-              const kidRect = kids[half].getBoundingClientRect();
-              const distance = kidRect.left - stripRect.left;
-              if (!(distance > 0)) return;
-              const speed = 16; // px/sec
-              const duration = Math.max(25, distance / speed);
-              const prev = strip.__loopDistance || 0;
-              const prevDur = strip.__loopDuration || 0;
-              if (Math.abs(prev - distance) < 0.1 && Math.abs(prevDur - duration) < 0.05) return;
-              strip.__loopDistance = distance;
-              strip.__loopDuration = duration;
-              strip.style.setProperty("--loop-distance", distance.toFixed(2) + "px");
-              strip.style.setProperty("--duration", duration.toFixed(2) + "s");
-            });
-          }
-
-          // build playlist logic (unchanged algorithm)
-          function buildRows(items) {
-            const perRow = Math.min(80, Math.max(30, items.length));
-            let pool = items.slice();
-            for (let i = pool.length - 1; i > 0; i--) {
-              const j = Math.floor(Math.random() * (i + 1));
-              [pool[i], pool[j]] = [pool[j], pool[i]];
-            }
-            let poolIdx = 0;
-            const usedGlobal = new Set();
-            function reshufflePool() {
-              for (let i = pool.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [pool[i], pool[j]] = [pool[j], pool[i]];
-              }
-            }
-            function nextFromPool() {
-              if (!pool.length) return null;
-              const it = pool[poolIdx++];
-              if (poolIdx >= pool.length) {
-                poolIdx = 0;
-                reshufflePool();
-              }
-              return it;
-            }
-            function buildPlaylist(count) {
-              const out = [];
-              let guard = 0;
-              while (out.length < count && guard < count * 10) {
-                guard++;
-                const it = nextFromPool();
-                if (!it) break;
-                const key = (it && (it.name || it.url)) || it;
-                if (usedGlobal.has(key)) continue;
-                usedGlobal.add(key);
-                out.push(it);
-              }
-              while (out.length < count) {
-                const it = nextFromPool();
-                if (!it) break;
-                out.push(it);
-              }
-              return out;
-            }
-
-            const rowsOut = [];
-            for (let rowIdx = 0; rowIdx < rows; rowIdx++) {
-              const rowItems = buildPlaylist(perRow);
-              if (!rowItems.length) continue;
-              rowsOut.push(rowItems);
-            }
-            return rowsOut;
-          }
-
-          // waitForSome helper (unchanged)
-          function waitForSome(promises, minLoaded, timeoutMs) {
-            return new Promise(resolve => {
-              let loaded = 0;
-              let done = false;
-              const timers = [];
-              promises.forEach(p => {
-                p.then(ok => {
-                  loaded += 1;
-                  if (!done && loaded >= minLoaded) {
-                    done = true;
-                    timers.forEach(t => clearTimeout(t));
-                    resolve(true);
-                  }
-                }).catch(() => {
-                  // ignore individual failures
-                });
-              });
-              timers.push(setTimeout(() => {
-                if (!done) {
-                  done = true;
-                  resolve(false);
-                }
-              }, timeoutMs));
-            });
-          }
-
-          // --- NEW: throttled lazy loader -------------------------------------------------
-          const MAX_CONCURRENT_LOADS = 6;
-          let activeLoads = 0;
-          const loadQueue = [];
-
-          function processQueue() {
-            while (activeLoads < MAX_CONCURRENT_LOADS && loadQueue.length) {
-              const fn = loadQueue.shift();
-              activeLoads++;
-              fn().finally(() => {
-                activeLoads--;
-                // continue processing
-                setTimeout(processQueue, 0);
-              });
-            }
-          }
-
-          function enqueueImageLoad(imgEl, src) {
-            return new Promise(resolve => {
-              loadQueue.push(() => new Promise(innerResolve => {
-                // actually set src to start load
-                imgEl.src = src;
-                // resolve when loaded/error
-                function finish() {
-                  imgEl.removeEventListener('load', onload);
-                  imgEl.removeEventListener('error', onerr);
-                  innerResolve();
-                  resolve();
-                }
-                function onload() { finish(); }
-                function onerr() { finish(); }
-                imgEl.addEventListener('load', onload, { once: true });
-                imgEl.addEventListener('error', onerr, { once: true });
-              }));
-              processQueue();
-            });
-          }
-
-          // IntersectionObserver to lazy-load when images approach viewport
-          let io = null;
-          function ensureObserver() {
-            if (io) return io;
-            io = new IntersectionObserver((entries) => {
-              entries.forEach(en => {
-                if (!en.isIntersecting) return;
-                const img = en.target;
-                const src = img.dataset.src;
-                if (src && !img.src) {
-                  // enqueue load via throttled queue
-                  enqueueImageLoad(img, src);
-                }
-                io.unobserve(img);
-              });
-            }, { root: null, rootMargin: '800px 0px 800px 0px', threshold: 0.01 }); // large margin to keep wings populated
-            return io;
-          }
-          // -------------------------------------------------------------------------------
-
-          // progressive render: build off-DOM, preload a small set, then cross-fade swap
-          function render(items) {
-            if (!container) return;
-            if (!items || !items.length) {
-              setEmpty(true); hideLoader(); setReady(); return;
-            }
-            setEmpty(false);
-
-            const rowsData = buildRows(items);
-
-            // build new wall DOM
-            const newWall = document.createElement("div");
-            newWall.className = "media-wall";
-            newWall.style.opacity = "0";
-            newWall.style.transition = "opacity 350ms ease";
-
-            const preloadImgs = [];
-            const preloadLimit = Math.min(12, Math.max(6, Math.floor(items.length * 0.1)));
-            let preloadCount = 0;
-
-            rowsData.forEach((rowItems, rowIdx) => {
-              const rowDiv = document.createElement("div");
-              rowDiv.className = "media-wall-row";
-              const strip = document.createElement("div");
-              strip.className = "media-strip " + (rowIdx === 1 ? "media-strip-right" : "media-strip-left");
-
-              for (let r = 0; r < 2; r++) {
-                rowItems.forEach(it => {
-                  const itemDiv = document.createElement("div");
-                  itemDiv.className = "media-item";
-
-                  const a = document.createElement("a");
-                  a.className = "d-block";
-                  a.target = "_blank";
-                  const url = (typeof it === "string") ? it : (it.url || it);
-                  const mtime = (it && (it.mtime || it.mtime === 0)) ? (it.mtime) : Date.now();
-                  a.href = buildUrl(url, mtime);
-
-                  const img = document.createElement("img");
-                  img.className = "media-img";
-                  img.loading = "lazy";
-                  img.alt = "media";
-                  img.style.opacity = "0";
-                  img.style.transition = "opacity 300ms ease";
-                  const src = buildUrl(url, mtime);
-                  // do not set img.src here — use data-src and lazy loader
-                  img.dataset.src = src;
-
-                  // fade-in when image loaded
-                  img.addEventListener("load", () => { img.style.opacity = "1"; scheduleInitMarquees(); }, { once: true });
-
-                  a.appendChild(img);
-                  itemDiv.appendChild(a);
-                  strip.appendChild(itemDiv);
-
-                  // collect preload promises for a small sample (background preloader only)
-                  if (preloadCount < preloadLimit) {
-                    preloadCount++;
-                    preloadImgs.push(new Promise((resolve) => {
-                      const p = new Image();
-                      p.onload = () => resolve(true);
-                      p.onerror = () => resolve(false);
-                      p.src = src;
-                    }));
-                  }
-                });
-              }
-              rowDiv.appendChild(strip);
-              newWall.appendChild(rowDiv);
-            });
-
-            const minNeeded = Math.max(1, Math.floor(preloadImgs.length * 0.4));
-            waitForSome(preloadImgs, minNeeded, 1200).then(() => {
-              if (wall && wall.parentNode) {
-                wall.parentNode.insertBefore(newWall, wall.nextSibling);
-              } else {
-                container.appendChild(newWall);
-              }
-
-              // Instead of forcing all images to load, start a small immediate batch
-              const allImgs = Array.from(newWall.querySelectorAll("img.media-img"));
-              ensureObserver();
-
-              // Kick off immediate loads for first visible-ish batch (fill viewport + wings)
-              const immediateCount = Math.min(12, Math.max(6, Math.floor(allImgs.length * 0.08)));
-              for (let i = 0; i < immediateCount && i < allImgs.length; i++) {
-                const imgEl = allImgs[i];
-                if (imgEl.dataset.src && !imgEl.src) {
-                  enqueueImageLoad(imgEl, imgEl.dataset.src);
-                }
-              }
-
-              // Observe remaining images so they load as they approach (large rootMargin keeps wings populated)
-              allImgs.slice(immediateCount).forEach(imgEl => {
-                if (imgEl.dataset && imgEl.dataset.src) {
-                  ensureObserver().observe(imgEl);
-                }
-              });
-
-              // cross-fade
-              requestAnimationFrame(() => {
-                newWall.style.opacity = "1";
-                if (wall) { wall.style.transition = "opacity 300ms ease"; wall.style.opacity = "0"; }
-              });
-
-              setTimeout(() => {
-                if (wall && wall.parentNode) { try { wall.parentNode.removeChild(wall); } catch (e) {} }
-                newWall.id = "media-wall";
-                wall = newWall;
-                window.__ARTILLERY_MEDIA_WALL = newWall;
-                setReady(newWall);
-                hideLoader();
-                scheduleInitMarquees();
-              }, 450);
-            }).catch(() => {
-              // fallback: replace first .media-wall and remove extras, but do not set all srcs at once
-              const existing = container.querySelectorAll('.media-wall');
-              if (existing && existing.length) {
-                existing[0].innerHTML = newWall.innerHTML;
-                for (let i = 1; i < existing.length; i++) {
-                  try { existing[i].parentNode.removeChild(existing[i]); } catch (e) {}
-                }
-                const replacedImgs = Array.from(existing[0].querySelectorAll("img.media-img"));
-                ensureObserver();
-                const immediateCount = Math.min(12, Math.max(6, Math.floor(replacedImgs.length * 0.08)));
-                for (let i = 0; i < immediateCount && i < replacedImgs.length; i++) {
-                  const imgEl = replacedImgs[i];
-                  if (imgEl.dataset.src && !imgEl.src) enqueueImageLoad(imgEl, imgEl.dataset.src);
-                }
-                replacedImgs.slice(immediateCount).forEach(imgEl => ensureObserver().observe(imgEl));
-                wall = existing[0];
-              } else {
-                container.appendChild(newWall);
-                const appendedImgs = Array.from(newWall.querySelectorAll("img.media-img"));
-                ensureObserver();
-                const immediateCount = Math.min(12, Math.max(6, Math.floor(appendedImgs.length * 0.08)));
-                for (let i = 0; i < immediateCount && i < appendedImgs.length; i++) {
-                  const imgEl = appendedImgs[i];
-                  if (imgEl.dataset.src && !imgEl.src) enqueueImageLoad(imgEl, imgEl.dataset.src);
-                }
-                appendedImgs.slice(immediateCount).forEach(imgEl => ensureObserver().observe(imgEl));
-                wall = newWall;
-              }
-              hideLoader();
-              setReady();
-              scheduleInitMarquees();
-            });
-          }
-
-          async function refresh() {
-            try {
-              // use direct folder listing (no sqlite) for faster responses
-              const res = await fetch("/mediawall/api/list_cache", { cache: "no-store" });
-              if (!res.ok) return;
-
-              const data = await res.json();
-              // items: [{name,url,mtime}, ...]
-              const items = (data.items || []).slice(0, limit);
-              const sig = items.map(i => (typeof i === "string" ? i : (i.name || i.url)) + ":" + (i.mtime || "")).join("|");
-              if (sig && sig === lastSig) {
-                hideLoader();
-                setReady();
-                return;
-              }
-              lastSig = sig;
-
-              render(items);
-            } catch (e) {
-              // silent fail
-            }
-          }
-
-          document.addEventListener("DOMContentLoaded", () => {
-            scheduleInitMarquees();
-            setTimeout(scheduleInitMarquees, 250);
-            setTimeout(scheduleInitMarquees, 1000);
-            window.addEventListener("resize", () => setTimeout(scheduleInitMarquees, 150));
-
-            if (serverHasMedia) {
-              setTimeout(() => refresh(), Math.max(2000, pollMs));
-            } else {
-              setTimeout(() => refresh(), 2000);
-            }
-
-            setInterval(refresh, pollMs);
-
-            // SSE listener (existing)
-            if (window.EventSource) {
-              try {
-                const es = new EventSource('/mediawall/events');
-                es.addEventListener('mediawall_update', (ev) => { refresh(); });
-                es.addEventListener('error', () => { /* keep polling fallback */ });
-              } catch (e) { /* ignore */ }
-            }
-          });
-        })();
-        </script>
+        <!-- Swiper carousel -->
+        <div class="swiper" id="media-swiper" style="display:none;">
+          <div class="swiper-wrapper" id="media-swiper-wrapper">
+            <!-- slides populated by JS -->
+          </div>
+          <!-- Navigation -->
+          <div class="swiper-button-next"></div>
+          <div class="swiper-button-prev"></div>
+        </div>
 
       </div>
     </div>
   </div>
 </div>
+
+<style>
+  #media-swiper {
+    width: 100%;
+    height: 400px;
+  }
+  .swiper-slide {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+  }
+  .swiper-slide img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+</style>
+
+<script>
+(function () {
+  const loader = document.getElementById("media-wall-loader");
+  const emptyMsg = document.getElementById("media-wall-empty");
+  const swiperEl = document.getElementById("media-swiper");
+  const wrapper = document.getElementById("media-swiper-wrapper");
+
+  let swiper = null;
+  let lastSig = "";
+
+  function showLoader() { if (loader) loader.style.display = ""; }
+  function hideLoader() { if (loader) loader.style.display = "none"; }
+  function setEmpty(isEmpty) { if (emptyMsg) emptyMsg.style.display = isEmpty ? "" : "none"; }
+
+  async function refresh() {
+    showLoader();
+    try {
+      const res = await fetch("/mediawall/api/list_cache", { cache: "no-store" });
+      if (!res.ok) return;
+
+      const data = await res.json();
+      const items = (data.items || []);
+
+      if (!items.length) {
+        setEmpty(true);
+        hideLoader();
+        if (swiperEl) swiperEl.style.display = "none";
+        return;
+      }
+
+      const sig = items.map(i => (i.name || i.url) + ":" + (i.mtime || "")).join("|");
+      if (sig && sig === lastSig) {
+        hideLoader();
+        return;
+      }
+      lastSig = sig;
+
+      // build slides
+      wrapper.innerHTML = "";
+      items.forEach(item => {
+        const url = item.url || item;
+        const mtime = item.mtime || 0;
+        const src = url + (url.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(mtime);
+
+        const slide = document.createElement("div");
+        slide.className = "swiper-slide";
+
+        const img = document.createElement("img");
+        img.src = src;
+        img.alt = "media";
+        img.loading = "lazy";
+
+        const a = document.createElement("a");
+        a.href = src;
+        a.target = "_blank";
+        a.style.display = "contents";
+        a.appendChild(img);
+
+        slide.appendChild(a);
+        wrapper.appendChild(slide);
+      });
+
+      setEmpty(false);
+      swiperEl.style.display = "";
+
+      // init or reinit swiper
+      if (!swiper) {
+        swiper = new Swiper("#media-swiper", {
+          loop: true,
+          autoplay: { delay: 5000, disableOnInteraction: false },
+          navigation: {
+            nextEl: ".swiper-button-next",
+            prevEl: ".swiper-button-prev"
+          },
+          lazy: { loadPrevNext: true, loadPrevNextAmount: 2 }
+        });
+      } else {
+        swiper.update();
+      }
+
+      hideLoader();
+    } catch (e) {
+      hideLoader();
+      console.error("media wall refresh error:", e);
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    // initial load
+    refresh();
+
+    // poll periodically
+    setInterval(refresh, 15000);
+
+    // SSE listener for immediate updates
+    if (window.EventSource) {
+      try {
+        const es = new EventSource('/mediawall/events');
+        es.addEventListener('mediawall_update', () => { refresh(); });
+        es.addEventListener('error', () => { /* fallback poll still running */ });
+      } catch (e) { /* ignore */ }
+    }
+  });
+})();
+</script>
+
 {% endif %}
 
 {% endblock %}
