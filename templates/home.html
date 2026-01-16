@@ -34,7 +34,7 @@
 <!-- Media wall with infinite horizontal scroll -->
 <div class="row">
   <div class="col-12">
-    <div class="card shadow-sm">
+    <div class="card shadow-sm" data-media-wall-scan-interval="{{ media_wall_scan_interval|default(60) }}">
       <div class="card-body">
         <h5 class="card-title mb-3">Media wall</h5>
 
@@ -314,7 +314,10 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     refresh();
-    setInterval(refresh, 15000);
+
+    const scanIntervalAttr = container?.closest(".card")?.getAttribute("data-media-wall-scan-interval");
+    const scanIntervalSec = Math.max(1, parseInt(scanIntervalAttr || "60", 10));
+    setInterval(refresh, scanIntervalSec * 1000);
 
     if (window.EventSource) {
       try {

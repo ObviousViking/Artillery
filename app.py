@@ -71,11 +71,9 @@ MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
 MEDIA_DB = os.path.join(CONFIG_ROOT, "mediawall.sqlite")
 MEDIA_WALL_DIR = os.path.join(CONFIG_ROOT, "media_wall")
+MEDIA_WALL_SCAN_INTERVAL_FILE = os.path.join(CONFIG_ROOT, "mediawall_scan_interval.txt")
 
 from werkzeug.exceptions import NotFound
-
-MEDIA_WALL_DIR_PREV = os.path.join(CONFIG_ROOT, "media_wall_prev")
-MEDIA_WALL_DIR_NEXT = os.path.join(CONFIG_ROOT, "media_wall_next")
 
 MEDIA_WALL_REFRESH_LOCK = threading.Lock()
 
@@ -148,8 +146,6 @@ def ensure_data_dirs(ensure_downloads: bool = False):
     os.makedirs(TASKS_ROOT, exist_ok=True)
     os.makedirs(CONFIG_ROOT, exist_ok=True)
     os.makedirs(MEDIA_WALL_DIR, exist_ok=True)
-    os.makedirs(MEDIA_WALL_DIR_PREV, exist_ok=True)
-    os.makedirs(MEDIA_WALL_DIR_NEXT, exist_ok=True)
 
 
     if ensure_downloads:
@@ -163,7 +159,7 @@ def ensure_data_dirs(ensure_downloads: bool = False):
 def read_text(path: str):
     if not os.path.exists(path):
         return None
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
         return f.read().strip() or None
 
 
@@ -172,6 +168,36 @@ def write_text(path: str, content: str):
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
 
+def _get_media_wall_scan_interval() -> int:
+    default = int(os.environ.get("MEDIA_WALL_SCAN_INTERVAL", "60"))
+    raw = read_text(MEDIA_WALL_SCAN_INTERVAL_FILE)
+    try:
+        value = int(raw) if raw is not None else default
+        return value if value >= 1 else default
+    except Exception:
+        return default
+
+def _set_media_wall_scan_interval(value: int) -> None:
+    write_text(MEDIA_WALL_SCAN_INTERVAL_FILE, str(int(value)))
+
+def _task_mtimes(task_path: str) -> dict:
+    def _mt(p):
+        try:
+            return os.path.getmtime(p)
+        except Exception:
+            return None
+    return {
+        "name": _mt(os.path.join(task_path, "name.txt")),
+        "cron": _mt(os.path.join(task_path, "cron.txt")),
+        "command": _mt(os.path.join(task_path, "command.txt")),
+        "last_run": _mt(os.path.join(task_path, "last_run.txt")),
+        "urls": _mt(os.path.join(task_path, "urls.txt")),
+        "lock": _mt(os.path.join(task_path, "lock")),
+        "paused": _mt(os.path.join(task_path, "paused")),
+    }
+
+# In-memory cache to reduce repeated disk reads on /tasks
+_TASK_CACHE = {}
 
 def load_tasks():
     ensure_data_dirs(ensure_downloads=False)
@@ -186,6 +212,12 @@ def load_tasks():
             continue
 
         slug = entry
+        mtimes = _task_mtimes(task_path)
+        cached = _TASK_CACHE.get(slug)
+        if cached and cached.get("_mtimes") == mtimes:
+            tasks.append(cached["task"])
+            continue
+
         name = read_text(os.path.join(task_path, "name.txt")) or slug
         schedule = read_text(os.path.join(task_path, "cron.txt"))
         command = read_text(os.path.join(task_path, "command.txt")) or "gallery-dl --input-file urls.txt"
@@ -202,7 +234,7 @@ def load_tasks():
         else:
             status = "idle"
 
-        tasks.append({
+        task = {
             "id": slug,
             "name": name,
             "slug": slug,
@@ -213,7 +245,9 @@ def load_tasks():
             "urls_file": "urls.txt",
             "command": command,
             "urls": urls,
-        })
+        }
+        _TASK_CACHE[slug] = {"_mtimes": mtimes, "task": task}
+        tasks.append(task)
 
     return tasks
 
@@ -247,11 +281,6 @@ def _clean_dir(path: str):
 def refresh_wall_cache(conn, n: int) -> dict:
     """
     Pick up to N random items and copy them into cache.
-    Refresh is atomic:
-      - build new cache in MEDIA_WALL_DIR_NEXT
-      - move current -> PREV
-      - move NEXT -> current
-    Old wall links remain valid for at least one refresh cycle via PREV fallback.
     """
     ensure_data_dirs(ensure_downloads=False)
 
@@ -274,8 +303,8 @@ def refresh_wall_cache(conn, n: int) -> dict:
         if not picked:
             return {"picked": 0, "copied": 0, "failed": 0}
 
-        # build next cache
-        _clean_dir(MEDIA_WALL_DIR_NEXT)
+        # clean current cache (no prev/next rotation)
+        _clean_dir(MEDIA_WALL_DIR)
 
         copied = 0
         failed = 0
@@ -283,7 +312,7 @@ def refresh_wall_cache(conn, n: int) -> dict:
         for rel, _ext in picked:
             src = os.path.join(DOWNLOADS_ROOT, rel)
             name = _cache_name_for_relpath(rel)
-            dst = os.path.join(MEDIA_WALL_DIR_NEXT, name)
+            dst = os.path.join(MEDIA_WALL_DIR, name)
 
             tmp = dst + ".tmp"
             try:
@@ -299,28 +328,8 @@ def refresh_wall_cache(conn, n: int) -> dict:
                 except Exception:
                     pass
 
-        # if we copied nothing, don't swap (avoid wiping current wall)
         if copied == 0:
             return {"picked": len(picked), "copied": 0, "failed": failed}
-
-        # rotate: delete old prev, move current->prev, next->current
-        try:
-            if os.path.isdir(MEDIA_WALL_DIR_PREV):
-                shutil.rmtree(MEDIA_WALL_DIR_PREV)
-        except Exception:
-            pass
-
-        try:
-            if os.path.isdir(MEDIA_WALL_DIR):
-                os.replace(MEDIA_WALL_DIR, MEDIA_WALL_DIR_PREV)
-        except Exception:
-            # if replace fails, we still try to proceed safely
-            pass
-
-        os.replace(MEDIA_WALL_DIR_NEXT, MEDIA_WALL_DIR)
-
-        # recreate next dir for next run
-        os.makedirs(MEDIA_WALL_DIR_NEXT, exist_ok=True)
 
         now = _utcnow()
         conn.execute(
@@ -454,6 +463,7 @@ def mediawall_events():
 @app.route("/")
 def home():
     tasks = load_tasks()
+    scan_interval = _get_media_wall_scan_interval()
 
     urls = []
     has_media = False
@@ -479,6 +489,7 @@ def home():
         recent_rows=recent_rows,
         has_media=has_media,
         media_wall_enabled=MEDIA_WALL_ENABLED,
+        media_wall_scan_interval=scan_interval,
     )
 
 # ---------------------------------------------------------------------
@@ -566,6 +577,7 @@ def tasks():
 def config_page():
     ensure_data_dirs(ensure_downloads=False)
     config_text = read_text(CONFIG_FILE) or ""
+    scan_interval = _get_media_wall_scan_interval()
 
     if request.method == "POST":
         action = request.form.get("action")
@@ -582,8 +594,25 @@ def config_page():
                 flash("Default gallery-dl config downloaded from GitHub.", "success")
             except Exception as exc:
                 flash(f"Failed to fetch default config: {exc}", "error")
+        elif action == "mediawall_settings":
+            raw = request.form.get("media_wall_scan_interval", "").strip()
+            try:
+                value = int(raw)
+                if value < 1:
+                    raise ValueError("must be >= 1")
+                _set_media_wall_scan_interval(value)
+                scan_interval = value
+                flash("Media wall settings saved.", "success")
+            except Exception:
+                flash("Invalid scan interval. Use a number >= 1.", "error")
 
-    return render_template("config.html", config_text=config_text, config_path=CONFIG_FILE, media_wall_enabled=MEDIA_WALL_ENABLED)
+    return render_template(
+        "config.html",
+        config_text=config_text,
+        config_path=CONFIG_FILE,
+        media_wall_enabled=MEDIA_WALL_ENABLED,
+        media_wall_scan_interval=scan_interval,
+    )
 
 # ---------------------------------------------------------------------
 # Task actions
