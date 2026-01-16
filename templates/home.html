@@ -31,7 +31,7 @@
 </div>
 
 {% if media_wall_enabled %}
-<!-- Media wall with infinite horizontal scroll -->
+<!-- Media wall with infinite vertical scroll -->
 <div class="row">
   <div class="col-12">
     <div class="card shadow-sm"
@@ -50,18 +50,15 @@
         </div>
 
         <!-- Infinite scroll container -->
-        <div id="media-wall-container" style="display:none; overflow: hidden;">
-          <!-- Row 1: scroll left-to-right -->
-          <div class="media-row media-row-ltr">
-            <div class="media-strip" id="strip-0"></div>
+        <div id="media-wall-container" class="media-wall-vertical" style="display:none;">
+          <div class="media-column">
+            <div class="media-strip media-strip-vertical" id="strip-0"></div>
           </div>
-          <!-- Row 2: scroll right-to-left -->
-          <div class="media-row media-row-rtl">
-            <div class="media-strip" id="strip-1"></div>
+          <div class="media-column">
+            <div class="media-strip media-strip-vertical" id="strip-1"></div>
           </div>
-          <!-- Row 3: scroll left-to-right -->
-          <div class="media-row media-row-ltr">
-            <div class="media-strip" id="strip-2"></div>
+          <div class="media-column">
+            <div class="media-strip media-strip-vertical" id="strip-2"></div>
           </div>
         </div>
 
@@ -71,69 +68,36 @@
 </div>
 
 <style>
-  .media-row {
+  .media-wall-vertical {
+    display: flex;
+    gap: 10px;
     width: 100%;
-    height: 200px;
+  }
+
+  .media-column {
+    flex: 1 1 0;
+    height: 600px;
     overflow: hidden;
-    background: transparent;
-    margin-bottom: 10px;
     position: relative;
   }
 
-  /* Fade edges to hide repeating content — use transparent to card background */
-  .media-row::before,
-  .media-row::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    width: 60px;
-    height: 100%;
-    z-index: 10;
-    pointer-events: none;
-  }
-
-  .media-row::before {
-    left: 0;
-    background: linear-gradient(to right, rgba(248,249,250,1), rgba(248,249,250,0));
-  }
-
-  .media-row::after {
-    right: 0;
-    background: linear-gradient(to left, rgba(248,249,250,1), rgba(248,249,250,0));
-  }
-
-  .media-strip {
+  .media-strip-vertical {
     display: flex;
+    flex-direction: column;
     gap: 8px;
     padding: 8px;
-    height: 100%;
     will-change: transform;
+    animation: scroll-up 80s linear infinite;
   }
 
-  /* Left-to-right scroll (continuous) */
-  .media-row-ltr .media-strip {
-    animation: scroll-ltr 80s linear infinite;
-  }
-
-  /* Right-to-left scroll (continuous) */
-  .media-row-rtl .media-strip {
-    animation: scroll-rtl 80s linear infinite;
-  }
-
-  @keyframes scroll-ltr {
-    0% { transform: translateX(0); }
-    100% { transform: translateX(calc(-50%)); }
-  }
-
-  @keyframes scroll-rtl {
-    0% { transform: translateX(0); }
-    100% { transform: translateX(calc(50%)); }
+  @keyframes scroll-up {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(calc(-50%)); }
   }
 
   .media-item {
-    flex-shrink: 0;
-    width: 200px;
-    height: 100%;
+    width: 100%;
+    height: 200px;
     overflow: hidden;
     border-radius: 4px;
     background: #e8e8e8;
@@ -275,25 +239,20 @@
       });
 
       Promise.all(preloadImgs).then(() => {
-        // swap in the new strips seamlessly (without duplicates - let animation handle seamlessness)
         for (let r = 0; r < rowCount; r++) {
           const oldStrip = document.getElementById(`strip-${r}`);
           const newStrip = document.createElement("div");
-          newStrip.className = "media-strip";
+          newStrip.className = "media-strip media-strip-vertical";
           newStrip.id = `strip-${r}`;
 
-          // add items 4x to ensure no gaps in infinite scroll
           for (let dup = 0; dup < 4; dup++) {
             newStrip.appendChild(createItemsDOM(rows[r]).cloneNode(true));
           }
 
           if (oldStrip && oldStrip.parentNode) {
-            const parent = oldStrip.parentNode;
-            parent.style.animationPlayState = "paused";
+            oldStrip.style.animationPlayState = "paused";
             oldStrip.parentNode.replaceChild(newStrip, oldStrip);
-            setTimeout(() => {
-              parent.style.animationPlayState = "running";
-            }, 50);
+            newStrip.style.animationPlayState = "running";
           }
         }
 
@@ -305,7 +264,7 @@
         for (let r = 0; r < rowCount; r++) {
           const oldStrip = document.getElementById(`strip-${r}`);
           const newStrip = document.createElement("div");
-          newStrip.className = "media-strip";
+          newStrip.className = "media-strip media-strip-vertical";
           newStrip.id = `strip-${r}`;
           for (let dup = 0; dup < 4; dup++) {
             newStrip.appendChild(createItemsDOM(rows[r]).cloneNode(true));
