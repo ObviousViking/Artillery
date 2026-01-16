@@ -140,6 +140,7 @@
   const rowCount = 3;
   let refreshTimer = null;
   let es = null;
+  let isVisible = !document.hidden;
 
   function showLoader() { if (loader) loader.style.display = "flex"; }
   function hideLoader() { if (loader) loader.style.display = "none"; }
@@ -172,6 +173,9 @@
   }
 
   async function refresh() {
+    if (!isVisible) {
+      return;
+    }
     showLoader();
     try {
       const res = await fetch("/mediawall/api/list_cache", { cache: "no-store" });
@@ -293,6 +297,13 @@
       es = null;
     }
   }
+
+  document.addEventListener("visibilitychange", () => {
+    isVisible = !document.hidden;
+    if (isVisible) {
+      refresh();
+    }
+  });
 
   document.addEventListener("DOMContentLoaded", () => {
     refresh();
