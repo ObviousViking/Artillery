@@ -38,8 +38,9 @@
       <div class="card-body">
         <h5 class="card-title mb-3">Media wall</h5>
 
-        <div id="media-wall-loader" class="text-muted small" style="position: absolute; left: -9999px; opacity: 0;">
-          Loading media wall...
+        <div id="media-wall-loader" class="media-wall-loader">
+          <div class="spinner-border text-light" role="status"></div>
+          <span class="ms-2">Refreshing media wall...</span>
         </div>
 
         <div id="media-wall-empty" class="text-muted mb-0" {% if has_media %}style="display:none"{% endif %}>
@@ -154,6 +155,13 @@
     justify-content: center;
     align-items: center;
   }
+
+  .media-wall-loader {
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
 </style>
 
 <script>
@@ -164,8 +172,10 @@
 
   let lastSig = "";
   const rowCount = 3;
+  let refreshTimer = null;
+  let es = null;
 
-  function showLoader() { if (loader) loader.style.display = ""; }
+  function showLoader() { if (loader) loader.style.display = "flex"; }
   function hideLoader() { if (loader) loader.style.display = "none"; }
   function setEmpty(isEmpty) { if (emptyMsg) emptyMsg.style.display = isEmpty ? "" : "none"; }
 
@@ -312,20 +322,34 @@
     }
   }
 
+  function stopMediaWall() {
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+      refreshTimer = null;
+    }
+    if (es) {
+      try { es.close(); } catch (e) { /* ignore */ }
+      es = null;
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     refresh();
 
     const scanIntervalAttr = container?.closest(".card")?.getAttribute("data-media-wall-scan-interval");
     const scanIntervalSec = Math.max(1, parseInt(scanIntervalAttr || "60", 10));
-    setInterval(refresh, scanIntervalSec * 1000);
+    refreshTimer = setInterval(refresh, scanIntervalSec * 1000);
 
     if (window.EventSource) {
       try {
-        const es = new EventSource('/mediawall/events');
+        es = new EventSource('/mediawall/events');
         es.addEventListener('mediawall_update', () => { refresh(); });
         es.addEventListener('error', () => { /* fallback poll running */ });
       } catch (e) { /* ignore */ }
     }
+
+    window.addEventListener("pagehide", stopMediaWall);
+    window.addEventListener("beforeunload", stopMediaWall);
   });
 })();
 </script>

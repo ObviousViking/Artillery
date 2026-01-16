@@ -12,7 +12,6 @@ import time
 import logging
 import signal
 import faulthandler
-import hashlib
 from typing import Optional, List, Tuple
 
 from flask import (
@@ -69,7 +68,6 @@ MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 # Media wall (DB + cache folder)
 # ---------------------------------------------------------------------
 
-MEDIA_DB = os.path.join(CONFIG_ROOT, "mediawall.sqlite")
 MEDIA_WALL_DIR = os.path.join(CONFIG_ROOT, "media_wall")
 MEDIA_WALL_SCAN_INTERVAL_FILE = os.path.join(CONFIG_ROOT, "mediawall_scan_interval.txt")
 
@@ -250,127 +248,6 @@ def load_tasks():
         tasks.append(task)
 
     return tasks
-
-# ---------------------------------------------------------------------
-# Media wall DB
-# ---------------------------------------------------------------------
-
-# REMOVE or COMMENT OUT these lines if they exist:
-# import sqlite3
-# MEDIAWALL_DB = os.path.join(CONFIG_DIR, 'mediawall.sqlite3')
-# def init_mediawall_db(): ...
-# db connection logic, table creation, etc.
-
-# Instead, use only the /mediawall/api/list_cache endpoint which lists files directly from the folder
-
-def _cache_name_for_relpath(relpath: str) -> str:
-    ext = os.path.splitext(relpath)[1].lower()
-    h = hashlib.sha1(relpath.encode("utf-8", errors="ignore")).hexdigest()
-    return f"{h}{ext}"
-
-
-def _clean_dir(path: str):
-    os.makedirs(path, exist_ok=True)
-    for fn in os.listdir(path):
-        try:
-            os.remove(os.path.join(path, fn))
-        except Exception:
-            pass
-
-
-def refresh_wall_cache(conn, n: int) -> dict:
-    """
-    Pick up to N random items and copy them into cache.
-    """
-    ensure_data_dirs(ensure_downloads=False)
-
-    with MEDIA_WALL_REFRESH_LOCK:
-        # choose candidates
-        if MEDIA_WALL_CACHE_VIDEOS:
-            rows = conn.execute(
-                "SELECT path, ext FROM media ORDER BY RANDOM() LIMIT ?",
-                (int(n),)
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT path, ext FROM media WHERE ext IN ({}) ORDER BY RANDOM() LIMIT ?".format(
-                    ",".join(["?"] * len(IMAGE_EXTS))
-                ),
-                tuple(sorted(IMAGE_EXTS)) + (int(n),)
-            ).fetchall()
-
-        picked = [(r[0], r[1]) for r in rows]
-        if not picked:
-            return {"picked": 0, "copied": 0, "failed": 0}
-
-        # clean current cache (no prev/next rotation)
-        _clean_dir(MEDIA_WALL_DIR)
-
-        copied = 0
-        failed = 0
-
-        for rel, _ext in picked:
-            src = os.path.join(DOWNLOADS_ROOT, rel)
-            name = _cache_name_for_relpath(rel)
-            dst = os.path.join(MEDIA_WALL_DIR, name)
-
-            tmp = dst + ".tmp"
-            try:
-                shutil.copy2(src, tmp)
-                os.replace(tmp, dst)  # atomic file publish
-                copied += 1
-            except Exception as exc:
-                failed += 1
-                app.logger.warning("media wall copy failed: %s -> %s (%s)", src, dst, exc)
-                try:
-                    if os.path.exists(tmp):
-                        os.remove(tmp)
-                except Exception:
-                    pass
-
-        if copied == 0:
-            return {"picked": len(picked), "copied": 0, "failed": failed}
-
-        now = _utcnow()
-        conn.execute(
-            """
-            INSERT INTO meta(key, value)
-            VALUES ('last_cache_refresh', ?)
-            ON CONFLICT(key) DO UPDATE SET value=excluded.value
-            """,
-            (now,),
-        )
-        conn.commit()
-
-        return {"picked": len(picked), "copied": copied, "failed": failed}
-
-
-
-def _should_refresh_cache(conn) -> bool:
-    try:
-        row = conn.execute("SELECT value FROM meta WHERE key='last_cache_refresh'").fetchone()
-        if not row or not row[0]:
-            return True
-        last = row[0].replace("Z", "")
-        last_dt = dt.datetime.fromisoformat(last)
-        age = (dt.datetime.utcnow() - last_dt).total_seconds()
-        return age >= MEDIA_WALL_MIN_REFRESH_SECONDS
-    except Exception:
-        return True
-
-
-def get_mediawall_status(conn) -> dict:
-    media_count = conn.execute("SELECT COUNT(*) FROM media").fetchone()[0]
-
-    def _meta(k: str) -> Optional[str]:
-        row = conn.execute("SELECT value FROM meta WHERE key=?", (k,)).fetchone()
-        return row[0] if row else None
-
-    return {
-        "media_count": int(media_count),
-        "last_ingest": _meta("last_ingest"),
-        "last_cache_refresh": _meta("last_cache_refresh"),
-    }
 
 # ---------------------------------------------------------------------
 # Health check
