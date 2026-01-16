@@ -369,49 +369,6 @@ def healthz():
 # Media wall admin endpoints
 # ---------------------------------------------------------------------
 
-@app.route("/mediawall/status")
-def mediawall_status():
-    conn = _open_media_db()
-    status = get_mediawall_status(conn)
-    conn.close()
-    return Response(json.dumps(status, indent=2) + "\n", mimetype="application/json")
-
-
-@app.route("/mediawall/rebuild", methods=["POST"])
-def mediawall_rebuild():
-    conn = _open_media_db()
-    stats = ingest_all_task_logs(conn, full_rescan=False)
-    status = get_mediawall_status(conn)
-    conn.close()
-    flash(f"Media index updated: {stats} (total={status['media_count']})", "success")
-    return redirect(url_for("home"))
-
-
-@app.route("/mediawall/refresh", methods=["POST"])
-def mediawall_refresh():
-    conn = _open_media_db()
-    result = refresh_wall_cache(conn, MEDIA_WALL_COPY_LIMIT)
-    status = get_mediawall_status(conn)
-    conn.close()
-    flash(f"Media wall refreshed: {result} (total={status['media_count']})", "success")
-    return redirect(url_for("home"))
-
-
-@app.route("/mediawall/seed", methods=["POST"])
-def mediawall_seed():
-    """Convenience: rebuild then refresh."""
-    if not MEDIA_WALL_ENABLED:
-        flash("Media wall is disabled", "warning")
-        return redirect(url_for("home"))
-    conn = _open_media_db()
-    stats = ingest_all_task_logs(conn, full_rescan=False)
-    result = refresh_wall_cache(conn, MEDIA_WALL_COPY_LIMIT)
-    status = get_mediawall_status(conn)
-    conn.close()
-    flash(f"Seeded wall. rebuild={stats} refresh={result} total={status['media_count']}", "success")
-    return redirect(url_for("home"))
-
-
 @app.route("/mediawall/toggle", methods=["POST"])
 def mediawall_toggle():
     """Toggle media wall enabled/disabled."""
@@ -429,64 +386,13 @@ def mediawall_toggle():
 @app.route("/wall/<path:filename>")
 def wall_file(filename):
     ensure_data_dirs(ensure_downloads=False)
+    return send_from_directory(MEDIA_WALL_DIR, filename, conditional=True)
 
-    def _send(dirpath: str):
-        resp = send_from_directory(dirpath, filename, conditional=True)
-        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-        resp.headers["Pragma"] = "no-cache"
-        resp.headers["Expires"] = "0"
-        return resp
-
-    try:
-        return _send(MEDIA_WALL_DIR)
-    except NotFound:
-        return _send(MEDIA_WALL_DIR_PREV)
-    
-
-
-@app.route("/mediawall/api/cache_index")
-def mediawall_cache_index():
-    ensure_data_dirs(ensure_downloads=False)
-
-    def _list_dir(d: str):
-        items = []
-        if not os.path.isdir(d):
-            return items
-        for entry in os.scandir(d):
-            if not entry.is_file():
-                continue
-            fn = entry.name
-            if fn.endswith(".tmp"):
-                continue
-            ext = os.path.splitext(fn)[1].lower()
-            if ext not in MEDIA_EXTS:
-                continue
-            try:
-                st = entry.stat()
-            except FileNotFoundError:
-                continue
-            items.append({
-                "name": fn,
-                "mtime": int(st.st_mtime),
-                "size": int(st.st_size),
-                "url": url_for("wall_file", filename=fn),
-            })
-        items.sort(key=lambda x: x["mtime"], reverse=True)
-        return items
-
-    # primary list only (prev is fallback)
-    return jsonify({
-        "items": _list_dir(MEDIA_WALL_DIR),
-    })
-
-
-# ---------------------------------------------------------------------
-# New: list files directly from config/media_wall to avoid SQLite dependency
 @app.route('/mediawall/api/list_cache')
 def mediawall_list_cache():
     """
     Return JSON: { items: [{ name, url, mtime }, ...] }
-    Reads files from CONFIG_DIR/media_wall and exposes via url_for('wall')
+    Reads files from CONFIG_DIR/media_wall
     """
     config_dir = os.environ.get('CONFIG_DIR', '/config')
     media_dir = os.path.join(config_dir, 'media_wall')
@@ -507,14 +413,33 @@ def mediawall_list_cache():
                     except Exception:
                         mtime = 0
                     try:
-                        file_url = url_for('wall', filename=fname)
+                        file_url = url_for('wall_file', filename=fname)
                     except Exception:
-                        # fallback to manual path if route not present
                         file_url = '/wall/' + fname
                     items.append({'name': fname, 'url': file_url, 'mtime': mtime})
     except Exception:
         pass
     return jsonify({'items': items})
+
+@app.route("/mediawall/events")
+def mediawall_events():
+    """SSE endpoint that emits mediawall_update when notify file mtime changes."""
+    def gen():
+        last_mtime = 0
+        try:
+            while True:
+                try:
+                    if os.path.exists(MEDIAWALL_NOTIFY_FILE):
+                        m = os.path.getmtime(MEDIAWALL_NOTIFY_FILE)
+                        if m != last_mtime:
+                            last_mtime = m
+                            yield f'event: mediawall_update\ndata: {int(m)}\n\n'
+                    time.sleep(1)
+                except Exception:
+                    time.sleep(1)
+        except GeneratorExit:
+            return
+    return Response(gen(), mimetype='text/event-stream')
 
 # ---------------------------------------------------------------------
 # Home page (uses cache folder; never scans /downloads)
@@ -726,26 +651,14 @@ def run_task_background(task_folder: str):
         with open(logs_path, "a", encoding="utf-8") as logf:
             logf.write(f"\nERROR while running task: {exc}\n")
     finally:
-        # ---- MEDIA WALL HOOK: ingest + refresh cache (copy up to 100) ----
-        if MEDIA_WALL_AUTO_INGEST_ON_TASK_END:
-            try:
-                slug = os.path.basename(task_folder.rstrip("/"))
-                conn = _open_media_db()  # creates DB if missing
-                ingest_task_log(conn, slug, logs_path, full_rescan=False)
-
-                if MEDIA_WALL_AUTO_REFRESH_ON_TASK_END and _should_refresh_cache(conn):
-                    refresh_wall_cache(conn, min(MEDIA_WALL_COPY_LIMIT, 100))
-
-                conn.close()
-            except Exception as exc:
-                app.logger.warning("Media wall update failed: %s", exc)
-
+        # Task completion: just notify clients that media wall should refresh
         if os.path.exists(lock_path):
             os.remove(lock_path)
 
-        # ensure we notify mediawall indexer / clients that a task finished
         try:
             touch_mediawall_notify()
+            slug = os.path.basename(task_folder.rstrip("/"))
+            print(f"task {slug} finished", flush=True)
         except Exception:
             pass
 
