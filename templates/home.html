@@ -88,11 +88,12 @@
     padding: 8px;
     will-change: transform;
     animation: scroll-up 160s linear infinite;
+    animation-duration: var(--media-scroll-duration, 160s);
   }
 
-  @keyframes scroll-up {
-    0% { transform: translateY(0); }
-    100% { transform: translateY(calc(-50%)); }
+  .media-strip-vertical,
+  .media-strip-vertical * {
+    animation-duration: var(--media-scroll-duration, 160s);
   }
 
   .media-item {
@@ -108,7 +109,7 @@
 
   .media-item img {
     width: 100%;
-    height: auto;
+    height: 100%;
     object-fit: contain;
     background: transparent;
   }
