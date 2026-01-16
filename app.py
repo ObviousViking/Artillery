@@ -1041,3 +1041,26 @@ def download_task_logs(slug):
         return jsonify({"error": "No logs yet for this task"}), 404
 
     try:
+        # Prefer modern Flask's download_name, fallback to attachment_filename
+        try:
+            return send_file(logs_path, as_attachment=True, download_name=f"{slug}-logs.txt")
+        except TypeError:
+            return send_file(logs_path, as_attachment=True, attachment_filename=f"{slug}-logs.txt")
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+# ---------------------------------------------------------------------
+# Original media route (serves from /downloads)
+# ---------------------------------------------------------------------
+
+@app.route("/media/<path:subpath>")
+def media_file(subpath):
+    ensure_data_dirs(ensure_downloads=True)
+    return send_from_directory(DOWNLOADS_ROOT, subpath)
+
+# ---------------------------------------------------------------------
+# Main (dev only)
+# ---------------------------------------------------------------------
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
