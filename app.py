@@ -72,7 +72,7 @@ MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
 MEDIA_DB = os.path.join(CONFIG_ROOT, "mediawall.sqlite")
 MEDIA_WALL_DIR = os.path.join(CONFIG_ROOT, "media_wall")
-MEDIA_WALL_DIR_TMP = os.path.join(CONFIG_ROOT, "media_wall_tmp")  # new temp dir for atomic swaps
+# Removed MEDIA_WALL_DIR_TMP - no longer needed for atomic swaps
 
 from werkzeug.exceptions import NotFound
 
@@ -151,8 +151,7 @@ def ensure_data_dirs(ensure_downloads: bool = False):
     os.makedirs(TASKS_ROOT, exist_ok=True)
     os.makedirs(CONFIG_ROOT, exist_ok=True)
     os.makedirs(MEDIA_WALL_DIR, exist_ok=True)
-    # Do not auto-create legacy PREV/NEXT dirs; use a single tmp dir for atomic swaps
-    os.makedirs(MEDIA_WALL_DIR_TMP, exist_ok=True)
+    # Removed creation of media_wall_tmp, prev, next - only media_wall is needed
 
     if ensure_downloads:
         os.makedirs(DOWNLOADS_ROOT, exist_ok=True)
@@ -248,8 +247,8 @@ def _clean_dir(path: str):
 
 def refresh_wall_cache(conn, n: int) -> dict:
     """
-    Pick up to N random items and copy them into cache.
-    Refresh is atomic: build new cache in MEDIA_WALL_DIR_TMP then replace MEDIA_WALL_DIR.
+    Pick up to N random items and copy them directly into media_wall.
+    Simplified: no atomic swap dirs, just clear and repopulate.
     """
     ensure_data_dirs(ensure_downloads=False)
 
@@ -272,8 +271,8 @@ def refresh_wall_cache(conn, n: int) -> dict:
         if not picked:
             return {"picked": 0, "copied": 0, "failed": 0}
 
-        # build tmp cache
-        _clean_dir(MEDIA_WALL_DIR_TMP)
+        # clear existing cache
+        _clean_dir(MEDIA_WALL_DIR)
 
         copied = 0
         failed = 0
@@ -281,40 +280,14 @@ def refresh_wall_cache(conn, n: int) -> dict:
         for rel, _ext in picked:
             src = os.path.join(DOWNLOADS_ROOT, rel)
             name = _cache_name_for_relpath(rel)
-            dst = os.path.join(MEDIA_WALL_DIR_TMP, name)
+            dst = os.path.join(MEDIA_WALL_DIR, name)
 
-            tmp = dst + ".tmp"
             try:
-                shutil.copy2(src, tmp)
-                os.replace(tmp, dst)  # atomic file publish
+                shutil.copy2(src, dst)
                 copied += 1
             except Exception as exc:
                 failed += 1
                 app.logger.warning("media wall copy failed: %s -> %s (%s)", src, dst, exc)
-                try:
-                    if os.path.exists(tmp):
-                        os.remove(tmp)
-                except Exception:
-                    pass
-
-        # if we copied nothing, don't swap (avoid wiping current wall)
-        if copied == 0:
-            return {"picked": len(picked), "copied": 0, "failed": failed}
-
-        # atomically replace current wall with tmp
-        try:
-            os.replace(MEDIA_WALL_DIR_TMP, MEDIA_WALL_DIR)
-        except Exception:
-            # fallback: try removing existing and moving
-            try:
-                if os.path.isdir(MEDIA_WALL_DIR):
-                    shutil.rmtree(MEDIA_WALL_DIR)
-                os.replace(MEDIA_WALL_DIR_TMP, MEDIA_WALL_DIR)
-            except Exception as exc:
-                app.logger.warning("media wall rotation failed: %s", exc)
-
-        # recreate tmp dir for next run
-        os.makedirs(MEDIA_WALL_DIR_TMP, exist_ok=True)
 
         # update meta if possible
         try:

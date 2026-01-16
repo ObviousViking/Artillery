@@ -33,6 +33,10 @@
   <div class="col-12">
     <div class="card shadow-sm">
       <div class="card-body" style="position:relative;"> <!-- made positioned so loader overlay works -->
+        <h5 class="card-title mb-3">
+          Media wall
+          <button id="media-wall-refresh-btn" class="btn btn-sm btn-outline-light ms-2" title="Refresh media wall">Refresh</button>
+        </h5>
 
         <!-- moved loader inside the container so it overlays the wall -->
         <div id="media-wall-container" class="media-wall-scroll-container" style="display:none;">
@@ -344,6 +348,21 @@
         const es = new EventSource('/mediawall/events');
         es.addEventListener('mediawall_update', () => { refresh(); });
       } catch (e) { /* ignore */ }
+    }
+
+    // Wire the new refresh button
+    const refreshBtn = document.getElementById('media-wall-refresh-btn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', async function () {
+        refreshBtn.disabled = true;
+        try {
+          await fetch('/mediawall/refresh', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        } catch (e) {}
+        if (window.__artillery_mediawall_refresh) {
+          window.__artillery_mediawall_refresh();
+        }
+        refreshBtn.disabled = false;
+      });
     }
   });
 
