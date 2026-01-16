@@ -29,7 +29,7 @@
 </div>
 
 {% if media_wall_enabled %}
-<!-- Media wall with Swiper Grid -->
+<!-- Media wall with infinite horizontal scroll -->
 <div class="row">
   <div class="col-12">
     <div class="card shadow-sm">
@@ -44,19 +44,21 @@
           No media cached yet. Run a task, then refresh the media wall.
         </div>
 
-        <!-- Swiper grid carousel -->
-        <div class="swiper" id="media-swiper" style="display:none;">
-          <div class="swiper-wrapper" id="media-swiper-wrapper">
-            <!-- slides populated by JS -->
+        <!-- Infinite scroll container -->
+        <div id="media-wall-container" style="display:none; overflow: hidden;">
+          <!-- Row 1: scroll left-to-right -->
+          <div class="media-row media-row-ltr">
+            <div class="media-strip" id="strip-0"></div>
           </div>
-          <!-- Navigation -->
-          <div class="swiper-button-next"></div>
-          <div class="swiper-button-prev"></div>
+          <!-- Row 2: scroll right-to-left -->
+          <div class="media-row media-row-rtl">
+            <div class="media-strip" id="strip-1"></div>
+          </div>
+          <!-- Row 3: scroll left-to-right -->
+          <div class="media-row media-row-ltr">
+            <div class="media-strip" id="strip-2"></div>
+          </div>
         </div>
-
-        <p class="text-center small text-muted mt-2" style="font-size: 0.75rem;">
-          Powered by <a href="https://swiperjs.com/" target="_blank" style="color: inherit;">Swiper</a>
-        </p>
 
       </div>
     </div>
@@ -64,36 +66,61 @@
 </div>
 
 <style>
-  #media-swiper {
+  .media-row {
     width: 100%;
-    height: 500px;
+    height: 200px;
+    overflow: hidden;
+    background: #f5f5f5;
+    margin-bottom: 10px;
+    position: relative;
   }
-  .swiper-wrapper {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 10px;
-    padding: 10px;
-  }
-  .swiper-slide {
+
+  .media-strip {
     display: flex;
-    justify-content: center;
-    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    height: 100%;
+  }
+
+  /* Left-to-right scroll (continuous) */
+  .media-row-ltr .media-strip {
+    animation: scroll-ltr 60s linear infinite;
+  }
+
+  /* Right-to-left scroll (continuous) */
+  .media-row-rtl .media-strip {
+    animation: scroll-rtl 60s linear infinite;
+  }
+
+  @keyframes scroll-ltr {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(calc(-50%)); }
+  }
+
+  @keyframes scroll-rtl {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(calc(50%)); }
+  }
+
+  .media-item {
+    flex-shrink: 0;
+    width: 200px;
+    height: 100%;
     overflow: hidden;
     border-radius: 4px;
-    background: #f0f0f0;
-    aspect-ratio: 1;
+    background: #e0e0e0;
   }
-  .swiper-slide img {
+
+  .media-item img {
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
-  .swiper-slide a {
+
+  .media-item a {
+    display: block;
     width: 100%;
     height: 100%;
-    display: flex;
-    justify-content: center;
-    align-items: center;
   }
 </style>
 
@@ -101,11 +128,11 @@
 (function () {
   const loader = document.getElementById("media-wall-loader");
   const emptyMsg = document.getElementById("media-wall-empty");
-  const swiperEl = document.getElementById("media-swiper");
-  const wrapper = document.getElementById("media-swiper-wrapper");
+  const container = document.getElementById("media-wall-container");
 
-  let swiper = null;
   let lastSig = "";
+  const rowCount = 3;
+  const itemsPerRow = 6; // distribute items across rows
 
   function showLoader() { if (loader) loader.style.display = ""; }
   function hideLoader() { if (loader) loader.style.display = "none"; }
@@ -123,7 +150,7 @@
       if (!items.length) {
         setEmpty(true);
         hideLoader();
-        if (swiperEl) swiperEl.style.display = "none";
+        if (container) container.style.display = "none";
         return;
       }
 
@@ -134,51 +161,94 @@
       }
       lastSig = sig;
 
-      // build grid slides (all items in a single slide for grid layout)
-      wrapper.innerHTML = "";
-      items.forEach(item => {
-        const url = item.url || item;
-        const mtime = item.mtime || 0;
-        const src = url + (url.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(mtime);
-
-        const slide = document.createElement("div");
-        slide.className = "swiper-slide";
-
-        const img = document.createElement("img");
-        img.src = src;
-        img.alt = "media";
-        img.loading = "lazy";
-
-        const a = document.createElement("a");
-        a.href = src;
-        a.target = "_blank";
-        a.appendChild(img);
-
-        slide.appendChild(a);
-        wrapper.appendChild(slide);
+      // distribute items across 3 rows (cycling)
+      const rows = [[], [], []];
+      items.forEach((item, idx) => {
+        rows[idx % rowCount].push(item);
       });
 
-      setEmpty(false);
-      swiperEl.style.display = "";
+      // build new strips in background
+      const newStrips = [];
+      for (let r = 0; r < rowCount; r++) {
+        const newStrip = document.createElement("div");
+        newStrip.className = "media-strip";
 
-      // init or reinit swiper (grid layout with continuous scroll)
-      if (!swiper) {
-        swiper = new Swiper("#media-swiper", {
-          loop: true,
-          autoplay: { delay: 3000, disableOnInteraction: false },
-          navigation: {
-            nextEl: ".swiper-button-next",
-            prevEl: ".swiper-button-prev"
-          },
-          spaceBetween: 10,
-          slidesPerView: 1,
-          lazy: { loadPrevNext: true }
-        });
-      } else {
-        swiper.update();
+        // add items twice for seamless loop
+        for (let dup = 0; dup < 2; dup++) {
+          rows[r].forEach(item => {
+            const url = item.url || item;
+            const mtime = item.mtime || 0;
+            const src = url + (url.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(mtime);
+
+            const itemDiv = document.createElement("div");
+            itemDiv.className = "media-item";
+
+            const img = document.createElement("img");
+            img.src = src;
+            img.alt = "media";
+            img.loading = "lazy";
+
+            const a = document.createElement("a");
+            a.href = src;
+            a.target = "_blank";
+            a.appendChild(img);
+
+            itemDiv.appendChild(a);
+            newStrip.appendChild(itemDiv);
+          });
+        }
+
+        newStrips.push(newStrip);
       }
 
-      hideLoader();
+      // preload a small sample to ensure smooth transition
+      const preloadImgs = [];
+      for (let r = 0; r < rowCount; r++) {
+        const strip = newStrips[r];
+        const imgs = strip.querySelectorAll("img");
+        for (let i = 0; i < Math.min(3, imgs.length); i++) {
+          preloadImgs.push(new Promise(resolve => {
+            const p = new Image();
+            p.onload = () => resolve();
+            p.onerror = () => resolve();
+            p.src = imgs[i].src;
+          }));
+        }
+      }
+
+      Promise.all(preloadImgs).then(() => {
+        // swap in the new strips seamlessly
+        for (let r = 0; r < rowCount; r++) {
+          const oldStrip = document.getElementById(`strip-${r}`);
+          if (oldStrip && oldStrip.parentNode) {
+            // pause animation, swap, resume
+            const parent = oldStrip.parentNode;
+            parent.style.animationPlayState = "paused";
+            oldStrip.parentNode.replaceChild(newStrips[r], oldStrip);
+            newStrips[r].id = `strip-${r}`;
+            // small delay to ensure paint happens
+            setTimeout(() => {
+              parent.style.animationPlayState = "running";
+            }, 50);
+          }
+        }
+
+        setEmpty(false);
+        container.style.display = "";
+        hideLoader();
+      }).catch(() => {
+        // fallback: direct swap without preload
+        for (let r = 0; r < rowCount; r++) {
+          const oldStrip = document.getElementById(`strip-${r}`);
+          if (oldStrip && oldStrip.parentNode) {
+            oldStrip.parentNode.replaceChild(newStrips[r], oldStrip);
+            newStrips[r].id = `strip-${r}`;
+          }
+        }
+        setEmpty(false);
+        container.style.display = "";
+        hideLoader();
+      });
     } catch (e) {
       hideLoader();
       console.error("media wall refresh error:", e);
@@ -186,18 +256,14 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    // initial load
     refresh();
-
-    // poll periodically
     setInterval(refresh, 15000);
 
-    // SSE listener for immediate updates
     if (window.EventSource) {
       try {
         const es = new EventSource('/mediawall/events');
         es.addEventListener('mediawall_update', () => { refresh(); });
-        es.addEventListener('error', () => { /* fallback poll still running */ });
+        es.addEventListener('error', () => { /* fallback poll running */ });
       } catch (e) { /* ignore */ }
     }
   });
