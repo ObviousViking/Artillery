@@ -70,6 +70,7 @@ MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
 MEDIA_WALL_DIR = os.path.join(CONFIG_ROOT, "media_wall")
 MEDIA_WALL_SCAN_INTERVAL_FILE = os.path.join(CONFIG_ROOT, "mediawall_scan_interval.txt")
+MEDIA_WALL_ENABLED_FILE = os.path.join(CONFIG_ROOT, "mediawall_enabled.txt")
 
 from werkzeug.exceptions import NotFound
 
@@ -81,7 +82,7 @@ app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
 # Media wall constants
 MEDIA_WALL_ROWS = 3
-MEDIA_WALL_ENABLED = os.environ.get("MEDIA_WALL_ENABLED", "1") == "1"
+MEDIA_WALL_ENABLED_DEFAULT = os.environ.get("MEDIA_WALL_ENABLED", "1") == "1"
 MEDIA_WALL_ITEMS_ON_PAGE = int(os.environ.get("MEDIA_WALL_ITEMS", "45"))
 MEDIA_WALL_CACHE_VIDEOS = os.environ.get("MEDIA_WALL_CACHE_VIDEOS", "0") == "1"
 MEDIA_WALL_COPY_LIMIT = int(os.environ.get("MEDIA_WALL_COPY_LIMIT", "100"))
@@ -167,6 +168,15 @@ def write_text(path: str, content: str):
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
 
+def _get_media_wall_enabled() -> bool:
+    raw = read_text(MEDIA_WALL_ENABLED_FILE)
+    if raw is None:
+        return MEDIA_WALL_ENABLED_DEFAULT
+    return raw.strip() in ("1", "true", "True", "yes", "on")
+
+def _set_media_wall_enabled(value: bool) -> None:
+    write_text(MEDIA_WALL_ENABLED_FILE, "1" if value else "0")
+
 def _get_media_wall_scan_interval() -> int:
     default = int(os.environ.get("MEDIA_WALL_SCAN_INTERVAL", "60"))
     raw = read_text(MEDIA_WALL_SCAN_INTERVAL_FILE)
@@ -197,6 +207,9 @@ def _task_mtimes(task_path: str) -> dict:
 
 # In-memory cache to reduce repeated disk reads on /tasks
 _TASK_CACHE = {}
+
+# Initialize persisted media wall state
+MEDIA_WALL_ENABLED = _get_media_wall_enabled()
 
 def load_tasks():
     ensure_data_dirs(ensure_downloads=False)
@@ -267,6 +280,7 @@ def mediawall_toggle():
     """Toggle media wall enabled/disabled."""
     global MEDIA_WALL_ENABLED
     MEDIA_WALL_ENABLED = not MEDIA_WALL_ENABLED
+    _set_media_wall_enabled(MEDIA_WALL_ENABLED)
     status = "enabled" if MEDIA_WALL_ENABLED else "disabled"
     os.environ["MEDIA_WALL_ENABLED"] = "1" if MEDIA_WALL_ENABLED else "0"
     flash(f"Media wall {status}", "success")
