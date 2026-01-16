@@ -13,7 +13,7 @@ import logging
 import signal
 import faulthandler
 import hashlib
-import sqlite3
+import sqlite3  # added for mediawall kv/meta storage
 from typing import Optional, List, Tuple
 
 from flask import (
@@ -72,11 +72,11 @@ MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
 MEDIA_DB = os.path.join(CONFIG_ROOT, "mediawall.sqlite")
 MEDIA_WALL_DIR = os.path.join(CONFIG_ROOT, "media_wall")
-MEDIA_WALL_DIR_TMP = os.path.join(CONFIG_ROOT, "media_wall_tmp")
+MEDIA_WALL_DIR_TMP = os.path.join(CONFIG_ROOT, "media_wall_tmp")  # new temp dir for atomic swaps
 
 from werkzeug.exceptions import NotFound
 
-# Removed unused PREV/NEXT dirs (do not auto-create them anymore)
+# Previously defined PREV/NEXT dirs - no longer used
 # MEDIA_WALL_DIR_PREV = os.path.join(CONFIG_ROOT, "media_wall_prev")
 # MEDIA_WALL_DIR_NEXT = os.path.join(CONFIG_ROOT, "media_wall_next")
 
@@ -151,7 +151,7 @@ def ensure_data_dirs(ensure_downloads: bool = False):
     os.makedirs(TASKS_ROOT, exist_ok=True)
     os.makedirs(CONFIG_ROOT, exist_ok=True)
     os.makedirs(MEDIA_WALL_DIR, exist_ok=True)
-    # DO NOT create media_wall_prev / media_wall_next automatically
+    # Do not auto-create legacy PREV/NEXT dirs; use a single tmp dir for atomic swaps
     os.makedirs(MEDIA_WALL_DIR_TMP, exist_ok=True)
 
     if ensure_downloads:
