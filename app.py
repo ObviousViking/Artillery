@@ -390,7 +390,7 @@ def mediawall_toggle():
     # fallback redirect to referrer or home
     ref = request.referrer or url_for("home")
     return redirect(ref)
-
+ 
 @app.route("/mediawall/interval", methods=["GET", "POST"])
 def mediawall_interval():
     """
