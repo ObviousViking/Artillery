@@ -34,7 +34,13 @@
   <div class="col-12">
     <div class="card shadow-sm">
       <div class="card-body">
-        <h5 class="card-title mb-3">Media wall</h5>
+        <h5 class="card-title mb-3">
+          Media wall
+          <!-- manual refresh button -->
+          <button id="refresh-media-wall-btn" class="btn btn-sm btn-outline-light ms-2" title="Refresh media wall">
+            Refresh wall
+          </button>
+        </h5>
 
         <div id="media-wall-loader" class="media-wall-loading" style="display: none;">
           <div class="loading-spinner"></div>
@@ -67,21 +73,20 @@
     position: relative;
   }
 
-  /* Vertical scroll strip - grid layout */
+  /* expose scroll-duration for JS-driven scroll */
+  :root {
+    --mediawall-scroll-duration-ms: 120000; /* 120s */
+  }
+
+  /* remove auto CSS animation; JS will control transform based on time */
   .media-wall-scroll {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 0;
     padding: 0;
     width: 100%;
-    animation: scroll-up 120s linear infinite;
     will-change: transform;
-  }
-
-  /* Seamless vertical scrolling - scrolls up continuously */
-  @keyframes scroll-up {
-    0% { transform: translateY(0); }
-    100% { transform: translateY(calc(-50%)); }
+    /* animation removed so JS controls scrolling */
   }
 
   /* Media item - thumbnail */
@@ -103,9 +108,9 @@
   }
 
   .media-item img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain; /* preserve aspect ratio */
     background: transparent;
   }
 
@@ -130,6 +135,29 @@
     bottom: 0;
     background: linear-gradient(to top, rgba(5,5,5,1), rgba(5,5,5,0));
   }
+
+  .media-wall {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .media-row {
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+    justify-content: flex-start;
+  }
+  .media-thumb {
+    max-height: 140px;
+    max-width: 220px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 8px;
+    background: #222;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    display: block;
+  }
 </style>
 
 <script>
@@ -137,9 +165,9 @@
   const loader = document.getElementById("media-wall-loader");
   const emptyMsg = document.getElementById("media-wall-empty");
   const container = document.getElementById("media-wall-container");
-  const scrollWall = document.getElementById("media-wall-scroll");
-
+  const scrollWrapperId = "media-wall-scroll";
   let lastSig = "";
+  let activeInterval = null;
 
   function showLoader() { if (loader) loader.style.display = "flex"; }
   function hideLoader() { if (loader) loader.style.display = "none"; }
@@ -172,12 +200,54 @@
     return fragment;
   }
 
-  async function refresh() {
+  function clearExistingWallIntervals(el) {
+    try {
+      if (!el) el = document.getElementById(scrollWrapperId);
+      if (el && el._mw_interval) {
+        clearInterval(el._mw_interval);
+        el._mw_interval = null;
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  function enableContinuousScroll(wallEl) {
+    // disable any CSS animation and rely on time-based transform
+    wallEl.style.animation = 'none';
+    // compute constants
+    const DURATION = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--mediawall-scroll-duration-ms')) || 120000;
+    // ensure a persistent start timestamp (per-browser)
+    if (!localStorage.getItem('mediawall_start_ts')) {
+      localStorage.setItem('mediawall_start_ts', Date.now().toString());
+    }
+    const startTs = parseInt(localStorage.getItem('mediawall_start_ts'), 10) || Date.now();
+
+    // clear any prior interval on previous element
+    clearExistingWallIntervals(wallEl);
+
+    function updatePosition() {
+      // half-height because we duplicate items to make seamless loop
+      const half = wallEl.scrollHeight / 2 || 1;
+      const elapsed = (Date.now() - startTs) % DURATION;
+      const progress = elapsed / DURATION;
+      const y = -Math.round(progress * half);
+      wallEl.style.transform = `translateY(${y}px)`;
+    }
+
+    // update immediately and then on an interval (coarse updates will keep perceived motion when hidden)
+    updatePosition();
+    wallEl._mw_interval = setInterval(updatePosition, 1000);
+
+    // also ensure we update immediately when tab becomes visible again
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) updatePosition();
+    });
+  }
+
+  async function refresh(triggeredByUser = false) {
     showLoader();
     try {
       const res = await fetch("/mediawall/api/list_cache", { cache: "no-store" });
       if (!res.ok) return;
-
       const data = await res.json();
       const items = (data.items || []);
 
@@ -189,13 +259,13 @@
       }
 
       const sig = items.map(i => (i.name || i.url) + ":" + (i.mtime || "")).join("|");
-      if (sig && sig === lastSig) {
+      if (!triggeredByUser && sig && sig === lastSig) {
         hideLoader();
         return;
       }
       lastSig = sig;
 
-      // Preload a small sample to ensure smooth transition
+      // Preload small sample then swap
       const preloadImgs = [];
       for (let i = 0; i < Math.min(5, items.length); i++) {
         preloadImgs.push(new Promise(resolve => {
@@ -209,45 +279,34 @@
         }));
       }
 
-      Promise.all(preloadImgs).then(() => {
-        // Populate the scroll wall
-        // Duplicate items to ensure seamless infinite scroll (2x for 50% halfway point)
-        const newWall = document.createElement("div");
-        newWall.className = "media-wall-scroll";
-        
-        // Add items twice to enable seamless 50% halfway-point loop
-        newWall.appendChild(createItemsDOM(items).cloneNode(true));
-        newWall.appendChild(createItemsDOM(items).cloneNode(true));
+      await Promise.all(preloadImgs);
 
-        if (scrollWall && scrollWall.parentNode) {
-          const parent = scrollWall.parentNode;
-          parent.style.animationPlayState = "paused";
-          scrollWall.parentNode.replaceChild(newWall, scrollWall);
-          document.getElementById("media-wall-scroll").parentNode.replaceChild(newWall, document.getElementById("media-wall-scroll"));
-          
-          setTimeout(() => {
-            parent.style.animationPlayState = "running";
-          }, 50);
-        }
+      // build new wall wrapper and duplicate items for seamless loop
+      const newWall = document.createElement("div");
+      newWall.id = scrollWrapperId;
+      newWall.className = "media-wall-scroll";
 
-        setEmpty(false);
-        container.style.display = "";
-        hideLoader();
-      }).catch(() => {
-        // fallback: direct swap without preload
-        const newWall = document.createElement("div");
-        newWall.className = "media-wall-scroll";
-        newWall.appendChild(createItemsDOM(items).cloneNode(true));
-        newWall.appendChild(createItemsDOM(items).cloneNode(true));
-        
-        if (scrollWall && scrollWall.parentNode) {
-          scrollWall.parentNode.replaceChild(newWall, scrollWall);
-        }
+      const itemsFrag = createItemsDOM(items);
+      const itemsFrag2 = itemsFrag.cloneNode(true);
+      newWall.appendChild(itemsFrag);
+      newWall.appendChild(itemsFrag2);
 
-        setEmpty(false);
-        container.style.display = "";
-        hideLoader();
-      });
+      // replace existing wall and clear previous intervals
+      const old = document.getElementById(scrollWrapperId);
+      if (old && old.parentNode) {
+        clearExistingWallIntervals(old);
+        old.parentNode.replaceChild(newWall, old);
+      } else if (container) {
+        const parent = container.querySelector('.media-wall-scroll')?.parentNode || container;
+        parent.appendChild(newWall);
+      }
+
+      // enable continuous (time-based) scroll on the new wall
+      enableContinuousScroll(newWall);
+
+      setEmpty(false);
+      container.style.display = "";
+      hideLoader();
     } catch (e) {
       hideLoader();
       console.error("media wall refresh error:", e);
@@ -255,9 +314,17 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    refresh();
-    // Removed auto-refresh setInterval - rely on EventSource (SSE) for updates
-    // Only refresh when explicitly triggered via SSE or manual action
+    // Only auto-refresh once per browser (first launch). Subsequent page loads will not re-scan.
+    const autoKey = 'mediawall_auto_refreshed';
+    if (!localStorage.getItem(autoKey)) {
+      refresh();
+      localStorage.setItem(autoKey, '1');
+    } else {
+      // try to load cache list (no scan side-effects) so UI can display cached items without forcing indexing
+      refresh(false);
+    }
+
+    // SSE updates should still trigger a refresh
     if (window.EventSource) {
       try {
         const es = new EventSource('/mediawall/events');
@@ -265,10 +332,117 @@
         es.addEventListener('error', () => { /* SSE connection lost, will retry */ });
       } catch (e) { /* ignore */ }
     }
+
+    // wire manual refresh button
+    const refreshBtn = document.getElementById('refresh-media-wall-btn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', async (ev) => {
+        refreshBtn.disabled = true;
+        try {
+          // POST to trigger notify endpoint (server-side indexer/listener may react)
+          await fetch('/mediawall/refresh', { method: 'POST', cache: 'no-store' });
+        } catch (e) { /* ignore */ }
+        await refresh(true); // force refresh client-side
+        refreshBtn.disabled = false;
+      });
+    }
   });
 })();
 </script>
 
 {% endif %}
+
+<!-- Footer bar -->
+<footer class="footer-bar">
+  <div class="footer-content">
+    <span>
+      <a href="https://github.com/ramysk/artillery" target="_blank" rel="noopener" class="footer-link">
+        <svg width="20" height="20" fill="currentColor" style="vertical-align:middle;margin-right:4px;" viewBox="0 0 16 16">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
+            0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52
+            -.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2
+            -3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64
+            -.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08
+            2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01
+            1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+        Artillery on GitHub
+      </a>
+    </span>
+    <form id="media-wall-toggle-form" method="post" action="{{ url_for('mediawall_toggle') }}" style="display:inline;">
+      <input type="hidden" name="toggle" value="1">
+      <button type="submit" class="btn btn-sm btn-outline-light ms-3" id="media-wall-toggle-btn">
+        <span id="media-wall-toggle-label">
+          {% if media_wall_enabled %}
+            Disable media wall
+          {% else %}
+            Enable media wall
+          {% endif %}
+        </span>
+      </button>
+    </form>
+  </div>
+</footer>
+
+<style>
+.footer-bar {
+  width: 100%;
+  background: #181a1b;
+  color: #bbb;
+  padding: 12px 0;
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  z-index: 100;
+  border-top: 1px solid #232323;
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.12);
+}
+.footer-content {
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+}
+.footer-link {
+  color: #bbb;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+.footer-link:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+#media-wall-toggle-btn {
+  min-width: 120px;
+}
+@media (max-width: 600px) {
+  .footer-content {
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 8px;
+  }
+}
+body {
+  padding-bottom: 56px; /* space for footer */
+}
+</style>
+
+<script>
+// Optional: update toggle button label after submit (for instant feedback)
+document.addEventListener("DOMContentLoaded", function() {
+  var form = document.getElementById("media-wall-toggle-form");
+  var btn = document.getElementById("media-wall-toggle-btn");
+  var label = document.getElementById("media-wall-toggle-label");
+  if (form && btn && label) {
+    form.addEventListener("submit", function() {
+      btn.disabled = true;
+      label.textContent = "Toggling...";
+    });
+  }
+});
+</script>
 
 {% endblock %}

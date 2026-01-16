@@ -591,7 +591,8 @@ def config_page():
             except Exception as exc:
                 flash(f"Failed to fetch default config: {exc}", "error")
 
-    return render_template("config.html", config_text=config_text, config_path=CONFIG_FILE, media_wall_enabled=MEDIA_WALL_ENABLED)
+    # NOTE: removed media_wall_enabled from template context to hide media-wall config options from the config page
+    return render_template("config.html", config_text=config_text, config_path=CONFIG_FILE)
 
 # ---------------------------------------------------------------------
 # Task actions
