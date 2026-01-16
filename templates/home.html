@@ -75,7 +75,7 @@
     position: relative;
   }
 
-  /* Fade edges to hide repeating content */
+  /* Fade edges to hide repeating content — use transparent to card background */
   .media-row::before,
   .media-row::after {
     content: '';
@@ -89,12 +89,12 @@
 
   .media-row::before {
     left: 0;
-    background: linear-gradient(to right, rgba(255,255,255,1), rgba(255,255,255,0));
+    background: linear-gradient(to right, rgba(248,249,250,1), rgba(248,249,250,0));
   }
 
   .media-row::after {
     right: 0;
-    background: linear-gradient(to left, rgba(255,255,255,1), rgba(255,255,255,0));
+    background: linear-gradient(to left, rgba(248,249,250,1), rgba(248,249,250,0));
   }
 
   .media-strip {
@@ -216,11 +216,33 @@
       }
       lastSig = sig;
 
-      // distribute items across 3 rows (cycling)
+      // Distribute images across 3 rows using different patterns to avoid gaps
+      // Row 0: even indices (0, 2, 4, ...)
+      // Row 1: odd indices (1, 3, 5, ...)
+      // Row 2: every 3rd item starting from 2 (2, 5, 8, ...) plus cycling fill
       const rows = [[], [], []];
+      
+      // Even/odd split with fallback cycling
       items.forEach((item, idx) => {
-        rows[idx % rowCount].push(item);
+        if (idx % 2 === 0) {
+          rows[0].push(item);
+        } else {
+          rows[1].push(item);
+        }
       });
+      
+      // Row 2 gets every 3rd starting at 2, then cycles remainder
+      for (let i = 2; i < items.length; i += 3) {
+        rows[2].push(items[i]);
+      }
+      // If row 2 is sparse, add more items from others
+      if (rows[2].length < Math.max(rows[0].length, rows[1].length) / 2) {
+        for (let i = 0; i < items.length && rows[2].length < rows[0].length; i++) {
+          if (!rows[2].includes(items[i])) {
+            rows[2].push(items[i]);
+          }
+        }
+      }
 
       // preload a small sample to ensure smooth transition
       const preloadImgs = [];
@@ -246,8 +268,8 @@
           newStrip.className = "media-strip";
           newStrip.id = `strip-${r}`;
 
-          // add items 3x to ensure infinite scroll smoothness
-          for (let dup = 0; dup < 3; dup++) {
+          // add items 4x to ensure no gaps in infinite scroll
+          for (let dup = 0; dup < 4; dup++) {
             newStrip.appendChild(createItemsDOM(rows[r]).cloneNode(true));
           }
 
@@ -271,7 +293,7 @@
           const newStrip = document.createElement("div");
           newStrip.className = "media-strip";
           newStrip.id = `strip-${r}`;
-          for (let dup = 0; dup < 3; dup++) {
+          for (let dup = 0; dup < 4; dup++) {
             newStrip.appendChild(createItemsDOM(rows[r]).cloneNode(true));
           }
           if (oldStrip && oldStrip.parentNode) {
@@ -305,4 +327,4 @@
 
 {% endif %}
 
-{% endblock %}
+{% endblock %

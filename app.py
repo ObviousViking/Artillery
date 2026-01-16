@@ -12,7 +12,6 @@ import time
 import logging
 import signal
 import faulthandler
-import sqlite3
 import hashlib
 from typing import Optional, List, Tuple
 
@@ -216,173 +215,13 @@ def load_tasks():
 # Media wall DB
 # ---------------------------------------------------------------------
 
-def _open_media_db() -> sqlite3.Connection:
-    ensure_data_dirs(ensure_downloads=False)
-    os.makedirs(os.path.dirname(MEDIA_DB), exist_ok=True)
+# REMOVE or COMMENT OUT these lines if they exist:
+# import sqlite3
+# MEDIAWALL_DB = os.path.join(CONFIG_DIR, 'mediawall.sqlite3')
+# def init_mediawall_db(): ...
+# db connection logic, table creation, etc.
 
-    conn = sqlite3.connect(MEDIA_DB, timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
-
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS media (
-            path TEXT PRIMARY KEY,
-            ext  TEXT NOT NULL,
-            task TEXT,
-            first_seen TEXT NOT NULL,
-            last_seen  TEXT NOT NULL,
-            seen_count INTEGER NOT NULL DEFAULT 1
-        );
-
-        CREATE TABLE IF NOT EXISTS task_offsets (
-            task TEXT PRIMARY KEY,
-            log_path TEXT NOT NULL,
-            offset INTEGER NOT NULL DEFAULT 0,
-            updated TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS meta (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_media_ext ON media(ext);
-        CREATE INDEX IF NOT EXISTS idx_media_last_seen ON media(last_seen);
-    """)
-    conn.commit()
-    return conn
-
-
-def _extract_relpath_from_log_line(line: str, downloads_root: str) -> Optional[str]:
-    s = line.strip()
-    if not s:
-        return None
-
-    s = s.replace("\\", "/")
-    dr = downloads_root.replace("\\", "/").rstrip("/")
-
-    if not (s == dr or s.startswith(dr + "/")):
-        return None
-
-    rel = s[len(dr):].lstrip("/")
-    if not rel:
-        return None
-
-    ext = os.path.splitext(rel)[1].lower()
-    if not ext or ext not in MEDIA_EXTS:
-        return None
-
-    return rel
-
-
-def ingest_task_log(conn: sqlite3.Connection, task_slug: str, log_path: str, *, full_rescan: bool = False) -> Tuple[int, int]:
-    start_offset = 0
-    if not full_rescan:
-        row = conn.execute(
-            "SELECT offset FROM task_offsets WHERE task=? AND log_path=?",
-            (task_slug, log_path),
-        ).fetchone()
-        if row:
-            start_offset = int(row[0])
-
-    try:
-        with open(log_path, "rb") as f:
-            if start_offset > 0:
-                f.seek(start_offset)
-            data = f.read()
-            end_offset = f.tell()
-    except OSError:
-        return (0, 0)
-
-    def upsert_offset(offset: int):
-        conn.execute(
-            """
-            INSERT INTO task_offsets(task, log_path, offset, updated)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(task) DO UPDATE SET
-                log_path=excluded.log_path,
-                offset=excluded.offset,
-                updated=excluded.updated
-            """,
-            (task_slug, log_path, int(offset), _utcnow()),
-        )
-
-    if not data:
-        upsert_offset(start_offset)
-        conn.commit()
-        return (0, 0)
-
-    text = data.decode("utf-8", errors="ignore")
-    now = _utcnow()
-
-    matched = 0
-    inserted = 0
-
-    for line in text.splitlines():
-        rel = _extract_relpath_from_log_line(line, DOWNLOADS_ROOT)
-        if not rel:
-            continue
-
-        matched += 1
-        ext = os.path.splitext(rel)[1].lower()
-
-        cur = conn.execute(
-            """
-            INSERT OR IGNORE INTO media(path, ext, task, first_seen, last_seen, seen_count)
-            VALUES (?, ?, ?, ?, ?, 1)
-            """,
-            (rel, ext, task_slug, now, now),
-        )
-        if cur.rowcount == 1:
-            inserted += 1
-        else:
-            conn.execute(
-                """
-                UPDATE media
-                SET last_seen=?, task=?, ext=?, seen_count=seen_count + 1
-                WHERE path=?
-                """,
-                (now, task_slug, ext, rel),
-            )
-
-    upsert_offset(end_offset)
-
-    conn.execute(
-        """
-        INSERT INTO meta(key, value)
-        VALUES ('last_ingest', ?)
-        ON CONFLICT(key) DO UPDATE SET value=excluded.value
-        """,
-        (now,),
-    )
-    conn.commit()
-    return (matched, inserted)
-
-
-def ingest_all_task_logs(conn: sqlite3.Connection, *, full_rescan: bool = False) -> dict:
-    tasks_seen = 0
-    matched_total = 0
-    inserted_total = 0
-
-    if not os.path.isdir(TASKS_ROOT):
-        return {"tasks_seen": 0, "matched": 0, "inserted": 0}
-
-    for slug in sorted(os.listdir(TASKS_ROOT)):
-        task_dir = os.path.join(TASKS_ROOT, slug)
-        if not os.path.isdir(task_dir):
-            continue
-
-        log_path = os.path.join(task_dir, "logs.txt")
-        if not os.path.exists(log_path):
-            continue
-
-        tasks_seen += 1
-        matched, inserted = ingest_task_log(conn, slug, log_path, full_rescan=full_rescan)
-        matched_total += matched
-        inserted_total += inserted
-
-    return {"tasks_seen": tasks_seen, "matched": matched_total, "inserted": inserted_total}
-
+# Instead, use only the /mediawall/api/list_cache endpoint which lists files directly from the folder
 
 def _cache_name_for_relpath(relpath: str) -> str:
     ext = os.path.splitext(relpath)[1].lower()
@@ -399,7 +238,7 @@ def _clean_dir(path: str):
             pass
 
 
-def refresh_wall_cache(conn: sqlite3.Connection, n: int) -> dict:
+def refresh_wall_cache(conn, n: int) -> dict:
     """
     Pick up to N random items and copy them into cache.
     Refresh is atomic:
@@ -492,7 +331,7 @@ def refresh_wall_cache(conn: sqlite3.Connection, n: int) -> dict:
 
 
 
-def _should_refresh_cache(conn: sqlite3.Connection) -> bool:
+def _should_refresh_cache(conn) -> bool:
     try:
         row = conn.execute("SELECT value FROM meta WHERE key='last_cache_refresh'").fetchone()
         if not row or not row[0]:
@@ -505,7 +344,7 @@ def _should_refresh_cache(conn: sqlite3.Connection) -> bool:
         return True
 
 
-def get_mediawall_status(conn: sqlite3.Connection) -> dict:
+def get_mediawall_status(conn) -> dict:
     media_count = conn.execute("SELECT COUNT(*) FROM media").fetchone()[0]
 
     def _meta(k: str) -> Optional[str]:
