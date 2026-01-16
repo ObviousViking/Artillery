@@ -36,9 +36,35 @@
                 </form>
             </div>
         </div>
-
-        <!-- Removed media wall interval card -->
-
     </div>
 </div>
+
+<!-- Single Media wall controls -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-secondary">
+            <div class="card-body">
+                <h2 class="card-title mb-3">Media wall</h2>
+
+                <p class="text-muted small mb-3">
+                    Control the media wall dashboard displayed on the home page.
+                </p>
+
+                <div class="d-flex flex-wrap gap-2">
+                    <form method="post" action="{{ url_for('mediawall_toggle') }}" style="display: inline;">
+                        <button type="submit" class="btn {% if media_wall_enabled %}btn-success{% else %}btn-outline-success{% endif %}">
+                            {% if media_wall_enabled %}Media wall enabled{% else %}Media wall disabled{% endif %}
+                        </button>
+                    </form>
+                </div>
+
+                <div class="form-text mt-3">
+                    Toggle to enable/disable the media wall. When enabled, images in the
+                    <code>/config/media_wall</code> folder will be displayed on the home page.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}

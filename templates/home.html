@@ -28,4 +28,303 @@
   </div>
 </div>
 
+{% if media_wall_enabled %}
+<!-- Media wall with infinite horizontal scroll -->
+<div class="row">
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Media wall</h5>
+
+        <div id="media-wall-loader" class="text-muted small" style="position: absolute; left: -9999px; opacity: 0;">
+          Loading media wall...
+        </div>
+
+        <div id="media-wall-empty" class="text-muted mb-0" {% if has_media %}style="display:none"{% endif %}>
+          No media cached yet. Run a task, then refresh the media wall.
+        </div>
+
+        <!-- Infinite scroll container -->
+        <div id="media-wall-container" style="display:none; overflow: hidden;">
+          <!-- Row 1: scroll left-to-right -->
+          <div class="media-row media-row-ltr">
+            <div class="media-strip" id="strip-0"></div>
+          </div>
+          <!-- Row 2: scroll right-to-left -->
+          <div class="media-row media-row-rtl">
+            <div class="media-strip" id="strip-1"></div>
+          </div>
+          <!-- Row 3: scroll left-to-right -->
+          <div class="media-row media-row-ltr">
+            <div class="media-strip" id="strip-2"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .media-row {
+    width: 100%;
+    height: 200px;
+    overflow: hidden;
+    background: transparent;
+    margin-bottom: 10px;
+    position: relative;
+  }
+
+  /* Fade edges to hide repeating content — use transparent to card background */
+  .media-row::before,
+  .media-row::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    width: 60px;
+    height: 100%;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .media-row::before {
+    left: 0;
+    background: linear-gradient(to right, rgba(248,249,250,1), rgba(248,249,250,0));
+  }
+
+  .media-row::after {
+    right: 0;
+    background: linear-gradient(to left, rgba(248,249,250,1), rgba(248,249,250,0));
+  }
+
+  .media-strip {
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    height: 100%;
+    will-change: transform;
+  }
+
+  /* Left-to-right scroll (continuous) */
+  .media-row-ltr .media-strip {
+    animation: scroll-ltr 80s linear infinite;
+  }
+
+  /* Right-to-left scroll (continuous) */
+  .media-row-rtl .media-strip {
+    animation: scroll-rtl 80s linear infinite;
+  }
+
+  @keyframes scroll-ltr {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(calc(-50%)); }
+  }
+
+  @keyframes scroll-rtl {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(calc(50%)); }
+  }
+
+  .media-item {
+    flex-shrink: 0;
+    width: 200px;
+    height: 100%;
+    overflow: hidden;
+    border-radius: 4px;
+    background: #e8e8e8;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .media-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #f0f0f0;
+  }
+
+  .media-item a {
+    display: block;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+</style>
+
+<script>
+(function () {
+  const loader = document.getElementById("media-wall-loader");
+  const emptyMsg = document.getElementById("media-wall-empty");
+  const container = document.getElementById("media-wall-container");
+
+  let lastSig = "";
+  const rowCount = 3;
+
+  function showLoader() { if (loader) loader.style.display = ""; }
+  function hideLoader() { if (loader) loader.style.display = "none"; }
+  function setEmpty(isEmpty) { if (emptyMsg) emptyMsg.style.display = isEmpty ? "" : "none"; }
+
+  function createItemsDOM(rowItems) {
+    const fragment = document.createDocumentFragment();
+    rowItems.forEach(item => {
+      const url = item.url || item;
+      const mtime = item.mtime || 0;
+      const src = url + (url.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(mtime);
+
+      const itemDiv = document.createElement("div");
+      itemDiv.className = "media-item";
+
+      const img = document.createElement("img");
+      img.src = src;
+      img.alt = "media";
+      img.loading = "lazy";
+
+      const a = document.createElement("a");
+      a.href = src;
+      a.target = "_blank";
+      a.appendChild(img);
+
+      itemDiv.appendChild(a);
+      fragment.appendChild(itemDiv);
+    });
+    return fragment;
+  }
+
+  async function refresh() {
+    showLoader();
+    try {
+      const res = await fetch("/mediawall/api/list_cache", { cache: "no-store" });
+      if (!res.ok) return;
+
+      const data = await res.json();
+      const items = (data.items || []);
+
+      if (!items.length) {
+        setEmpty(true);
+        hideLoader();
+        if (container) container.style.display = "none";
+        return;
+      }
+
+      const sig = items.map(i => (i.name || i.url) + ":" + (i.mtime || "")).join("|");
+      if (sig && sig === lastSig) {
+        hideLoader();
+        return;
+      }
+      lastSig = sig;
+
+      // Distribute images across 3 rows using different patterns to avoid gaps
+      // Row 0: even indices (0, 2, 4, ...)
+      // Row 1: odd indices (1, 3, 5, ...)
+      // Row 2: every 3rd item starting from 2 (2, 5, 8, ...) plus cycling fill
+      const rows = [[], [], []];
+      
+      // Even/odd split with fallback cycling
+      items.forEach((item, idx) => {
+        if (idx % 2 === 0) {
+          rows[0].push(item);
+        } else {
+          rows[1].push(item);
+        }
+      });
+      
+      // Row 2 gets every 3rd starting at 2, then cycles remainder
+      for (let i = 2; i < items.length; i += 3) {
+        rows[2].push(items[i]);
+      }
+      // If row 2 is sparse, add more items from others
+      if (rows[2].length < Math.max(rows[0].length, rows[1].length) / 2) {
+        for (let i = 0; i < items.length && rows[2].length < rows[0].length; i++) {
+          if (!rows[2].includes(items[i])) {
+            rows[2].push(items[i]);
+          }
+        }
+      }
+
+      // preload a small sample to ensure smooth transition
+      const preloadImgs = [];
+      rows.forEach(rowItems => {
+        for (let i = 0; i < Math.min(2, rowItems.length); i++) {
+          preloadImgs.push(new Promise(resolve => {
+            const p = new Image();
+            const url = rowItems[i].url || rowItems[i];
+            const mtime = rowItems[i].mtime || 0;
+            const src = url + (url.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(mtime);
+            p.onload = () => resolve();
+            p.onerror = () => resolve();
+            p.src = src;
+          }));
+        }
+      });
+
+      Promise.all(preloadImgs).then(() => {
+        // swap in the new strips seamlessly (without duplicates - let animation handle seamlessness)
+        for (let r = 0; r < rowCount; r++) {
+          const oldStrip = document.getElementById(`strip-${r}`);
+          const newStrip = document.createElement("div");
+          newStrip.className = "media-strip";
+          newStrip.id = `strip-${r}`;
+
+          // add items 4x to ensure no gaps in infinite scroll
+          for (let dup = 0; dup < 4; dup++) {
+            newStrip.appendChild(createItemsDOM(rows[r]).cloneNode(true));
+          }
+
+          if (oldStrip && oldStrip.parentNode) {
+            const parent = oldStrip.parentNode;
+            parent.style.animationPlayState = "paused";
+            oldStrip.parentNode.replaceChild(newStrip, oldStrip);
+            setTimeout(() => {
+              parent.style.animationPlayState = "running";
+            }, 50);
+          }
+        }
+
+        setEmpty(false);
+        container.style.display = "";
+        hideLoader();
+      }).catch(() => {
+        // fallback: direct swap without preload
+        for (let r = 0; r < rowCount; r++) {
+          const oldStrip = document.getElementById(`strip-${r}`);
+          const newStrip = document.createElement("div");
+          newStrip.className = "media-strip";
+          newStrip.id = `strip-${r}`;
+          for (let dup = 0; dup < 4; dup++) {
+            newStrip.appendChild(createItemsDOM(rows[r]).cloneNode(true));
+          }
+          if (oldStrip && oldStrip.parentNode) {
+            oldStrip.parentNode.replaceChild(newStrip, oldStrip);
+          }
+        }
+        setEmpty(false);
+        container.style.display = "";
+        hideLoader();
+      });
+    } catch (e) {
+      hideLoader();
+      console.error("media wall refresh error:", e);
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    refresh();
+    setInterval(refresh, 15000);
+
+    if (window.EventSource) {
+      try {
+        const es = new EventSource('/mediawall/events');
+        es.addEventListener('mediawall_update', () => { refresh(); });
+        es.addEventListener('error', () => { /* fallback poll running */ });
+      } catch (e) { /* ignore */ }
+    }
+  });
+})();
+</script>
+
+{% endif %}
+
 {% endblock %}

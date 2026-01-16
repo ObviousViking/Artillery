@@ -1,23 +1,12 @@
-/* ============================================================
-   DARK THEME - Artillery UI
-   ============================================================ */
-
-/* Base */
 body {
     background: #000000;
     color: #f8f9fa;
 }
 
-/* Cards and containers */
+/* Cards */
 .card {
     background-color: #050505;
     border-color: #111827;
-}
-
-.card-header {
-    background-color: #050505;
-    border-bottom: 1px solid #374151;
-    color: #f8f9fa;
 }
 
 /* Tables */
@@ -30,7 +19,7 @@ body {
     color: #d1d5db;
 }
 
-/* Forms */
+/* Inputs / textarea */
 textarea.form-control,
 input.form-control,
 select.form-control,
@@ -40,6 +29,7 @@ select.form-control,
     border-color: #374151;
 }
 
+
 .form-control:focus {
     background-color: #020617;
     color: #f9fafb;
@@ -47,8 +37,16 @@ select.form-control,
     box-shadow: 0 0 0 0.2rem rgba(249, 115, 22, 0.25);
 }
 
+/* Main text & labels nice and bright */
 .form-label,
 .form-check-label,
+.card-body,
+.card-body p,
+.card-body li {
+    color: #f8f9fa;
+}
+
+/* Helper / muted / small text slightly dimmer but still easy to read */
 .form-text,
 .text-muted,
 small,
@@ -56,27 +54,12 @@ small,
     color: #c2c2c2 !important;
 }
 
-.card-body,
-.card-body p,
-.card-body li {
-    color: #f8f9fa;
-}
-
+/* Code snippets (like --write-metadata) */
 code {
     color: #f97373;
 }
 
-/* Buttons */
-.btn-danger {
-    background-color: #c53030;
-    border-color: #c53030;
-}
-
-.btn-danger:hover {
-    background-color: #e53e3e;
-    border-color: #e53e3e;
-}
-
+/* Buttons – optional but nice on dark bg */
 .btn-outline-light {
     color: #f8f9fa;
     border-color: #6b7280;
@@ -117,9 +100,136 @@ code {
     color: #020617;
 }
 
-/* ============================================================
-   LOG OUTPUT PANEL
-   ============================================================ */
+.btn-danger {
+    background-color: #c53030;
+    border-color: #c53030;
+}
+
+.btn-danger:hover {
+    background-color: #e53e3e;
+    border-color: #e53e3e;
+}
+
+
+/* Outer wall */
+.media-wall {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    opacity: 0;
+    transition: opacity 0.4s ease-out;
+}
+
+/* One horizontal strip */
+.media-wall-row {
+    overflow: hidden;
+}
+
+.media-wall-ready {
+    opacity: 1;
+}
+
+.media-wall-loader-hidden {
+    display: none;
+}
+
+/* The scrolling strip of items */
+.media-strip {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    will-change: transform;
+    backface-visibility: hidden;
+    transform: translate3d(0,0,0);
+
+    /* JS will set these precisely */
+    --loop-distance: 0px;
+    --duration: 60s;
+
+    animation: media-scroll-left var(--duration) linear infinite;
+}
+
+/* Reverse direction for the middle row */
+.media-strip-right {
+    animation-name: media-scroll-right;
+}
+
+/* Individual item wrapper
+   - no fixed width/height
+   - the image itself controls the size, capped by max-height */
+.media-item {
+    flex: 0 0 auto;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    background: #111;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    /* smooth fade-in */
+    opacity: 0;
+    transform: translateY(4px);
+    animation: media-fade-in 0.5s ease-out forwards;
+}
+
+/* Image: keep aspect ratio, no cropping, size based on its own proportions.
+   - max-height keeps the row from getting huge
+   - width auto so portrait/landscape behave naturally */
+.media-item img.media-img {
+    display: block;
+    max-height: 140px;
+    /* overall size control */
+    width: auto;
+    height: auto;
+    object-fit: contain !important;
+    /* force "show whole image" */
+}
+
+/* Video placeholder keeps reasonable size too */
+.media-video-placeholder {
+    max-height: 140px;
+    padding: 0.5rem 0.75rem;
+    border-radius: inherit;
+    border: 1px dashed rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.media-wall-row:hover .media-strip {
+  animation-play-state: paused;
+}
+
+/* Scrolling animations */
+@keyframes media-scroll-left {
+    from { transform: translate3d(0,0,0); }
+    to   { transform: translate3d(calc(-1 * var(--loop-distance)),0,0); }
+}
+
+@keyframes media-scroll-right {
+    from { transform: translate3d(calc(-1 * var(--loop-distance)),0,0); }
+    to   { transform: translate3d(0,0,0); }
+}
+
+/* Fade-in for items */
+@keyframes media-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Output panel styles */
+.card-header {
+    background-color: #050505;
+    border-bottom: 1px solid #374151;
+    color: #f8f9fa;
+}
 
 #logContainer {
     background-color: #050505 !important;
@@ -133,11 +243,12 @@ code {
     word-wrap: break-word;
 }
 
-#logContainer .log-success { color: #32FF32; font-weight: bold; }
-#logContainer .log-error   { color: #FF3333; font-weight: bold; }
-#logContainer .log-warning { color: #FFFF00; font-weight: bold; }
-#logContainer .log-info    { color: #FFFFFF; font-weight: bold; }
-#logContainer .log-debug   { color: #F0F0F0; }
+/* Log level color classes */
+#logContainer .log-success { color: #32FF32; font-weight: bold; }  /* green */
+#logContainer .log-error   { color: #FF3333; font-weight: bold; }  /* red */
+#logContainer .log-warning { color: #FFFF00; font-weight: bold; }  /* yellow */
+#logContainer .log-info    { color: #FFFFFF; font-weight: bold; }  /* bright white */
+#logContainer .log-debug   { color: #F0F0F0; }                     /* white */
 
 #taskSelector.form-control {
     background-color: #050505;
@@ -151,112 +262,3 @@ code {
     border-color: #f97316;
     box-shadow: 0 0 0 0.2rem rgba(249, 115, 22, 0.25);
 }
-
-/* ============================================================
-   MEDIA WALL - VERTICAL INFINITE SCROLL
-   ============================================================ */
-
-.media-wall-scroll-container {
-    width: 100%;
-    height: 600px;
-    overflow: hidden;
-    background: transparent;
-    position: relative;
-}
-
-.media-wall-scroll {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 0;
-    padding: 0;
-    width: 100%;
-    animation: scroll-up 120s linear infinite;
-    will-change: transform;
-}
-
-@keyframes scroll-up {
-    0% { transform: translateY(0); }
-    100% { transform: translateY(calc(-50%)); }
-}
-
-.media-item {
-    width: 100%;
-    height: 150px;
-    overflow: hidden;
-    background: transparent;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    cursor: pointer;
-    transition: transform 0.2s ease;
-}
-
-.media-item:hover {
-    transform: scale(1.05);
-    z-index: 5;
-}
-
-.media-item img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    background: transparent;
-}
-
-/* Fade effect at top and bottom */
-.media-wall-scroll-container::before,
-.media-wall-scroll-container::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    width: 100%;
-    height: 40px;
-    z-index: 10;
-    pointer-events: none;
-}
-
-.media-wall-scroll-container::before {
-    top: 0;
-    background: linear-gradient(to bottom, rgba(5,5,5,1), rgba(5,5,5,0));
-}
-
-.media-wall-scroll-container::after {
-    bottom: 0;
-    background: linear-gradient(to top, rgba(5,5,5,1), rgba(5,5,5,0));
-}
-
-/* ============================================================
-   MEDIA WALL - LOADING INDICATOR
-   ============================================================ */
-
-.media-wall-loading {
-    display: none;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    width: 100%;
-    min-height: 400px;
-    gap: 1rem;
-    color: #e5e7eb;
-}
-
-.media-wall-loading p {
-    margin: 0;
-    font-size: 1rem;
-    color: #e5e7eb;
-    text-align: center;
-}
-
-.loading-spinner {
-    width: 60px;
-    height: 60px;
-    border: 4px solid #374151;
-    border-top-color: #f97316;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-} 
