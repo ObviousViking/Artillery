@@ -10,6 +10,8 @@
           Artillery is your lightweight web front-end for
           <code>gallery-dl</code>. Create repeatable download tasks, schedule
           them with cron, and keep everything isolated per task folder.
+
+          --dev--
         </p>
 
         <ul class="mb-3">
@@ -29,15 +31,18 @@
 </div>
 
 {% if media_wall_enabled %}
-<!-- Media wall with infinite horizontal scroll -->
+<!-- Media wall with infinite vertical scroll -->
 <div class="row">
   <div class="col-12">
-    <div class="card shadow-sm">
+    <div class="card shadow-sm"
+         data-media-wall-poll-interval="{{ media_wall_poll_interval|default(60) }}"
+         data-media-wall-sse="{{ '1' if media_wall_sse_enabled else '0' }}">
       <div class="card-body">
         <h5 class="card-title mb-3">Media wall</h5>
 
-        <div id="media-wall-loader" class="text-muted small" style="position: absolute; left: -9999px; opacity: 0;">
-          Loading media wall...
+        <div id="media-wall-loader" class="media-wall-loader">
+          <div class="spinner-border text-light" role="status"></div>
+          <span class="ms-2">Refreshing media wall...</span>
         </div>
 
         <div id="media-wall-empty" class="text-muted mb-0" {% if has_media %}style="display:none"{% endif %}>
@@ -45,112 +50,104 @@
         </div>
 
         <!-- Infinite scroll container -->
-        <div id="media-wall-container" style="display:none; overflow: hidden;">
-          <!-- Row 1: scroll left-to-right -->
-          <div class="media-row media-row-ltr">
-            <div class="media-strip" id="strip-0"></div>
-          </div>
-          <!-- Row 2: scroll right-to-left -->
-          <div class="media-row media-row-rtl">
-            <div class="media-strip" id="strip-1"></div>
-          </div>
-          <!-- Row 3: scroll left-to-right -->
-          <div class="media-row media-row-ltr">
-            <div class="media-strip" id="strip-2"></div>
-          </div>
-        </div>
+        <div id="media-wall-container" class="media-wall-vertical" style="display:none;"></div>
 
       </div>
     </div>
   </div>
 </div>
 
+<footer class="media-wall-footer">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+    <div>
+      <div class="fw-semibold">Media wall scale</div>
+      <div class="text-muted small">Adjust columns from 1 (large) to 6 (compact).</div>
+    </div>
+    <div class="d-flex align-items-center gap-3">
+      <span class="text-muted small">Large</span>
+      <input id="media-wall-scale-range" class="form-range media-wall-scale-range" type="range" min="1" max="6" step="1" />
+      <span class="text-muted small">Compact</span>
+      <span id="media-wall-scale-label" class="badge text-bg-dark">4 columns</span>
+    </div>
+  </div>
+</footer>
+
 <style>
-  .media-row {
+  .media-wall-vertical {
+    display: flex;
+    gap: 0;
     width: 100%;
-    height: 200px;
+    --media-scroll-duration: 320s;
+    --thumb-height: 90px;
+  }
+
+  .media-column {
+    flex: 1 1 0;
+    height: 600px;
     overflow: hidden;
-    background: transparent;
-    margin-bottom: 10px;
     position: relative;
   }
 
-  /* Fade edges to hide repeating content — use transparent to card background */
-  .media-row::before,
-  .media-row::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    width: 60px;
-    height: 100%;
-    z-index: 10;
-    pointer-events: none;
-  }
-
-  .media-row::before {
-    left: 0;
-    background: linear-gradient(to right, rgba(248,249,250,1), rgba(248,249,250,0));
-  }
-
-  .media-row::after {
-    right: 0;
-    background: linear-gradient(to left, rgba(248,249,250,1), rgba(248,249,250,0));
-  }
-
-  .media-strip {
+  .media-strip-vertical {
     display: flex;
-    gap: 8px;
-    padding: 8px;
-    height: 100%;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
     will-change: transform;
+    min-height: 120%;
+    animation: scroll-up var(--media-scroll-duration) linear infinite !important;
+    animation-play-state: running !important;
   }
 
-  /* Left-to-right scroll (continuous) */
-  .media-row-ltr .media-strip {
-    animation: scroll-ltr 80s linear infinite;
+  @keyframes scroll-up {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(-50%); }
   }
 
-  /* Right-to-left scroll (continuous) */
-  .media-row-rtl .media-strip {
-    animation: scroll-rtl 80s linear infinite;
-  }
-
-  @keyframes scroll-ltr {
-    0% { transform: translateX(0); }
-    100% { transform: translateX(calc(-50%)); }
-  }
-
-  @keyframes scroll-rtl {
-    0% { transform: translateX(0); }
-    100% { transform: translateX(calc(50%)); }
+  .media-strip-vertical,
+  .media-strip-vertical * {
+    animation-duration: var(--media-scroll-duration, 160s);
   }
 
   .media-item {
-    flex-shrink: 0;
-    width: 200px;
-    height: 100%;
+    width: 100%;
+    height: var(--thumb-height);
     overflow: hidden;
-    border-radius: 4px;
-    background: #e8e8e8;
+    border-radius: 0;
+    background: transparent;
     display: flex;
     justify-content: center;
     align-items: center;
   }
 
   .media-item img {
-    width: 100%;
+    width: auto;
     height: 100%;
+    max-width: 100%;
     object-fit: contain;
-    background: #f0f0f0;
+    background: transparent;
   }
 
-  .media-item a {
-    display: block;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    justify-content: center;
+  /* Patchwork sizing: vary item heights while preserving aspect ratio */
+  .media-strip-vertical .media-item { height: auto; }
+
+  .media-wall-loader {
+    display: none;
     align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .media-wall-footer {
+    background: #060606;
+    border-top: 1px solid #111827;
+    padding: 0.85rem 1rem;
+    border-radius: 0.5rem;
+    margin-top: 1rem;
+  }
+
+  .media-wall-scale-range {
+    width: min(320px, 70vw);
   }
 </style>
 
@@ -159,11 +156,60 @@
   const loader = document.getElementById("media-wall-loader");
   const emptyMsg = document.getElementById("media-wall-empty");
   const container = document.getElementById("media-wall-container");
+  const scaleRange = document.getElementById("media-wall-scale-range");
+  const scaleLabel = document.getElementById("media-wall-scale-label");
 
   let lastSig = "";
-  const rowCount = 3;
+  let rowCount = 4;
+  let refreshTimer = null;
+  let es = null;
+  let isVisible = !document.hidden;
+  const scaleStorageKey = "mediaWallScale";
 
-  function showLoader() { if (loader) loader.style.display = ""; }
+  function getScaleValue() {
+    const raw = scaleRange?.value || "4";
+    const value = Math.max(1, Math.min(6, parseInt(raw, 10) || 4));
+    return value;
+  }
+
+  function thumbHeightForScale(scale) {
+    switch (scale) {
+      case 1: return 260;
+      case 2: return 200;
+      case 3: return 150;
+      case 4: return 110;
+      case 5: return 90;
+      case 6: return 75;
+      default: return 110;
+    }
+  }
+
+  function buildColumns(scale) {
+    if (!container) return;
+    container.innerHTML = "";
+    for (let i = 0; i < scale; i++) {
+      const col = document.createElement("div");
+      col.className = "media-column";
+      const strip = document.createElement("div");
+      strip.className = "media-strip-vertical";
+      strip.id = `strip-${i}`;
+      col.appendChild(strip);
+      container.appendChild(col);
+    }
+  }
+
+  function applyScale(scale) {
+    rowCount = scale;
+    if (container) {
+      container.style.setProperty("--thumb-height", `${thumbHeightForScale(scale)}px`);
+    }
+    if (scaleLabel) {
+      scaleLabel.textContent = `${scale} ${scale === 1 ? "column" : "columns"}`;
+    }
+    buildColumns(scale);
+  }
+
+  function showLoader() { if (loader) loader.style.display = "flex"; }
   function hideLoader() { if (loader) loader.style.display = "none"; }
   function setEmpty(isEmpty) { if (emptyMsg) emptyMsg.style.display = isEmpty ? "" : "none"; }
 
@@ -194,6 +240,9 @@
   }
 
   async function refresh() {
+    if (!isVisible) {
+      return;
+    }
     showLoader();
     try {
       const res = await fetch("/mediawall/api/list_cache", { cache: "no-store" });
@@ -216,33 +265,11 @@
       }
       lastSig = sig;
 
-      // Distribute images across 3 rows using different patterns to avoid gaps
-      // Row 0: even indices (0, 2, 4, ...)
-      // Row 1: odd indices (1, 3, 5, ...)
-      // Row 2: every 3rd item starting from 2 (2, 5, 8, ...) plus cycling fill
-      const rows = [[], [], []];
-      
-      // Even/odd split with fallback cycling
+      // Distribute images across N columns evenly
+      const rows = Array.from({ length: rowCount }, () => []);
       items.forEach((item, idx) => {
-        if (idx % 2 === 0) {
-          rows[0].push(item);
-        } else {
-          rows[1].push(item);
-        }
+        rows[idx % rowCount].push(item);
       });
-      
-      // Row 2 gets every 3rd starting at 2, then cycles remainder
-      for (let i = 2; i < items.length; i += 3) {
-        rows[2].push(items[i]);
-      }
-      // If row 2 is sparse, add more items from others
-      if (rows[2].length < Math.max(rows[0].length, rows[1].length) / 2) {
-        for (let i = 0; i < items.length && rows[2].length < rows[0].length; i++) {
-          if (!rows[2].includes(items[i])) {
-            rows[2].push(items[i]);
-          }
-        }
-      }
 
       // preload a small sample to ensure smooth transition
       const preloadImgs = [];
@@ -261,25 +288,18 @@
       });
 
       Promise.all(preloadImgs).then(() => {
-        // swap in the new strips seamlessly (without duplicates - let animation handle seamlessness)
         for (let r = 0; r < rowCount; r++) {
           const oldStrip = document.getElementById(`strip-${r}`);
           const newStrip = document.createElement("div");
-          newStrip.className = "media-strip";
+          newStrip.className = "media-strip-vertical";
           newStrip.id = `strip-${r}`;
 
-          // add items 4x to ensure no gaps in infinite scroll
           for (let dup = 0; dup < 4; dup++) {
             newStrip.appendChild(createItemsDOM(rows[r]).cloneNode(true));
           }
 
           if (oldStrip && oldStrip.parentNode) {
-            const parent = oldStrip.parentNode;
-            parent.style.animationPlayState = "paused";
             oldStrip.parentNode.replaceChild(newStrip, oldStrip);
-            setTimeout(() => {
-              parent.style.animationPlayState = "running";
-            }, 50);
           }
         }
 
@@ -287,11 +307,10 @@
         container.style.display = "";
         hideLoader();
       }).catch(() => {
-        // fallback: direct swap without preload
         for (let r = 0; r < rowCount; r++) {
           const oldStrip = document.getElementById(`strip-${r}`);
           const newStrip = document.createElement("div");
-          newStrip.className = "media-strip";
+          newStrip.className = "media-strip-vertical";
           newStrip.id = `strip-${r}`;
           for (let dup = 0; dup < 4; dup++) {
             newStrip.appendChild(createItemsDOM(rows[r]).cloneNode(true));
@@ -310,17 +329,59 @@
     }
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
-    refresh();
-    setInterval(refresh, 15000);
+  function stopMediaWall() {
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+      refreshTimer = null;
+    }
+    if (es) {
+      try { es.close(); } catch (e) { /* ignore */ }
+      es = null;
+    }
+  }
 
-    if (window.EventSource) {
+  document.addEventListener("visibilitychange", () => {
+    isVisible = !document.hidden;
+    if (isVisible) {
+      refresh();
+    }
+  });
+
+  document.addEventListener("DOMContentLoaded", () => {
+    if (scaleRange) {
+      const savedScale = parseInt(localStorage.getItem(scaleStorageKey) || "4", 10);
+      const scale = Math.max(1, Math.min(6, savedScale || 4));
+      scaleRange.value = String(scale);
+      applyScale(scale);
+      scaleRange.addEventListener("input", () => {
+        const nextScale = getScaleValue();
+        localStorage.setItem(scaleStorageKey, String(nextScale));
+        applyScale(nextScale);
+        lastSig = "";
+        refresh();
+      });
+    } else {
+      applyScale(rowCount);
+    }
+
+    refresh();
+
+    const card = container?.closest(".card");
+    const pollIntervalAttr = card?.getAttribute("data-media-wall-poll-interval");
+    const sseEnabledAttr = card?.getAttribute("data-media-wall-sse") === "1";
+    const pollIntervalSec = Math.max(1, parseInt(pollIntervalAttr || "60", 10));
+    refreshTimer = setInterval(refresh, pollIntervalSec * 1000);
+
+    if (sseEnabledAttr && window.EventSource) {
       try {
-        const es = new EventSource('/mediawall/events');
+        es = new EventSource('/mediawall/events');
         es.addEventListener('mediawall_update', () => { refresh(); });
         es.addEventListener('error', () => { /* fallback poll running */ });
       } catch (e) { /* ignore */ }
     }
+
+    window.addEventListener("pagehide", stopMediaWall);
+    window.addEventListener("beforeunload", stopMediaWall);
   });
 })();
 </script>
