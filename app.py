@@ -255,7 +255,11 @@ def _refresh_media_wall_cache_from_downloads() -> dict:
     if MEDIA_WALL_CACHE_VIDEOS:
         allowed |= set(VIDEO_EXTS)
 
-    with MEDIA_WALL_REFRESH_LOCK:
+    if not MEDIA_WALL_REFRESH_LOCK.acquire(blocking=False):
+        app.logger.info("mediawall: refresh skipped (lock busy)")
+        return {"picked": 0, "copied": 0, "skipped": 1}
+
+    try:
         app.logger.info("mediawall: refresh started (cache_videos=%s, copy_limit=%s)", MEDIA_WALL_CACHE_VIDEOS, MEDIA_WALL_COPY_LIMIT)
         items = set()
 
@@ -325,6 +329,8 @@ def _refresh_media_wall_cache_from_downloads() -> dict:
 
         app.logger.info("mediawall: refresh completed (picked=%s, copied=%s, failed=%s)", len(picked), copied, failed)
         return {"picked": len(picked), "copied": copied, "failed": failed}
+    finally:
+        MEDIA_WALL_REFRESH_LOCK.release()
 
 _MEDIA_WALL_SCAN_THREAD_STARTED = False
 
@@ -471,12 +477,19 @@ def mediawall_refresh():
     if not MEDIA_WALL_ENABLED:
         flash("Media wall is disabled.", "error")
         return redirect(url_for("config_page"))
-    result = _refresh_media_wall_cache_from_downloads()
-    touch_mediawall_notify()
-    flash(
-        f"Media wall refreshed (picked={result.get('picked', 0)}, copied={result.get('copied', 0)}).",
-        "success",
-    )
+    def _run_refresh():
+        result = _refresh_media_wall_cache_from_downloads()
+        touch_mediawall_notify()
+        app.logger.info(
+            "mediawall: manual refresh done (picked=%s, copied=%s, failed=%s, skipped=%s)",
+            result.get("picked", 0),
+            result.get("copied", 0),
+            result.get("failed", 0),
+            result.get("skipped", 0),
+        )
+
+    threading.Thread(target=_run_refresh, daemon=True).start()
+    flash("Media wall refresh started.", "success")
     return redirect(url_for("config_page"))
 
 # ---------------------------------------------------------------------
