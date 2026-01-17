@@ -60,6 +60,9 @@
           <div class="media-column">
             <div class="media-strip-vertical" id="strip-2"></div>
           </div>
+          <div class="media-column">
+            <div class="media-strip-vertical" id="strip-3"></div>
+          </div>
         </div>
 
       </div>
@@ -105,7 +108,7 @@
 
   .media-item {
     width: 100%;
-    height: 110px;
+    height: 90px;
     overflow: hidden;
     border-radius: 0;
     background: transparent;
@@ -140,7 +143,7 @@
   const container = document.getElementById("media-wall-container");
 
   let lastSig = "";
-  const rowCount = 3;
+  const rowCount = 4;
   let refreshTimer = null;
   let es = null;
   let isVisible = !document.hidden;
@@ -201,33 +204,11 @@
       }
       lastSig = sig;
 
-      // Distribute images across 3 rows using different patterns to avoid gaps
-      // Row 0: even indices (0, 2, 4, ...)
-      // Row 1: odd indices (1, 3, 5, ...)
-      // Row 2: every 3rd item starting from 2 (2, 5, 8, ...) plus cycling fill
-      const rows = [[], [], []];
-      
-      // Even/odd split with fallback cycling
+      // Distribute images across 4 columns evenly
+      const rows = [[], [], [], []];
       items.forEach((item, idx) => {
-        if (idx % 2 === 0) {
-          rows[0].push(item);
-        } else {
-          rows[1].push(item);
-        }
+        rows[idx % rowCount].push(item);
       });
-      
-      // Row 2 gets every 3rd starting at 2, then cycles remainder
-      for (let i = 2; i < items.length; i += 3) {
-        rows[2].push(items[i]);
-      }
-      // If row 2 is sparse, add more items from others
-      if (rows[2].length < Math.max(rows[0].length, rows[1].length) / 2) {
-        for (let i = 0; i < items.length && rows[2].length < rows[0].length; i++) {
-          if (!rows[2].includes(items[i])) {
-            rows[2].push(items[i]);
-          }
-        }
-      }
 
       // preload a small sample to ensure smooth transition
       const preloadImgs = [];
