@@ -275,7 +275,9 @@ def _refresh_media_wall_cache_from_downloads() -> dict:
                                 continue
                             ext = os.path.splitext(rel)[1].lower()
                             if ext in allowed:
-                                items.add(rel)
+                                src = os.path.join(DOWNLOADS_ROOT, rel)
+                                if os.path.isfile(src):
+                                    items.add(rel)
                 except Exception:
                     continue
 
@@ -287,7 +289,8 @@ def _refresh_media_wall_cache_from_downloads() -> dict:
                         continue
                     path = os.path.join(root, fn)
                     rel = os.path.relpath(path, DOWNLOADS_ROOT)
-                    items.add(rel)
+                    if os.path.isfile(path):
+                        items.add(rel)
 
         if not items:
             app.logger.info("mediawall: refresh found 0 items")
@@ -306,6 +309,9 @@ def _refresh_media_wall_cache_from_downloads() -> dict:
             dst = os.path.join(MEDIA_WALL_DIR, _cache_name_for_relpath(rel))
             tmp = dst + ".tmp"
             try:
+                if not os.path.isfile(src):
+                    failed += 1
+                    continue
                 shutil.copy2(src, tmp)
                 os.replace(tmp, dst)
                 copied += 1
