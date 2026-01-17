@@ -13,6 +13,7 @@ import logging
 import signal
 import faulthandler
 import hashlib
+import random
 from typing import Optional, List, Tuple
 from croniter import croniter
 
@@ -213,6 +214,32 @@ def _cache_name_for_relpath(relpath: str) -> str:
     h = hashlib.sha1(relpath.encode("utf-8", errors="ignore")).hexdigest()
     return f"{h}{ext}"
 
+def _extract_relpath_from_log_line(line: str, downloads_root: str) -> Optional[str]:
+    s = line.strip()
+    if not s:
+        return None
+
+    s = s.replace("\\", "/")
+    dr = downloads_root.replace("\\", "/").rstrip("/")
+
+    candidates = [tok for tok in re.split(r"\s+", s) if tok.startswith(dr)]
+    if not candidates and dr in s:
+        idx = s.find(dr)
+        if idx != -1:
+            cand = s[idx:].strip(" ,;\"'()[]")
+            candidates = [cand]
+
+    for cand in candidates:
+        if cand == dr or cand.startswith(dr + "/"):
+            rel = cand[len(dr):].lstrip("/")
+            if not rel:
+                continue
+            ext = os.path.splitext(rel)[1].lower()
+            if ext and ext in MEDIA_EXTS:
+                return rel
+
+    return None
+
 def _clean_dir(path: str):
     os.makedirs(path, exist_ok=True)
     for fn in os.listdir(path):
@@ -229,30 +256,49 @@ def _refresh_media_wall_cache_from_downloads() -> dict:
         allowed |= set(VIDEO_EXTS)
 
     with MEDIA_WALL_REFRESH_LOCK:
-        items = []
-        for root, _dirs, files in os.walk(DOWNLOADS_ROOT):
-            for fn in files:
-                ext = os.path.splitext(fn)[1].lower()
-                if ext not in allowed:
+        items = set()
+
+        if os.path.isdir(TASKS_ROOT):
+            for slug in sorted(os.listdir(TASKS_ROOT)):
+                task_dir = os.path.join(TASKS_ROOT, slug)
+                if not os.path.isdir(task_dir):
                     continue
-                path = os.path.join(root, fn)
+                log_path = os.path.join(task_dir, "logs.txt")
+                if not os.path.exists(log_path):
+                    continue
                 try:
-                    mtime = os.path.getmtime(path)
+                    with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                        for line in f:
+                            rel = _extract_relpath_from_log_line(line, DOWNLOADS_ROOT)
+                            if not rel:
+                                continue
+                            ext = os.path.splitext(rel)[1].lower()
+                            if ext in allowed:
+                                items.add(rel)
                 except Exception:
                     continue
-                rel = os.path.relpath(path, DOWNLOADS_ROOT)
-                items.append((mtime, rel))
+
+        if not items:
+            for root, _dirs, files in os.walk(DOWNLOADS_ROOT):
+                for fn in files:
+                    ext = os.path.splitext(fn)[1].lower()
+                    if ext not in allowed:
+                        continue
+                    path = os.path.join(root, fn)
+                    rel = os.path.relpath(path, DOWNLOADS_ROOT)
+                    items.add(rel)
 
         if not items:
             return {"picked": 0, "copied": 0}
 
-        items.sort(key=lambda x: x[0], reverse=True)
-        picked = items[:MEDIA_WALL_COPY_LIMIT]
+        items_list = list(items)
+        pick_count = min(MEDIA_WALL_COPY_LIMIT, len(items_list))
+        picked = random.sample(items_list, k=pick_count)
 
         _clean_dir(MEDIA_WALL_DIR)
 
         copied = 0
-        for _mtime, rel in picked:
+        for rel in picked:
             src = os.path.join(DOWNLOADS_ROOT, rel)
             dst = os.path.join(MEDIA_WALL_DIR, _cache_name_for_relpath(rel))
             tmp = dst + ".tmp"
