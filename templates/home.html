@@ -38,7 +38,20 @@
          data-media-wall-poll-interval="{{ media_wall_poll_interval|default(60) }}"
          data-media-wall-sse="{{ '1' if media_wall_sse_enabled else '0' }}">
       <div class="card-body">
-        <h5 class="card-title mb-3">Media wall</h5>
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+          <h5 class="card-title mb-0">Media wall</h5>
+          <div class="d-flex align-items-center gap-2">
+            <label for="media-wall-scale" class="text-muted small mb-0">Scale</label>
+            <select id="media-wall-scale" class="form-select form-select-sm" style="width: auto;">
+              <option value="1">Large (1 column)</option>
+              <option value="2">2 columns</option>
+              <option value="3">3 columns</option>
+              <option value="4">4 columns</option>
+              <option value="5">5 columns</option>
+              <option value="6">Small (6 columns)</option>
+            </select>
+          </div>
+        </div>
 
         <div id="media-wall-loader" class="media-wall-loader">
           <div class="spinner-border text-light" role="status"></div>
@@ -50,20 +63,7 @@
         </div>
 
         <!-- Infinite scroll container -->
-        <div id="media-wall-container" class="media-wall-vertical" style="display:none;">
-          <div class="media-column">
-            <div class="media-strip-vertical" id="strip-0"></div>
-          </div>
-          <div class="media-column">
-            <div class="media-strip-vertical" id="strip-1"></div>
-          </div>
-          <div class="media-column">
-            <div class="media-strip-vertical" id="strip-2"></div>
-          </div>
-          <div class="media-column">
-            <div class="media-strip-vertical" id="strip-3"></div>
-          </div>
-        </div>
+        <div id="media-wall-container" class="media-wall-vertical" style="display:none;"></div>
 
       </div>
     </div>
@@ -76,6 +76,7 @@
     gap: 0;
     width: 100%;
     --media-scroll-duration: 320s;
+    --thumb-height: 90px;
   }
 
   .media-column {
@@ -108,7 +109,7 @@
 
   .media-item {
     width: 100%;
-    height: 90px;
+    height: var(--thumb-height);
     overflow: hidden;
     border-radius: 0;
     background: transparent;
@@ -141,12 +142,54 @@
   const loader = document.getElementById("media-wall-loader");
   const emptyMsg = document.getElementById("media-wall-empty");
   const container = document.getElementById("media-wall-container");
+  const scaleSelect = document.getElementById("media-wall-scale");
 
   let lastSig = "";
-  const rowCount = 4;
+  let rowCount = 4;
   let refreshTimer = null;
   let es = null;
   let isVisible = !document.hidden;
+  const scaleStorageKey = "mediaWallScale";
+
+  function getScaleValue() {
+    const raw = scaleSelect?.value || "4";
+    const value = Math.max(1, Math.min(6, parseInt(raw, 10) || 4));
+    return value;
+  }
+
+  function thumbHeightForScale(scale) {
+    switch (scale) {
+      case 1: return 260;
+      case 2: return 200;
+      case 3: return 150;
+      case 4: return 110;
+      case 5: return 90;
+      case 6: return 75;
+      default: return 110;
+    }
+  }
+
+  function buildColumns(scale) {
+    if (!container) return;
+    container.innerHTML = "";
+    for (let i = 0; i < scale; i++) {
+      const col = document.createElement("div");
+      col.className = "media-column";
+      const strip = document.createElement("div");
+      strip.className = "media-strip-vertical";
+      strip.id = `strip-${i}`;
+      col.appendChild(strip);
+      container.appendChild(col);
+    }
+  }
+
+  function applyScale(scale) {
+    rowCount = scale;
+    if (container) {
+      container.style.setProperty("--thumb-height", `${thumbHeightForScale(scale)}px`);
+    }
+    buildColumns(scale);
+  }
 
   function showLoader() { if (loader) loader.style.display = "flex"; }
   function hideLoader() { if (loader) loader.style.display = "none"; }
@@ -204,8 +247,8 @@
       }
       lastSig = sig;
 
-      // Distribute images across 4 columns evenly
-      const rows = [[], [], [], []];
+      // Distribute images across N columns evenly
+      const rows = Array.from({ length: rowCount }, () => []);
       items.forEach((item, idx) => {
         rows[idx % rowCount].push(item);
       });
@@ -287,6 +330,22 @@
   });
 
   document.addEventListener("DOMContentLoaded", () => {
+    if (scaleSelect) {
+      const savedScale = parseInt(localStorage.getItem(scaleStorageKey) || "4", 10);
+      const scale = Math.max(1, Math.min(6, savedScale || 4));
+      scaleSelect.value = String(scale);
+      applyScale(scale);
+      scaleSelect.addEventListener("change", () => {
+        const nextScale = getScaleValue();
+        localStorage.setItem(scaleStorageKey, String(nextScale));
+        applyScale(nextScale);
+        lastSig = "";
+        refresh();
+      });
+    } else {
+      applyScale(rowCount);
+    }
+
     refresh();
 
     const card = container?.closest(".card");
