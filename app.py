@@ -95,6 +95,7 @@ MEDIA_WALL_MIN_REFRESH_SECONDS = int(os.environ.get("MEDIA_WALL_MIN_REFRESH_SECO
 MEDIA_WALL_SSE_ENABLED = os.environ.get("MEDIA_WALL_SSE", "0") == "1"
 MEDIA_WALL_SCAN_CRON_DEFAULT = os.environ.get("MEDIA_WALL_SCAN_CRON", "*/1 * * * *")
 MEDIA_WALL_POLL_INTERVAL = int(os.environ.get("MEDIA_WALL_POLL_INTERVAL", "60"))
+MEDIA_WALL_LOG_TAIL_LINES = int(os.environ.get("MEDIA_WALL_LOG_TAIL_LINES", "2000"))
 
 # Media wall notify file for SSE
 MEDIAWALL_NOTIFY_FILE = os.path.join(os.environ.get('CONFIG_DIR', '/config'), 'mediawall.notify')
@@ -240,6 +241,26 @@ def _extract_relpath_from_log_line(line: str, downloads_root: str) -> Optional[s
 
     return None
 
+def _tail_lines(path: str, max_lines: int = 500, chunk_size: int = 8192) -> List[str]:
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            end = f.tell()
+            buffer = bytearray()
+            lines = 0
+            pos = end
+            while pos > 0 and lines <= max_lines:
+                read_size = chunk_size if pos >= chunk_size else pos
+                pos -= read_size
+                f.seek(pos)
+                chunk = f.read(read_size)
+                buffer[:0] = chunk
+                lines = buffer.count(b"\n")
+            text = buffer.decode("utf-8", errors="ignore")
+            return text.splitlines()[-max_lines:]
+    except Exception:
+        return []
+
 def _clean_dir(path: str):
     os.makedirs(path, exist_ok=True)
     for fn in os.listdir(path):
@@ -263,6 +284,7 @@ def _refresh_media_wall_cache_from_downloads() -> dict:
         app.logger.info("mediawall: refresh started (cache_videos=%s, copy_limit=%s)", MEDIA_WALL_CACHE_VIDEOS, MEDIA_WALL_COPY_LIMIT)
         items = set()
 
+        tasks_seen = 0
         if os.path.isdir(TASKS_ROOT):
             for slug in sorted(os.listdir(TASKS_ROOT)):
                 task_dir = os.path.join(TASKS_ROOT, slug)
@@ -271,21 +293,23 @@ def _refresh_media_wall_cache_from_downloads() -> dict:
                 log_path = os.path.join(task_dir, "logs.txt")
                 if not os.path.exists(log_path):
                     continue
+                tasks_seen += 1
                 try:
-                    with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
-                        for line in f:
-                            rel = _extract_relpath_from_log_line(line, DOWNLOADS_ROOT)
-                            if not rel:
-                                continue
-                            ext = os.path.splitext(rel)[1].lower()
-                            if ext in allowed:
-                                src = os.path.join(DOWNLOADS_ROOT, rel)
-                                if os.path.isfile(src):
-                                    items.add(rel)
+                    for line in _tail_lines(log_path, max_lines=MEDIA_WALL_LOG_TAIL_LINES):
+                        rel = _extract_relpath_from_log_line(line, DOWNLOADS_ROOT)
+                        if not rel:
+                            continue
+                        ext = os.path.splitext(rel)[1].lower()
+                        if ext in allowed:
+                            src = os.path.join(DOWNLOADS_ROOT, rel)
+                            if os.path.isfile(src):
+                                items.add(rel)
                 except Exception:
                     continue
+        app.logger.info("mediawall: scanned logs (tasks=%s, items=%s)", tasks_seen, len(items))
 
         if not items:
+            app.logger.info("mediawall: no log items found, scanning downloads...")
             for root, _dirs, files in os.walk(DOWNLOADS_ROOT):
                 for fn in files:
                     ext = os.path.splitext(fn)[1].lower()
