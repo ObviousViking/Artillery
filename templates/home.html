@@ -116,15 +116,14 @@
 
   .media-item img {
     width: 100%;
-    height: 100%;
+    height: auto;
+    max-height: 140px;
     object-fit: contain;
     background: transparent;
   }
 
   /* Patchwork sizing: vary item heights while preserving aspect ratio */
-  .media-strip-vertical .media-item:nth-child(3n)   { height: 240px; }
-  .media-strip-vertical .media-item:nth-child(3n+1) { height: 180px; }
-  .media-strip-vertical .media-item:nth-child(3n+2) { height: 140px; }
+  .media-strip-vertical .media-item { height: auto; }
 
   .media-wall-loader {
     display: none;
