@@ -332,6 +332,7 @@ def _media_wall_scan_worker():
     last_minute = None
     last_expr = None
     next_run = None
+    last_status_minute = None
 
     # one-time warmup if enabled and cache empty
     app.logger.info("mediawall: scan worker started (enabled=%s)", MEDIA_WALL_ENABLED)
@@ -371,6 +372,9 @@ def _media_wall_scan_worker():
             except Exception:
                 app.logger.warning("mediawall: failed to compute next run for expr '%s'", expr)
                 next_run = None
+        elif minute_key != last_status_minute:
+            last_status_minute = minute_key
+            app.logger.info("mediawall: waiting (now=%s, next_run=%s, expr='%s')", now_minute, next_run, expr)
 
         time.sleep(5)
 
@@ -460,6 +464,19 @@ def mediawall_toggle():
     status = "enabled" if MEDIA_WALL_ENABLED else "disabled"
     os.environ["MEDIA_WALL_ENABLED"] = "1" if MEDIA_WALL_ENABLED else "0"
     flash(f"Media wall {status}", "success")
+    return redirect(url_for("config_page"))
+
+@app.route("/mediawall/refresh", methods=["POST"])
+def mediawall_refresh():
+    if not MEDIA_WALL_ENABLED:
+        flash("Media wall is disabled.", "error")
+        return redirect(url_for("config_page"))
+    result = _refresh_media_wall_cache_from_downloads()
+    touch_mediawall_notify()
+    flash(
+        f"Media wall refreshed (picked={result.get('picked', 0)}, copied={result.get('copied', 0)}).",
+        "success",
+    )
     return redirect(url_for("config_page"))
 
 # ---------------------------------------------------------------------
