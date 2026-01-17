@@ -38,20 +38,7 @@
          data-media-wall-poll-interval="{{ media_wall_poll_interval|default(60) }}"
          data-media-wall-sse="{{ '1' if media_wall_sse_enabled else '0' }}">
       <div class="card-body">
-        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-          <h5 class="card-title mb-0">Media wall</h5>
-          <div class="d-flex align-items-center gap-2">
-            <label for="media-wall-scale" class="text-muted small mb-0">Scale</label>
-            <select id="media-wall-scale" class="form-select form-select-sm" style="width: auto;">
-              <option value="1">Large (1 column)</option>
-              <option value="2">2 columns</option>
-              <option value="3">3 columns</option>
-              <option value="4">4 columns</option>
-              <option value="5">5 columns</option>
-              <option value="6">Small (6 columns)</option>
-            </select>
-          </div>
-        </div>
+        <h5 class="card-title mb-3">Media wall</h5>
 
         <div id="media-wall-loader" class="media-wall-loader">
           <div class="spinner-border text-light" role="status"></div>
@@ -69,6 +56,21 @@
     </div>
   </div>
 </div>
+
+<footer class="media-wall-footer">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+    <div>
+      <div class="fw-semibold">Media wall scale</div>
+      <div class="text-muted small">Adjust columns from 1 (large) to 6 (compact).</div>
+    </div>
+    <div class="d-flex align-items-center gap-3">
+      <span class="text-muted small">Large</span>
+      <input id="media-wall-scale-range" class="form-range media-wall-scale-range" type="range" min="1" max="6" step="1" />
+      <span class="text-muted small">Compact</span>
+      <span id="media-wall-scale-label" class="badge text-bg-dark">4 columns</span>
+    </div>
+  </div>
+</footer>
 
 <style>
   .media-wall-vertical {
@@ -135,6 +137,18 @@
     gap: 0.5rem;
     margin-bottom: 0.75rem;
   }
+
+  .media-wall-footer {
+    background: #060606;
+    border-top: 1px solid #111827;
+    padding: 0.85rem 1rem;
+    border-radius: 0.5rem;
+    margin-top: 1rem;
+  }
+
+  .media-wall-scale-range {
+    width: min(320px, 70vw);
+  }
 </style>
 
 <script>
@@ -142,7 +156,8 @@
   const loader = document.getElementById("media-wall-loader");
   const emptyMsg = document.getElementById("media-wall-empty");
   const container = document.getElementById("media-wall-container");
-  const scaleSelect = document.getElementById("media-wall-scale");
+  const scaleRange = document.getElementById("media-wall-scale-range");
+  const scaleLabel = document.getElementById("media-wall-scale-label");
 
   let lastSig = "";
   let rowCount = 4;
@@ -152,7 +167,7 @@
   const scaleStorageKey = "mediaWallScale";
 
   function getScaleValue() {
-    const raw = scaleSelect?.value || "4";
+    const raw = scaleRange?.value || "4";
     const value = Math.max(1, Math.min(6, parseInt(raw, 10) || 4));
     return value;
   }
@@ -187,6 +202,9 @@
     rowCount = scale;
     if (container) {
       container.style.setProperty("--thumb-height", `${thumbHeightForScale(scale)}px`);
+    }
+    if (scaleLabel) {
+      scaleLabel.textContent = `${scale} ${scale === 1 ? "column" : "columns"}`;
     }
     buildColumns(scale);
   }
@@ -330,12 +348,12 @@
   });
 
   document.addEventListener("DOMContentLoaded", () => {
-    if (scaleSelect) {
+    if (scaleRange) {
       const savedScale = parseInt(localStorage.getItem(scaleStorageKey) || "4", 10);
       const scale = Math.max(1, Math.min(6, savedScale || 4));
-      scaleSelect.value = String(scale);
+      scaleRange.value = String(scale);
       applyScale(scale);
-      scaleSelect.addEventListener("change", () => {
+      scaleRange.addEventListener("input", () => {
         const nextScale = getScaleValue();
         localStorage.setItem(scaleStorageKey, String(nextScale));
         applyScale(nextScale);
