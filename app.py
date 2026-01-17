@@ -319,6 +319,8 @@ _MEDIA_WALL_SCAN_THREAD_STARTED = False
 
 def _media_wall_scan_worker():
     last_minute = None
+    last_expr = None
+    next_run = None
 
     # one-time warmup if enabled and cache empty
     if MEDIA_WALL_ENABLED and not os.listdir(MEDIA_WALL_DIR):
@@ -335,10 +337,21 @@ def _media_wall_scan_worker():
         now_minute = now.replace(second=0, microsecond=0)
         minute_key = now_minute.strftime("%Y-%m-%d %H:%M")
 
-        if croniter.match(expr, now_minute) and minute_key != last_minute:
+        if expr != last_expr:
+            last_expr = expr
+            try:
+                next_run = croniter(expr, now_minute).get_next(dt.datetime)
+            except Exception:
+                next_run = None
+
+        if next_run and now_minute >= next_run and minute_key != last_minute:
             last_minute = minute_key
             _refresh_media_wall_cache_from_downloads()
             touch_mediawall_notify()
+            try:
+                next_run = croniter(expr, now_minute).get_next(dt.datetime)
+            except Exception:
+                next_run = None
 
         time.sleep(5)
 
