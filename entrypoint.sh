@@ -12,9 +12,14 @@ PGID="${PGID:-0}"
 # Ensure directories exist (Unraid maps these)
 : "${TASKS_DIR:=/tasks}"
 : "${CONFIG_DIR:=/config}"
+: "${DOWNLOADS_DIR:=/downloads}"
 
 
-mkdir -p "$TASKS_DIR" "$CONFIG_DIR" 
+mkdir -p "$TASKS_DIR" "$CONFIG_DIR" "$DOWNLOADS_DIR"
+
+# Ensure media wall cache is writable (non-critical cache)
+mkdir -p "$CONFIG_DIR/media_wall"
+chmod 777 "$CONFIG_DIR/media_wall" 2>/dev/null || true
 
 log "Updating gallery-dl to latest..."
 pip install --no-cache-dir --upgrade gallery-dl
