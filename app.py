@@ -332,9 +332,10 @@ def _media_wall_scan_worker():
 
         expr = _get_media_wall_scan_cron()
         now = dt.datetime.now()
-        minute_key = now.strftime("%Y-%m-%d %H:%M")
+        now_minute = now.replace(second=0, microsecond=0)
+        minute_key = now_minute.strftime("%Y-%m-%d %H:%M")
 
-        if croniter.match(expr, now) and minute_key != last_minute:
+        if croniter.match(expr, now_minute) and minute_key != last_minute:
             last_minute = minute_key
             _refresh_media_wall_cache_from_downloads()
             touch_mediawall_notify()
