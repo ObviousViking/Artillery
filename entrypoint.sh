@@ -8,6 +8,7 @@ log() {
 # Unraid-style PUID / PGID
 PUID="${PUID:-0}"
 PGID="${PGID:-0}"
+CHOWN_DOWNLOADS="${CHOWN_DOWNLOADS:-0}"
 
 # Ensure directories exist (Unraid maps these)
 : "${TASKS_DIR:=/tasks}"
@@ -35,7 +36,13 @@ if [ "$PUID" != "0" ] && [ "$PGID" != "0" ]; then
   log "Using PUID=$PUID PGID=$PGID for ownership and processes"
 
   # Own the mapped directories (best effort)
-  chown -R "$PUID:$PGID" "$TASKS_DIR" "$CONFIG_DIR" "$DOWNLOADS_DIR" 2>/dev/null || true
+  chown -R "$PUID:$PGID" "$TASKS_DIR" "$CONFIG_DIR" 2>/dev/null || true
+  if [ "$CHOWN_DOWNLOADS" = "1" ]; then
+    log "Chowning downloads (may be slow on large libraries)..."
+    chown -R "$PUID:$PGID" "$DOWNLOADS_DIR" 2>/dev/null || true
+  else
+    log "Skipping downloads chown (set CHOWN_DOWNLOADS=1 to enable)"
+  fi
 else
   APP_USER_SPEC="root"
   log "PUID/PGID not set (or zero), running as root."
