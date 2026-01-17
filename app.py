@@ -13,6 +13,7 @@ import logging
 import signal
 import faulthandler
 import hashlib
+import random
 from typing import Optional, List, Tuple
 from croniter import croniter
 
@@ -213,6 +214,32 @@ def _cache_name_for_relpath(relpath: str) -> str:
     h = hashlib.sha1(relpath.encode("utf-8", errors="ignore")).hexdigest()
     return f"{h}{ext}"
 
+def _extract_relpath_from_log_line(line: str, downloads_root: str) -> Optional[str]:
+    s = line.strip()
+    if not s:
+        return None
+
+    s = s.replace("\\", "/")
+    dr = downloads_root.replace("\\", "/").rstrip("/")
+
+    candidates = [tok for tok in re.split(r"\s+", s) if tok.startswith(dr)]
+    if not candidates and dr in s:
+        idx = s.find(dr)
+        if idx != -1:
+            cand = s[idx:].strip(" ,;\"'()[]")
+            candidates = [cand]
+
+    for cand in candidates:
+        if cand == dr or cand.startswith(dr + "/"):
+            rel = cand[len(dr):].lstrip("/")
+            if not rel:
+                continue
+            ext = os.path.splitext(rel)[1].lower()
+            if ext and ext in MEDIA_EXTS:
+                return rel
+
+    return None
+
 def _clean_dir(path: str):
     os.makedirs(path, exist_ok=True)
     for fn in os.listdir(path):
@@ -228,54 +255,96 @@ def _refresh_media_wall_cache_from_downloads() -> dict:
     if MEDIA_WALL_CACHE_VIDEOS:
         allowed |= set(VIDEO_EXTS)
 
-    with MEDIA_WALL_REFRESH_LOCK:
-        items = []
-        for root, _dirs, files in os.walk(DOWNLOADS_ROOT):
-            for fn in files:
-                ext = os.path.splitext(fn)[1].lower()
-                if ext not in allowed:
+    if not MEDIA_WALL_REFRESH_LOCK.acquire(blocking=False):
+        app.logger.info("mediawall: refresh skipped (lock busy)")
+        return {"picked": 0, "copied": 0, "skipped": 1}
+
+    try:
+        app.logger.info("mediawall: refresh started (cache_videos=%s, copy_limit=%s)", MEDIA_WALL_CACHE_VIDEOS, MEDIA_WALL_COPY_LIMIT)
+        items = set()
+
+        if os.path.isdir(TASKS_ROOT):
+            for slug in sorted(os.listdir(TASKS_ROOT)):
+                task_dir = os.path.join(TASKS_ROOT, slug)
+                if not os.path.isdir(task_dir):
                     continue
-                path = os.path.join(root, fn)
+                log_path = os.path.join(task_dir, "logs.txt")
+                if not os.path.exists(log_path):
+                    continue
                 try:
-                    mtime = os.path.getmtime(path)
+                    with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                        for line in f:
+                            rel = _extract_relpath_from_log_line(line, DOWNLOADS_ROOT)
+                            if not rel:
+                                continue
+                            ext = os.path.splitext(rel)[1].lower()
+                            if ext in allowed:
+                                src = os.path.join(DOWNLOADS_ROOT, rel)
+                                if os.path.isfile(src):
+                                    items.add(rel)
                 except Exception:
                     continue
-                rel = os.path.relpath(path, DOWNLOADS_ROOT)
-                items.append((mtime, rel))
 
         if not items:
+            for root, _dirs, files in os.walk(DOWNLOADS_ROOT):
+                for fn in files:
+                    ext = os.path.splitext(fn)[1].lower()
+                    if ext not in allowed:
+                        continue
+                    path = os.path.join(root, fn)
+                    rel = os.path.relpath(path, DOWNLOADS_ROOT)
+                    if os.path.isfile(path):
+                        items.add(rel)
+
+        if not items:
+            app.logger.info("mediawall: refresh found 0 items")
             return {"picked": 0, "copied": 0}
 
-        items.sort(key=lambda x: x[0], reverse=True)
-        picked = items[:MEDIA_WALL_COPY_LIMIT]
+        items_list = list(items)
+        pick_count = min(MEDIA_WALL_COPY_LIMIT, len(items_list))
+        picked = random.sample(items_list, k=pick_count)
 
         _clean_dir(MEDIA_WALL_DIR)
 
         copied = 0
-        for _mtime, rel in picked:
+        failed = 0
+        for rel in picked:
             src = os.path.join(DOWNLOADS_ROOT, rel)
             dst = os.path.join(MEDIA_WALL_DIR, _cache_name_for_relpath(rel))
             tmp = dst + ".tmp"
             try:
+                if not os.path.isfile(src):
+                    failed += 1
+                    continue
                 shutil.copy2(src, tmp)
                 os.replace(tmp, dst)
                 copied += 1
             except Exception:
+                failed += 1
                 try:
                     if os.path.exists(tmp):
                         os.remove(tmp)
                 except Exception:
                     pass
 
-        return {"picked": len(picked), "copied": copied}
+        app.logger.info("mediawall: refresh completed (picked=%s, copied=%s, failed=%s)", len(picked), copied, failed)
+        return {"picked": len(picked), "copied": copied, "failed": failed}
+    finally:
+        MEDIA_WALL_REFRESH_LOCK.release()
 
 _MEDIA_WALL_SCAN_THREAD_STARTED = False
 
 def _media_wall_scan_worker():
     last_minute = None
+    last_expr = None
+    next_run = None
+    last_status_minute = None
 
     # one-time warmup if enabled and cache empty
+    app.logger.info("mediawall: scan worker started (enabled=%s)", MEDIA_WALL_ENABLED)
+
     if MEDIA_WALL_ENABLED and not os.listdir(MEDIA_WALL_DIR):
+        app.logger.info("mediawall: warmup refresh (cache empty)")
         _refresh_media_wall_cache_from_downloads()
         touch_mediawall_notify()
 
@@ -286,12 +355,32 @@ def _media_wall_scan_worker():
 
         expr = _get_media_wall_scan_cron()
         now = dt.datetime.now()
-        minute_key = now.strftime("%Y-%m-%d %H:%M")
+        now_minute = now.replace(second=0, microsecond=0)
+        minute_key = now_minute.strftime("%Y-%m-%d %H:%M")
 
-        if croniter.match(expr, now) and minute_key != last_minute:
+        if expr != last_expr:
+            last_expr = expr
+            try:
+                next_run = croniter(expr, now_minute).get_next(dt.datetime)
+                app.logger.info("mediawall: schedule updated expr='%s', next_run=%s", expr, next_run)
+            except Exception:
+                app.logger.warning("mediawall: invalid cron expr '%s'", expr)
+                next_run = None
+
+        if next_run and now_minute >= next_run and minute_key != last_minute:
             last_minute = minute_key
+            app.logger.info("mediawall: trigger refresh at %s (expr='%s')", now_minute, expr)
             _refresh_media_wall_cache_from_downloads()
             touch_mediawall_notify()
+            try:
+                next_run = croniter(expr, now_minute).get_next(dt.datetime)
+                app.logger.info("mediawall: next_run=%s", next_run)
+            except Exception:
+                app.logger.warning("mediawall: failed to compute next run for expr '%s'", expr)
+                next_run = None
+        elif minute_key != last_status_minute:
+            last_status_minute = minute_key
+            app.logger.info("mediawall: waiting (now=%s, next_run=%s, expr='%s')", now_minute, next_run, expr)
 
         time.sleep(5)
 
@@ -381,6 +470,26 @@ def mediawall_toggle():
     status = "enabled" if MEDIA_WALL_ENABLED else "disabled"
     os.environ["MEDIA_WALL_ENABLED"] = "1" if MEDIA_WALL_ENABLED else "0"
     flash(f"Media wall {status}", "success")
+    return redirect(url_for("config_page"))
+
+@app.route("/mediawall/refresh", methods=["POST"])
+def mediawall_refresh():
+    if not MEDIA_WALL_ENABLED:
+        flash("Media wall is disabled.", "error")
+        return redirect(url_for("config_page"))
+    def _run_refresh():
+        result = _refresh_media_wall_cache_from_downloads()
+        touch_mediawall_notify()
+        app.logger.info(
+            "mediawall: manual refresh done (picked=%s, copied=%s, failed=%s, skipped=%s)",
+            result.get("picked", 0),
+            result.get("copied", 0),
+            result.get("failed", 0),
+            result.get("skipped", 0),
+        )
+
+    threading.Thread(target=_run_refresh, daemon=True).start()
+    flash("Media wall refresh started.", "success")
     return redirect(url_for("config_page"))
 
 # ---------------------------------------------------------------------
