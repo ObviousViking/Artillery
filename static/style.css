@@ -116,17 +116,11 @@ code {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    opacity: 0;
-    transition: opacity 0.4s ease-out;
 }
 
 /* One horizontal strip */
 .media-wall-row {
     overflow: hidden;
-}
-
-.media-wall-ready {
-    opacity: 1;
 }
 
 .media-wall-loader-hidden {
@@ -165,11 +159,6 @@ code {
     display: flex;
     align-items: center;
     justify-content: center;
-
-    /* smooth fade-in */
-    opacity: 0;
-    transform: translateY(4px);
-    animation: media-fade-in 0.5s ease-out forwards;
 }
 
 /* Image: keep aspect ratio, no cropping, size based on its own proportions.
@@ -209,19 +198,6 @@ code {
 @keyframes media-scroll-right {
     from { transform: translate3d(calc(-1 * var(--loop-distance)),0,0); }
     to   { transform: translate3d(0,0,0); }
-}
-
-/* Fade-in for items */
-@keyframes media-fade-in {
-    from {
-        opacity: 0;
-        transform: translateY(4px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
 }
 
 /* Output panel styles */
