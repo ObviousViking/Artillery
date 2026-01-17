@@ -256,6 +256,7 @@ def _refresh_media_wall_cache_from_downloads() -> dict:
         allowed |= set(VIDEO_EXTS)
 
     with MEDIA_WALL_REFRESH_LOCK:
+        app.logger.info("mediawall: refresh started (cache_videos=%s, copy_limit=%s)", MEDIA_WALL_CACHE_VIDEOS, MEDIA_WALL_COPY_LIMIT)
         items = set()
 
         if os.path.isdir(TASKS_ROOT):
@@ -289,6 +290,7 @@ def _refresh_media_wall_cache_from_downloads() -> dict:
                     items.add(rel)
 
         if not items:
+            app.logger.info("mediawall: refresh found 0 items")
             return {"picked": 0, "copied": 0}
 
         items_list = list(items)
@@ -298,6 +300,7 @@ def _refresh_media_wall_cache_from_downloads() -> dict:
         _clean_dir(MEDIA_WALL_DIR)
 
         copied = 0
+        failed = 0
         for rel in picked:
             src = os.path.join(DOWNLOADS_ROOT, rel)
             dst = os.path.join(MEDIA_WALL_DIR, _cache_name_for_relpath(rel))
@@ -307,13 +310,15 @@ def _refresh_media_wall_cache_from_downloads() -> dict:
                 os.replace(tmp, dst)
                 copied += 1
             except Exception:
+                failed += 1
                 try:
                     if os.path.exists(tmp):
                         os.remove(tmp)
                 except Exception:
                     pass
 
-        return {"picked": len(picked), "copied": copied}
+        app.logger.info("mediawall: refresh completed (picked=%s, copied=%s, failed=%s)", len(picked), copied, failed)
+        return {"picked": len(picked), "copied": copied, "failed": failed}
 
 _MEDIA_WALL_SCAN_THREAD_STARTED = False
 
@@ -323,7 +328,10 @@ def _media_wall_scan_worker():
     next_run = None
 
     # one-time warmup if enabled and cache empty
+    app.logger.info("mediawall: scan worker started (enabled=%s)", MEDIA_WALL_ENABLED)
+
     if MEDIA_WALL_ENABLED and not os.listdir(MEDIA_WALL_DIR):
+        app.logger.info("mediawall: warmup refresh (cache empty)")
         _refresh_media_wall_cache_from_downloads()
         touch_mediawall_notify()
 
@@ -341,16 +349,21 @@ def _media_wall_scan_worker():
             last_expr = expr
             try:
                 next_run = croniter(expr, now_minute).get_next(dt.datetime)
+                app.logger.info("mediawall: schedule updated expr='%s', next_run=%s", expr, next_run)
             except Exception:
+                app.logger.warning("mediawall: invalid cron expr '%s'", expr)
                 next_run = None
 
         if next_run and now_minute >= next_run and minute_key != last_minute:
             last_minute = minute_key
+            app.logger.info("mediawall: trigger refresh at %s (expr='%s')", now_minute, expr)
             _refresh_media_wall_cache_from_downloads()
             touch_mediawall_notify()
             try:
                 next_run = croniter(expr, now_minute).get_next(dt.datetime)
+                app.logger.info("mediawall: next_run=%s", next_run)
             except Exception:
+                app.logger.warning("mediawall: failed to compute next run for expr '%s'", expr)
                 next_run = None
 
         time.sleep(5)
