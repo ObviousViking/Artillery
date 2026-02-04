@@ -694,6 +694,26 @@ def tasks():
     tasks_list = load_tasks()
     return render_template("tasks.html", tasks=tasks_list)
 
+
+@app.route("/api/tasks")
+def api_tasks():
+    """Return a lightweight JSON representation of tasks for front-end polling."""
+    ensure_data_dirs(ensure_downloads=False)
+    tasks = load_tasks()
+
+    out = []
+    for t in tasks:
+        out.append({
+            "id": t.get("id"),
+            "name": t.get("name"),
+            "slug": t.get("slug"),
+            "schedule": t.get("schedule"),
+            "status": t.get("status"),
+            "last_run": t.get("last_run"),
+        })
+
+    return jsonify(out)
+
 # ---------------------------------------------------------------------
 # Config page
 # ---------------------------------------------------------------------
