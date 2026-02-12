@@ -24,10 +24,10 @@
                             {% set status = task.status %}
                             {% set schedule = task.schedule %}
                             {% set lr = task.last_run %}
-                            <tr>
+                            <tr data-slug="{{ task.slug }}">
                                 <td>{{ task.name }}</td>
                                 <td>
-                                    <span class="badge
+                                    <span class="badge task-status-badge
                         {% if status == 'running' %} bg-primary
                         {% elif status == 'error' %} bg-danger
                         {% elif status == 'complete' %} bg-success
@@ -45,7 +45,7 @@
                                     <span class="text-muted">None</span>
                                     {% endif %}
                                 </td>
-                                <td>
+                                <td class="task-last-run">
                                     {% if lr %}
                                     {{ lr[:19].replace('T', ' ') }} UTC
                                     {% else %}
@@ -58,8 +58,8 @@
                                         <form method="post" action="{{ url_for('task_action', slug=task.slug) }}"
                                             class="m-0">
                                             <input type="hidden" name="action" value="run">
-                                            <button type="submit" class="btn btn-sm btn-outline-light" {% if
-                                                status=='running' %}disabled{% endif %}>
+                                            <button type="submit" class="btn btn-sm btn-outline-light task-run-btn" {%
+                                                if status=='running' %}disabled{% endif %}>
                                                 Run
                                             </button>
                                         </form>
@@ -69,11 +69,12 @@
                                             class="m-0">
                                             <input type="hidden" name="action" value="pause">
                                             {% if status == 'paused' %}
-                                            <button type="submit" class="btn btn-sm btn-outline-warning">
+                                            <button type="submit" class="btn btn-sm btn-outline-warning task-pause-btn">
                                                 Unpause
                                             </button>
                                             {% else %}
-                                            <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                            <button type="submit"
+                                                class="btn btn-sm btn-outline-secondary task-pause-btn">
                                                 Pause
                                             </button>
                                             {% endif %}
@@ -98,7 +99,8 @@
                                         </form>
 
                                         <!-- Download logs -->
-                                        <form method="get" action="{{ url_for('download_task_logs', slug=task.slug) }}" class="m-0">
+                                        <form method="get" action="{{ url_for('download_task_logs', slug=task.slug) }}"
+                                            class="m-0">
                                             <button type="submit" class="btn btn-sm btn-outline-light">
                                                 Download Logs
                                             </button>
@@ -124,7 +126,8 @@
         <div class="card shadow-sm border-secondary">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h2 class="card-title mb-0">Output</h2>
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnToggleOutput" data-collapsed="true">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnToggleOutput"
+                    data-collapsed="true">
                     Show
                 </button>
             </div>
@@ -138,11 +141,13 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div id="logContainer" class="bg-dark p-3 rounded" style="max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.875rem; border: 1px solid #374151;">
+                <div id="logContainer" class="bg-dark p-3 rounded"
+                    style="max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.875rem; border: 1px solid #374151;">
                     <p class="text-muted mb-0">Select a task to view its output...</p>
                 </div>
                 <div class="mt-2">
-                    <small class="text-muted">Auto-refreshing every 1 second - Only the last 50 lines shown. Please review logs in full for more detail</small>
+                    <small class="text-muted">Auto-refreshing every 1 second - Only the last 50 lines shown. Please
+                        review logs in full for more detail</small>
                 </div>
             </div>
         </div>
@@ -335,7 +340,7 @@ https://example.com/image2" required></textarea>
         const editingFlag = document.getElementById("editingFlag");
         const taskFormTitle = document.getElementById("taskFormTitle");
         const btnNewTask = document.getElementById("btnNewTask");
-        
+
         // Output panel elements
         const btnToggleOutput = document.getElementById("btnToggleOutput");
         const outputPanel = document.getElementById("outputPanel");
@@ -398,25 +403,25 @@ https://example.com/image2" required></textarea>
                 'info': 'log-info',
                 'debug': 'log-debug'
             };
-            
+
             // Escape HTML
             text = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-            
+
             // Color log level patterns like [warning], [error], etc.
             for (const [level, cssClass] of Object.entries(levelMap)) {
                 const pattern = new RegExp(`\\[${level}\\]`, 'gi');
                 text = text.replace(pattern, `<span class="${cssClass}">[$&]</span>`);
             }
-            
+
             return text;
         }
-        
+
         function fetchTaskLogs(slug) {
             if (!slug) {
                 logContainer.innerHTML = '<p class="text-muted mb-0">Select a task to view its output...</p>';
                 return;
             }
-            
+
             fetch(`/tasks/${slug}/logs?tail=50`)
                 .then(response => response.json())
                 .then(data => {
@@ -531,6 +536,80 @@ https://example.com/image2" required></textarea>
             isEditingExistingTask = false;
             editingFlag.value = "0";
             updateCommandPreview();
+        });
+    })();
+</script>
+
+<script>
+    (function () {
+        function statusClassFor(status) {
+            switch (status) {
+                case 'running':
+                    return 'bg-primary';
+                case 'error':
+                    return 'bg-danger';
+                case 'complete':
+                    return 'bg-success';
+                case 'paused':
+                    return 'bg-warning text-dark';
+                default:
+                    return 'bg-secondary';
+            }
+        }
+
+        function updateFromData(tasks) {
+            tasks.forEach(function (task) {
+                var tr = document.querySelector('tr[data-slug="' + task.slug + '"]');
+                if (!tr) return;
+
+                var badge = tr.querySelector('.task-status-badge');
+                if (badge) {
+                    var cls = 'badge ' + statusClassFor(task.status);
+                    badge.className = cls + ' task-status-badge';
+                    badge.textContent = task.status;
+                }
+
+                var lrCell = tr.querySelector('.task-last-run');
+                if (lrCell) {
+                    if (task.last_run) {
+                        lrCell.textContent = task.last_run.slice(0, 19).replace('T', ' ') + ' UTC';
+                    } else {
+                        lrCell.innerHTML = '<span class="text-muted">Never</span>';
+                    }
+                }
+
+                var runBtn = tr.querySelector('.task-run-btn');
+                if (runBtn) {
+                    runBtn.disabled = (task.status === 'running');
+                }
+
+                var pauseBtn = tr.querySelector('.task-pause-btn');
+                if (pauseBtn) {
+                    if (task.status === 'paused') {
+                        pauseBtn.textContent = 'Unpause';
+                        pauseBtn.className = 'btn btn-sm btn-outline-warning task-pause-btn';
+                    } else {
+                        pauseBtn.textContent = 'Pause';
+                        pauseBtn.className = 'btn btn-sm btn-outline-secondary task-pause-btn';
+                    }
+                }
+            });
+        }
+
+        async function poll() {
+            try {
+                var resp = await fetch('/api/tasks');
+                if (!resp.ok) return;
+                var data = await resp.json();
+                updateFromData(data);
+            } catch (e) {
+                // ignore transient errors
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            poll();
+            setInterval(poll, 5000);
         });
     })();
 </script>

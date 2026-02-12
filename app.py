@@ -96,6 +96,8 @@ MEDIA_WALL_SSE_ENABLED = os.environ.get("MEDIA_WALL_SSE", "0") == "1"
 MEDIA_WALL_SCAN_CRON_DEFAULT = os.environ.get("MEDIA_WALL_SCAN_CRON", "*/1 * * * *")
 MEDIA_WALL_POLL_INTERVAL = int(os.environ.get("MEDIA_WALL_POLL_INTERVAL", "60"))
 MEDIA_WALL_LOG_TAIL_LINES = int(os.environ.get("MEDIA_WALL_LOG_TAIL_LINES", "2000"))
+RECENT_DOWNLOADS_PER_TASK = int(os.environ.get("RECENT_DOWNLOADS_PER_TASK", "20"))
+RECENT_LOG_TAIL_LINES = int(os.environ.get("RECENT_LOG_TAIL_LINES", "200"))
 
 # Media wall notify file for SSE
 MEDIAWALL_NOTIFY_FILE = os.path.join(os.environ.get('CONFIG_DIR', '/config'), 'mediawall.notify')
@@ -222,6 +224,16 @@ def _extract_relpath_from_log_line(line: str, downloads_root: str) -> Optional[s
 
     s = s.replace("\\", "/")
     dr = downloads_root.replace("\\", "/").rstrip("/")
+    dr_short = dr.lstrip("/")
+
+    # Prefer full-line match to handle spaces in folders
+    media_pattern = r"(?:jpg|jpeg|png|gif|webp|mp4|webm|mkv)"
+    full_match = re.search(re.escape(dr) + r"/[^\r\n]*?\." + media_pattern, s, re.IGNORECASE)
+    if full_match:
+        cand = full_match.group(0)
+        rel = cand[len(dr):].lstrip("/")
+        if rel:
+            return rel
 
     candidates = [tok for tok in re.split(r"\s+", s) if tok.startswith(dr)]
     if not candidates and dr in s:
@@ -237,6 +249,28 @@ def _extract_relpath_from_log_line(line: str, downloads_root: str) -> Optional[s
                 continue
             ext = os.path.splitext(rel)[1].lower()
             if ext and ext in MEDIA_EXTS:
+                return rel
+        if cand.startswith(dr_short + "/"):
+            rel = cand[len(dr_short):].lstrip("/")
+            if not rel:
+                continue
+            ext = os.path.splitext(rel)[1].lower()
+            if ext and ext in MEDIA_EXTS:
+                return rel
+
+    # Fallback: search for any media path containing downloads/ without a leading slash
+    media_match = re.search(r"(?:^|\s)([^\s\"']+\.(?:jpg|jpeg|png|gif|webp|mp4|webm|mkv))(?:$|\s)", s, re.IGNORECASE)
+    if media_match:
+        cand = media_match.group(1)
+        cand = cand.strip(" ,;\"'()[]")
+        cand = cand.replace("\\", "/")
+        if dr in cand:
+            rel = cand.split(dr, 1)[-1].lstrip("/")
+            if rel:
+                return rel
+        if ("/" + dr_short + "/") in cand or cand.startswith(dr_short + "/"):
+            rel = cand.split(dr_short + "/", 1)[-1].lstrip("/")
+            if rel:
                 return rel
 
     return None
@@ -260,6 +294,38 @@ def _tail_lines(path: str, max_lines: int = 500, chunk_size: int = 8192) -> List
             return text.splitlines()[-max_lines:]
     except Exception:
         return []
+
+def _recent_downloads_from_log(log_path: str, limit: int) -> List[dict]:
+    if not os.path.exists(log_path):
+        return []
+
+    lines = _tail_lines(log_path, max_lines=RECENT_LOG_TAIL_LINES)
+    items = []
+    seen = set()
+
+    for line in reversed(lines):
+        rel = _extract_relpath_from_log_line(line, DOWNLOADS_ROOT)
+        if not rel:
+            continue
+        if rel in seen:
+            continue
+
+        abs_path = os.path.join(DOWNLOADS_ROOT, rel)
+        if not os.path.isfile(abs_path):
+            continue
+
+        ext = os.path.splitext(rel)[1].lower()
+        items.append({
+            "rel": rel,
+            "ext": ext,
+            "filename": os.path.basename(rel),
+        })
+        seen.add(rel)
+
+        if len(items) >= limit:
+            break
+
+    return items
 
 def _clean_dir(path: str):
     os.makedirs(path, exist_ok=True)
@@ -618,6 +684,35 @@ def home():
     )
 
 # ---------------------------------------------------------------------
+# Recent downloads (per task, based on logs)
+# ---------------------------------------------------------------------
+
+@app.route("/recent")
+def recent_downloads():
+    ensure_data_dirs(ensure_downloads=False)
+    tasks = load_tasks()
+
+    task_items = []
+    for task in tasks:
+        log_path = os.path.join(TASKS_ROOT, task["slug"], "logs.txt")
+        items = _recent_downloads_from_log(log_path, RECENT_DOWNLOADS_PER_TASK)
+        for item in items:
+            item["url"] = url_for("media_file", subpath=item["rel"])
+            item["is_image"] = item["ext"] in IMAGE_EXTS
+            item["is_video"] = item["ext"] in VIDEO_EXTS
+        task_items.append({
+            "name": task["name"],
+            "slug": task["slug"],
+            "recent_items": items,
+        })
+
+    return render_template(
+        "recent.html",
+        task_items=task_items,
+        per_task_limit=RECENT_DOWNLOADS_PER_TASK,
+    )
+
+# ---------------------------------------------------------------------
 # Tasks
 # ---------------------------------------------------------------------
 
@@ -693,6 +788,26 @@ def tasks():
     ensure_data_dirs(ensure_downloads=False)
     tasks_list = load_tasks()
     return render_template("tasks.html", tasks=tasks_list)
+
+
+@app.route("/api/tasks")
+def api_tasks():
+    """Return a lightweight JSON representation of tasks for front-end polling."""
+    ensure_data_dirs(ensure_downloads=False)
+    tasks = load_tasks()
+
+    out = []
+    for t in tasks:
+        out.append({
+            "id": t.get("id"),
+            "name": t.get("name"),
+            "slug": t.get("slug"),
+            "schedule": t.get("schedule"),
+            "status": t.get("status"),
+            "last_run": t.get("last_run"),
+        })
+
+    return jsonify(out)
 
 # ---------------------------------------------------------------------
 # Config page
