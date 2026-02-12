@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="row mb-4">
+  <div class="col-12">
+    <div class="card shadow-sm border-secondary">
+      <div class="card-body">
+        <h2 class="card-title mb-2">Recent downloads</h2>
+        <p class="text-muted small mb-0">
+          Shows the last {{ per_task_limit }} media files per task based on each task’s logs.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if task_items %}
+  {% for task in task_items %}
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card shadow-sm border-secondary">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <div class="fw-semibold">{{ task.name }}</div>
+          <span class="text-muted small">{{ task.items|length }} shown</span>
+        </div>
+        <div class="card-body">
+          {% if task.items %}
+          <div class="recent-grid">
+            {% for item in task.items %}
+            <div class="recent-item">
+              <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">
+                {% if item.is_image %}
+                <img src="{{ item.url }}" alt="{{ item.filename }}" loading="lazy" />
+                {% else %}
+                <div class="recent-video-placeholder">
+                  <div class="small text-muted">Video</div>
+                  <div class="small text-muted">{{ item.ext|upper }}</div>
+                </div>
+                {% endif %}
+              </a>
+              <div class="recent-caption" title="{{ item.rel }}">{{ item.filename }}</div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-muted mb-0">No recent media found in logs for this task.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+<p class="text-muted">No tasks found yet.</p>
+{% endif %}
+
+<style>
+  .recent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.75rem;
+  }
+
+  .recent-item {
+    background: #0b0b0b;
+    border: 1px solid #111827;
+    border-radius: 0.5rem;
+    padding: 0.5rem;
+    text-align: center;
+  }
+
+  .recent-item img {
+    width: 100%;
+    height: 120px;
+    object-fit: contain;
+    background: #000000;
+    border-radius: 0.35rem;
+  }
+
+  .recent-video-placeholder {
+    height: 120px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    border: 1px dashed rgba(255, 255, 255, 0.15);
+    border-radius: 0.35rem;
+    background: #000000;
+  }
+
+  .recent-caption {
+    margin-top: 0.35rem;
+    font-size: 0.75rem;
+    color: #c2c2c2;
+    word-break: break-all;
+  }
+</style>
+
+{% endblock %}
