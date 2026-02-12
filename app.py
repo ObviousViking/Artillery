@@ -97,7 +97,7 @@ MEDIA_WALL_SCAN_CRON_DEFAULT = os.environ.get("MEDIA_WALL_SCAN_CRON", "*/1 * * *
 MEDIA_WALL_POLL_INTERVAL = int(os.environ.get("MEDIA_WALL_POLL_INTERVAL", "60"))
 MEDIA_WALL_LOG_TAIL_LINES = int(os.environ.get("MEDIA_WALL_LOG_TAIL_LINES", "2000"))
 RECENT_DOWNLOADS_PER_TASK = int(os.environ.get("RECENT_DOWNLOADS_PER_TASK", "20"))
-RECENT_LOG_TAIL_LINES = int(os.environ.get("RECENT_LOG_TAIL_LINES", "4000"))
+RECENT_LOG_TAIL_LINES = int(os.environ.get("RECENT_LOG_TAIL_LINES", "200"))
 
 # Media wall notify file for SSE
 MEDIAWALL_NOTIFY_FILE = os.path.join(os.environ.get('CONFIG_DIR', '/config'), 'mediawall.notify')
