@@ -224,6 +224,7 @@ def _extract_relpath_from_log_line(line: str, downloads_root: str) -> Optional[s
 
     s = s.replace("\\", "/")
     dr = downloads_root.replace("\\", "/").rstrip("/")
+    dr_short = dr.lstrip("/")
 
     candidates = [tok for tok in re.split(r"\s+", s) if tok.startswith(dr)]
     if not candidates and dr in s:
@@ -239,6 +240,28 @@ def _extract_relpath_from_log_line(line: str, downloads_root: str) -> Optional[s
                 continue
             ext = os.path.splitext(rel)[1].lower()
             if ext and ext in MEDIA_EXTS:
+                return rel
+        if cand.startswith(dr_short + "/"):
+            rel = cand[len(dr_short):].lstrip("/")
+            if not rel:
+                continue
+            ext = os.path.splitext(rel)[1].lower()
+            if ext and ext in MEDIA_EXTS:
+                return rel
+
+    # Fallback: search for any media path containing downloads/ without a leading slash
+    media_match = re.search(r"(?:^|\s)([^\s\"']+\.(?:jpg|jpeg|png|gif|webp|mp4|webm|mkv))(?:$|\s)", s, re.IGNORECASE)
+    if media_match:
+        cand = media_match.group(1)
+        cand = cand.strip(" ,;\"'()[]")
+        cand = cand.replace("\\", "/")
+        if dr in cand:
+            rel = cand.split(dr, 1)[-1].lstrip("/")
+            if rel:
+                return rel
+        if ("/" + dr_short + "/") in cand or cand.startswith(dr_short + "/"):
+            rel = cand.split(dr_short + "/", 1)[-1].lstrip("/")
+            if rel:
                 return rel
 
     return None
