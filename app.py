@@ -226,6 +226,15 @@ def _extract_relpath_from_log_line(line: str, downloads_root: str) -> Optional[s
     dr = downloads_root.replace("\\", "/").rstrip("/")
     dr_short = dr.lstrip("/")
 
+    # Prefer full-line match to handle spaces in folders
+    media_pattern = r"(?:jpg|jpeg|png|gif|webp|mp4|webm|mkv)"
+    full_match = re.search(re.escape(dr) + r"/[^\r\n]*?\." + media_pattern, s, re.IGNORECASE)
+    if full_match:
+        cand = full_match.group(0)
+        rel = cand[len(dr):].lstrip("/")
+        if rel:
+            return rel
+
     candidates = [tok for tok in re.split(r"\s+", s) if tok.startswith(dr)]
     if not candidates and dr in s:
         idx = s.find(dr)
