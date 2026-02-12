@@ -671,7 +671,7 @@ def recent_downloads():
         task_items.append({
             "name": task["name"],
             "slug": task["slug"],
-            "items": items,
+            "recent_items": items,
         })
 
     return render_template(
