@@ -49,6 +49,51 @@ if HANG_DUMP_SECONDS > 0:
     faulthandler.dump_traceback_later(HANG_DUMP_SECONDS, repeat=True)
 
 # ---------------------------------------------------------------------
+# Tool auto-updater (gallery-dl + yt-dlp)
+# Runs once at startup in a background thread so Flask isn't blocked.
+# ---------------------------------------------------------------------
+
+_TOOL_UPDATE_URLS = {
+    "gallery-dl": "https://github.com/mikf/gallery-dl/releases/latest/download/gallery-dl.bin",
+    "yt-dlp":     "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp",
+}
+
+_TOOL_INSTALL_DIR = "/usr/local/bin"
+
+
+def _update_tool(name: str, url: str) -> None:
+    dest = os.path.join(_TOOL_INSTALL_DIR, name)
+    tmp  = dest + ".tmp"
+    try:
+        logging.info("tool-update: downloading %s from %s", name, url)
+        req = urllib.request.Request(url, headers={"User-Agent": "artillery-updater/1.0"})
+        with urllib.request.urlopen(req, timeout=60) as resp, open(tmp, "wb") as fh:
+            shutil.copyfileobj(resp, fh)
+        os.chmod(tmp, 0o755)
+        os.replace(tmp, dest)
+        logging.info("tool-update: %s updated successfully -> %s", name, dest)
+    except Exception as exc:
+        logging.warning("tool-update: failed to update %s: %s", name, exc)
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
+
+
+def _run_tool_updates() -> None:
+    for name, url in _TOOL_UPDATE_URLS.items():
+        _update_tool(name, url)
+
+
+def _start_tool_update_thread() -> None:
+    t = threading.Thread(target=_run_tool_updates, daemon=True, name="tool-updater")
+    t.start()
+
+
+_start_tool_update_thread()
+
+# ---------------------------------------------------------------------
 # Base data directories
 # ---------------------------------------------------------------------
 
