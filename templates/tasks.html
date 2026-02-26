@@ -206,8 +206,7 @@ https://example.com/image2" required></textarea>
 
                             <div id="optionsHelperPanel">
                                 <p class="text-muted small" id="optionsHelperHint">
-                                    For <strong>new</strong> tasks, these checkboxes build the command below.
-                                    When <strong>editing</strong> an existing task, edit the command directly — checkboxes are disabled.
+                                    Checkboxes build the command for new tasks. When editing, they add or remove flags from the existing command.
                                 </p>
 
                                 <div id="checkboxesWrapper">
@@ -274,26 +273,10 @@ https://example.com/image2" required></textarea>
                                             </div>
 
                                             <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_ugoira"
-                                                    data-flag="--ugoira-conv" />
-                                                <label class="form-check-label" for="opt_ugoira">
-                                                    Convert ugoira (<code>--ugoira-conv</code>)
-                                                </label>
-                                            </div>
-
-                                            <div class="form-check mb-2">
                                                 <input class="form-check-input gd-option" type="checkbox" id="opt_verbose"
                                                     data-flag="-v" />
                                                 <label class="form-check-label" for="opt_verbose">
                                                     Verbose (<code>-v</code>)
-                                                </label>
-                                            </div>
-
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_simulate"
-                                                    data-flag="--simulate" />
-                                                <label class="form-check-label" for="opt_simulate">
-                                                    Dry run / simulate (<code>--simulate</code>)
                                                 </label>
                                             </div>
                                         </div>
@@ -382,16 +365,34 @@ https://example.com/image2" required></textarea>
 
         function setEditMode(editing) {
             isEditingExistingTask = editing;
-            // Disable/enable all checkboxes and visually dim them
+            commandPreview.readOnly = false;
+        }
+
+        // Tick/untick checkboxes to match flags already in the command string
+        function syncCheckboxesToCommand(cmd) {
             document.querySelectorAll(".gd-option").forEach(function (cb) {
-                cb.disabled = editing;
+                const flag = cb.getAttribute("data-flag");
+                cb.checked = flag ? cmd.includes(flag) : false;
             });
-            if (checkboxesWrapper) {
-                checkboxesWrapper.style.opacity = editing ? "0.4" : "1";
-                checkboxesWrapper.style.pointerEvents = editing ? "none" : "";
-                checkboxesWrapper.title = editing ? "Checkboxes are disabled when editing an existing task — edit the command directly." : "";
+        }
+
+        // In edit mode: add or remove a flag token from the existing command string
+        function toggleFlagInCommand(flag, checked) {
+            let cmd = commandPreview.value;
+            if (checked) {
+                // Insert before --input-file, or append if not present
+                if (cmd.includes("--input-file")) {
+                    cmd = cmd.replace("--input-file", flag + " --input-file");
+                } else {
+                    cmd = cmd.trimEnd() + " " + flag;
+                }
+            } else {
+                // Remove the flag (escape regex special chars)
+                const escaped = flag.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+                cmd = cmd.replace(new RegExp('\\s*' + escaped, 'g'), '');
             }
-            commandPreview.readOnly = false; // always editable
+            commandPreview.value = cmd.replace(/\s+/g, ' ').trim();
+            syncHiddenFromPreview();
         }
 
         // Output panel functions
@@ -474,10 +475,14 @@ https://example.com/image2" required></textarea>
         });
 
         document.addEventListener("DOMContentLoaded", function () {
-            // Hook checkbox changes (only fire when not editing)
+            // Hook checkbox changes
             document.querySelectorAll(".gd-option").forEach(function (cb) {
                 cb.addEventListener("change", function () {
-                    if (!isEditingExistingTask) {
+                    if (isEditingExistingTask) {
+                        // Patch the existing command directly
+                        toggleFlagInCommand(this.getAttribute("data-flag"), this.checked);
+                    } else {
+                        // Rebuild command from scratch
                         updateCommandPreview();
                     }
                 });
@@ -514,6 +519,7 @@ https://example.com/image2" required></textarea>
                     scheduleInput.value = schedule;
                     commandPreview.value = command;
                     syncHiddenFromPreview();
+                    syncCheckboxesToCommand(command);
 
                     editingFlag.value = "1";
                     taskFormTitle.textContent = "Edit Task: " + name;
