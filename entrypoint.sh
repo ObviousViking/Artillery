@@ -25,6 +25,15 @@ chmod 777 "$CONFIG_DIR/media_wall" 2>/dev/null || true
 log "Updating gallery-dl to latest..."
 pip install --no-cache-dir --upgrade gallery-dl
 
+log "Updating yt-dlp to latest..."
+pip install --no-cache-dir --upgrade yt-dlp
+
+log "Ensuring ffmpeg is installed..."
+if ! command -v ffmpeg > /dev/null 2>&1; then
+  apt-get update -qq && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+else
+  log "ffmpeg already present ($(ffmpeg -version 2>&1 | head -1))"
+fi
 
 # remove stale lock files from previous container run
 find /tasks -maxdepth 2 -type f -iname "*lock*" -print -delete || true
