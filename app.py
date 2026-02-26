@@ -50,7 +50,9 @@ if HANG_DUMP_SECONDS > 0:
 
 # ---------------------------------------------------------------------
 # Tool auto-updater (gallery-dl + yt-dlp)
-# Runs once at startup in a background thread so Flask isn't blocked.
+# Runs synchronously at startup so both tools are present before Flask
+# begins serving requests. Each tool is downloaded in parallel to keep
+# startup time low, then we join both threads before continuing.
 # ---------------------------------------------------------------------
 
 _TOOL_UPDATE_URLS = {
@@ -67,31 +69,41 @@ def _update_tool(name: str, url: str) -> None:
     try:
         logging.info("tool-update: downloading %s from %s", name, url)
         req = urllib.request.Request(url, headers={"User-Agent": "artillery-updater/1.0"})
-        with urllib.request.urlopen(req, timeout=60) as resp, open(tmp, "wb") as fh:
+        with urllib.request.urlopen(req, timeout=120) as resp, open(tmp, "wb") as fh:
             shutil.copyfileobj(resp, fh)
         os.chmod(tmp, 0o755)
         os.replace(tmp, dest)
-        logging.info("tool-update: %s updated successfully -> %s", name, dest)
+        # Verify it's actually executable after install
+        result = subprocess.run([dest, "--version"], capture_output=True, text=True, timeout=10)
+        version = (result.stdout or result.stderr or "").strip().splitlines()[0]
+        logging.info("tool-update: %s ready (%s)", name, version or "version unknown")
     except Exception as exc:
-        logging.warning("tool-update: failed to update %s: %s", name, exc)
+        logging.error("tool-update: FAILED to install %s: %s", name, exc)
+        # Leave any existing binary in place; remove broken tmp
         try:
             if os.path.exists(tmp):
                 os.remove(tmp)
         except Exception:
             pass
+        # If nothing is installed at all, log a clear error
+        if not os.path.isfile(dest):
+            logging.error("tool-update: %s is NOT installed at %s — tasks using it will fail", name, dest)
 
 
-def _run_tool_updates() -> None:
+def _run_tool_updates_sync() -> None:
+    """Download gallery-dl and yt-dlp in parallel, block until both finish."""
+    threads = []
     for name, url in _TOOL_UPDATE_URLS.items():
-        _update_tool(name, url)
+        t = threading.Thread(target=_update_tool, args=(name, url), name=f"tool-update-{name}", daemon=True)
+        t.start()
+        threads.append(t)
+    for t in threads:
+        t.join(timeout=180)  # Wait up to 3 min total per tool
 
 
-def _start_tool_update_thread() -> None:
-    t = threading.Thread(target=_run_tool_updates, daemon=True, name="tool-updater")
-    t.start()
-
-
-_start_tool_update_thread()
+logging.info("tool-update: starting parallel download of gallery-dl and yt-dlp...")
+_run_tool_updates_sync()
+logging.info("tool-update: startup update complete")
 
 # ---------------------------------------------------------------------
 # Base data directories
