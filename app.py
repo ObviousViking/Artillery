@@ -49,36 +49,6 @@ if HANG_DUMP_SECONDS > 0:
     faulthandler.dump_traceback_later(HANG_DUMP_SECONDS, repeat=True)
 
 # ---------------------------------------------------------------------
-# Tool auto-updater (yt-dlp via pip)
-# gallery-dl is already managed by the container entrypoint via pip.
-# We install/upgrade yt-dlp the same way, in a background thread so
-# gunicorn starts immediately and isn't blocked.
-# ---------------------------------------------------------------------
-
-def _pip_install_yt_dlp() -> None:
-    try:
-        logging.info("tool-update: installing/upgrading yt-dlp via pip...")
-        result = subprocess.run(
-            ["pip", "install", "--upgrade", "--quiet", "yt-dlp"],
-            capture_output=True, text=True, timeout=120,
-        )
-        if result.returncode == 0:
-            # Confirm version
-            v = subprocess.run(
-                ["yt-dlp", "--version"],
-                capture_output=True, text=True, timeout=10,
-            )
-            version = (v.stdout or "").strip()
-            logging.info("tool-update: yt-dlp ready (%s)", version or "version unknown")
-        else:
-            logging.error("tool-update: yt-dlp pip install failed:\n%s\n%s", result.stdout, result.stderr)
-    except Exception as exc:
-        logging.error("tool-update: yt-dlp install exception: %s", exc)
-
-
-threading.Thread(target=_pip_install_yt_dlp, daemon=True, name="yt-dlp-updater").start()
-
-# ---------------------------------------------------------------------
 # Base data directories
 # ---------------------------------------------------------------------
 
