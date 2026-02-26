@@ -204,100 +204,102 @@ https://example.com/image2" required></textarea>
                         <div class="col-md-6">
                             <h5 class="mb-3">gallery-dl options</h5>
 
-                            <p class="text-muted small">
-                                For <strong>new</strong> tasks, these checkboxes build the command below.
-                                When <strong>editing</strong> an existing task, the command is treated as
-                                raw text so any custom changes (like a custom <code>--input-file</code>)
-                                are preserved.
-                            </p>
+                            <div id="optionsHelperPanel">
+                                <p class="text-muted small" id="optionsHelperHint">
+                                    For <strong>new</strong> tasks, these checkboxes build the command below.
+                                    When <strong>editing</strong> an existing task, edit the command directly — checkboxes are disabled.
+                                </p>
 
-                            <div class="row">
-                                <!-- Left column: files & metadata -->
-                                <div class="col-sm-6">
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input gd-option" type="checkbox" id="opt_metadata"
-                                            data-flag="--write-metadata" />
-                                        <label class="form-check-label" for="opt_metadata">
-                                            Write metadata (<code>--write-metadata</code>)
-                                        </label>
-                                    </div>
+                                <div id="checkboxesWrapper">
+                                    <div class="row">
+                                        <!-- Left column -->
+                                        <div class="col-sm-6">
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input gd-option" type="checkbox" id="opt_metadata"
+                                                    data-flag="--write-metadata" />
+                                                <label class="form-check-label" for="opt_metadata">
+                                                    Write metadata (<code>--write-metadata</code>)
+                                                </label>
+                                            </div>
 
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input gd-option" type="checkbox" id="opt_metadata_json"
-                                            data-flag="--write-info-json" />
-                                        <label class="form-check-label" for="opt_metadata_json">
-                                            Save info JSON (<code>--write-info-json</code>)
-                                        </label>
-                                    </div>
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input gd-option" type="checkbox" id="opt_metadata_json"
+                                                    data-flag="--write-info-json" />
+                                                <label class="form-check-label" for="opt_metadata_json">
+                                                    Save info JSON (<code>--write-info-json</code>)
+                                                </label>
+                                            </div>
 
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input gd-option" type="checkbox" id="opt_no_overwrite"
-                                            data-flag="--no-overwrite" />
-                                        <label class="form-check-label" for="opt_no_overwrite">
-                                            Don’t overwrite files (<code>--no-overwrite</code>)
-                                        </label>
-                                    </div>
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input gd-option" type="checkbox" id="opt_write_tags"
+                                                    data-flag="--write-tags" />
+                                                <label class="form-check-label" for="opt_write_tags">
+                                                    Write tags (<code>--write-tags</code>)
+                                                </label>
+                                            </div>
 
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input gd-option" type="checkbox" id="opt_skip"
-                                            data-flag="--skip" />
-                                        <label class="form-check-label" for="opt_skip">
-                                            Skip existing items (<code>--skip</code>)
-                                        </label>
-                                    </div>
-                                </div>
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input gd-option" type="checkbox" id="opt_mtime"
+                                                    data-flag="--mtime date" />
+                                                <label class="form-check-label" for="opt_mtime">
+                                                    Set mtime from date (<code>--mtime date</code>)
+                                                </label>
+                                            </div>
 
-                                <!-- Right column: state, reliability & special -->
-                                <div class="col-sm-6">
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input gd-option" type="checkbox" id="opt_archive"
-                                            data-flag="--download-archive archive.sqlite" />
-                                        <label class="form-check-label" for="opt_archive">
-                                            Use archive (<code>--download-archive archive.sqlite</code>)
-                                        </label>
-                                    </div>
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input gd-option" type="checkbox" id="opt_zip"
+                                                    data-flag="--zip" />
+                                                <label class="form-check-label" for="opt_zip">
+                                                    Store in ZIP (<code>--zip</code>)
+                                                </label>
+                                            </div>
+                                        </div>
 
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input gd-option" type="checkbox" id="opt_fast_update"
-                                            data-flag="--fast-update" />
-                                        <label class="form-check-label" for="opt_fast_update">
-                                            Fast update (<code>--fast-update</code>)
-                                        </label>
-                                    </div>
+                                        <!-- Right column -->
+                                        <div class="col-sm-6">
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input gd-option" type="checkbox" id="opt_archive"
+                                                    data-flag="--download-archive archive.sqlite" />
+                                                <label class="form-check-label" for="opt_archive">
+                                                    Use archive DB (<code>--download-archive archive.sqlite</code>)
+                                                </label>
+                                            </div>
 
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input gd-option" type="checkbox" id="opt_ignore_errors"
-                                            data-flag="--ignore-errors" />
-                                        <label class="form-check-label" for="opt_ignore_errors">
-                                            Ignore errors (<code>--ignore-errors</code>)
-                                        </label>
-                                    </div>
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input gd-option" type="checkbox" id="opt_no_skip"
+                                                    data-flag="--no-skip" />
+                                                <label class="form-check-label" for="opt_no_skip">
+                                                    Don't skip existing (<code>--no-skip</code>)
+                                                </label>
+                                            </div>
 
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input gd-option" type="checkbox" id="opt_ugoira"
-                                            data-flag="--ugoira-conv" />
-                                        <label class="form-check-label" for="opt_ugoira">
-                                            Convert ugoira (<code>--ugoira-conv</code>)
-                                        </label>
-                                    </div>
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input gd-option" type="checkbox" id="opt_ugoira"
+                                                    data-flag="--ugoira-conv" />
+                                                <label class="form-check-label" for="opt_ugoira">
+                                                    Convert ugoira (<code>--ugoira-conv</code>)
+                                                </label>
+                                            </div>
 
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input gd-option" type="checkbox" id="opt_verbose"
-                                            data-flag="-v" />
-                                        <label class="form-check-label" for="opt_verbose">
-                                            Verbose (<code>-v</code>)
-                                        </label>
-                                    </div>
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input gd-option" type="checkbox" id="opt_verbose"
+                                                    data-flag="-v" />
+                                                <label class="form-check-label" for="opt_verbose">
+                                                    Verbose (<code>-v</code>)
+                                                </label>
+                                            </div>
 
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input gd-option" type="checkbox" id="opt_simulate"
-                                            data-flag="--simulate" />
-                                        <label class="form-check-label" for="opt_simulate">
-                                            Dry run (no downloads) (<code>--simulate</code>)
-                                        </label>
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input gd-option" type="checkbox" id="opt_simulate"
+                                                    data-flag="--simulate" />
+                                                <label class="form-check-label" for="opt_simulate">
+                                                    Dry run / simulate (<code>--simulate</code>)
+                                                </label>
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                            </div>
+                                </div><!-- /checkboxesWrapper -->
+                            </div><!-- /optionsHelperPanel -->
 
                             <div class="mt-3">
                                 <label class="form-label" for="commandPreview">Command</label>
@@ -305,7 +307,7 @@ https://example.com/image2" required></textarea>
                                     name="command_display"></textarea>
                                 <div class="form-text">
                                     For new tasks, this is built from the options above.
-                                    For existing tasks, you can edit this directly. The backend will
+                                    For existing tasks, edit this directly. The backend will
                                     still ensure <code>--config /data/config/gallery-dl.conf</code>
                                     and <code>--destination /downloads</code> are present.
                                 </div>
@@ -330,7 +332,7 @@ https://example.com/image2" required></textarea>
     (function () {
         let isEditingExistingTask = false;
         let outputPollInterval = null;
-        let shouldAutoScroll = true;  // Track if we should auto-scroll
+        let shouldAutoScroll = true;
 
         const nameInput = document.getElementById("name");
         const urlsTextarea = document.getElementById("urls");
@@ -340,6 +342,7 @@ https://example.com/image2" required></textarea>
         const editingFlag = document.getElementById("editingFlag");
         const taskFormTitle = document.getElementById("taskFormTitle");
         const btnNewTask = document.getElementById("btnNewTask");
+        const checkboxesWrapper = document.getElementById("checkboxesWrapper");
 
         // Output panel elements
         const btnToggleOutput = document.getElementById("btnToggleOutput");
@@ -368,7 +371,6 @@ https://example.com/image2" required></textarea>
         }
 
         function updateCommandPreview() {
-            // For new tasks only – editing existing tasks should not auto-rebuild the command
             if (isEditingExistingTask) {
                 syncHiddenFromPreview();
                 return;
@@ -376,6 +378,20 @@ https://example.com/image2" required></textarea>
             if (!commandPreview) return;
             commandPreview.value = buildCommandFromOptions();
             syncHiddenFromPreview();
+        }
+
+        function setEditMode(editing) {
+            isEditingExistingTask = editing;
+            // Disable/enable all checkboxes and visually dim them
+            document.querySelectorAll(".gd-option").forEach(function (cb) {
+                cb.disabled = editing;
+            });
+            if (checkboxesWrapper) {
+                checkboxesWrapper.style.opacity = editing ? "0.4" : "1";
+                checkboxesWrapper.style.pointerEvents = editing ? "none" : "";
+                checkboxesWrapper.title = editing ? "Checkboxes are disabled when editing an existing task — edit the command directly." : "";
+            }
+            commandPreview.readOnly = false; // always editable
         }
 
         // Output panel functions
@@ -395,7 +411,6 @@ https://example.com/image2" required></textarea>
         }
 
         function parseLogColors(text) {
-            // Map log level patterns to CSS classes
             const levelMap = {
                 'warning': 'log-warning',
                 'error': 'log-error',
@@ -404,10 +419,8 @@ https://example.com/image2" required></textarea>
                 'debug': 'log-debug'
             };
 
-            // Escape HTML
             text = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-            // Color log level patterns like [warning], [error], etc.
             for (const [level, cssClass] of Object.entries(levelMap)) {
                 const pattern = new RegExp(`\\[${level}\\]`, 'gi');
                 text = text.replace(pattern, `<span class="${cssClass}">[$&]</span>`);
@@ -428,10 +441,8 @@ https://example.com/image2" required></textarea>
                     if (data.error) {
                         logContainer.innerHTML = `<p class="text-danger mb-0">Error: ${data.error}</p>`;
                     } else {
-                        // Parse ANSI colors and create HTML
                         const coloredContent = parseLogColors(data.content || "");
                         logContainer.innerHTML = `<pre>${coloredContent}</pre>`;
-                        // Auto-scroll to bottom only if enabled
                         if (shouldAutoScroll) {
                             logContainer.scrollTop = logContainer.scrollHeight;
                         }
@@ -446,10 +457,8 @@ https://example.com/image2" required></textarea>
             if (outputPollInterval) return;
             outputPollInterval = setInterval(() => {
                 const slug = taskSelector.value;
-                if (slug) {
-                    fetchTaskLogs(slug);
-                }
-            }, 1000); // Poll every 1 second for real-time updates
+                if (slug) fetchTaskLogs(slug);
+            }, 1000);
         }
 
         function stopOutputPolling() {
@@ -459,15 +468,13 @@ https://example.com/image2" required></textarea>
             }
         }
 
-        // Detect user scrolling in log container
         logContainer.addEventListener("scroll", function () {
-            // Check if user is scrolled to the bottom (within 10px tolerance)
             const isAtBottom = logContainer.scrollTop + logContainer.clientHeight >= logContainer.scrollHeight - 10;
             shouldAutoScroll = isAtBottom;
         });
 
         document.addEventListener("DOMContentLoaded", function () {
-            // Hook options changes
+            // Hook checkbox changes (only fire when not editing)
             document.querySelectorAll(".gd-option").forEach(function (cb) {
                 cb.addEventListener("change", function () {
                     if (!isEditingExistingTask) {
@@ -483,7 +490,7 @@ https://example.com/image2" required></textarea>
                 });
             }
 
-            // Output panel event listeners
+            // Output panel
             if (btnToggleOutput) {
                 btnToggleOutput.addEventListener("click", toggleOutputPanel);
             }
@@ -494,7 +501,7 @@ https://example.com/image2" required></textarea>
                 });
             }
 
-            // Edit buttons: load task into form
+            // Edit buttons
             document.querySelectorAll(".btn-edit-task").forEach(function (btn) {
                 btn.addEventListener("click", function () {
                     const name = this.getAttribute("data-name") || "";
@@ -508,33 +515,27 @@ https://example.com/image2" required></textarea>
                     commandPreview.value = command;
                     syncHiddenFromPreview();
 
-                    isEditingExistingTask = true;
                     editingFlag.value = "1";
                     taskFormTitle.textContent = "Edit Task: " + name;
+                    setEditMode(true);
 
-                    // Optionally scroll to form
                     document.getElementById("taskForm").scrollIntoView({ behavior: "smooth", block: "start" });
                 });
             });
 
-            // "New task" button: reset form to builder mode
+            // "New task" button: reset to builder mode
             if (btnNewTask) {
                 btnNewTask.addEventListener("click", function () {
                     document.getElementById("taskForm").reset();
-
-                    isEditingExistingTask = false;
                     editingFlag.value = "0";
                     taskFormTitle.textContent = "Create / Edit Task";
-
-                    // Reset command from options
-                    // (reset() clears checkboxes; update from their new state)
+                    setEditMode(false);
                     updateCommandPreview();
                 });
             }
 
-            // Initial setup for new task mode
-            isEditingExistingTask = false;
-            editingFlag.value = "0";
+            // Initial state: new task mode
+            setEditMode(false);
             updateCommandPreview();
         });
     })();
@@ -544,16 +545,11 @@ https://example.com/image2" required></textarea>
     (function () {
         function statusClassFor(status) {
             switch (status) {
-                case 'running':
-                    return 'bg-primary';
-                case 'error':
-                    return 'bg-danger';
-                case 'complete':
-                    return 'bg-success';
-                case 'paused':
-                    return 'bg-warning text-dark';
-                default:
-                    return 'bg-secondary';
+                case 'running':  return 'bg-primary';
+                case 'error':    return 'bg-danger';
+                case 'complete': return 'bg-success';
+                case 'paused':   return 'bg-warning text-dark';
+                default:         return 'bg-secondary';
             }
         }
 
@@ -564,8 +560,7 @@ https://example.com/image2" required></textarea>
 
                 var badge = tr.querySelector('.task-status-badge');
                 if (badge) {
-                    var cls = 'badge ' + statusClassFor(task.status);
-                    badge.className = cls + ' task-status-badge';
+                    badge.className = 'badge ' + statusClassFor(task.status) + ' task-status-badge';
                     badge.textContent = task.status;
                 }
 
