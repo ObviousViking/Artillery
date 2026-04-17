@@ -2,7 +2,16 @@ FROM python:3.12-slim
 
 # Install cron and gosu properly (from official gosu install script)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends cron wget ca-certificates \
+    && apt-get install -y --no-install-recommends \
+        cron \
+        wget \
+        ca-certificates \
+        libjpeg62-turbo \
+        libpng16-16 \
+        libfreetype6 \
+        fonts-dejavu-core \
+        fontconfig-config \
+        ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && set -eux; \
     GOSU_VERSION=1.17; \
@@ -30,4 +39,4 @@ ENV FLASK_APP=app.py \
 EXPOSE 80
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["gunicorn", "-b", "0.0.0.0:80", "app:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:80", "--control-socket", "/tmp/gunicorn.sock", "app:app"]
