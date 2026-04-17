@@ -1,7 +1,7 @@
 body {
     background: #000000;
     color: #f8f9fa;
-    padding-top: 56px; /* Account for fixed navbar */
+    padding-top: 80px; /* Account for fixed navbar */
 }
 
 /* Cards */
