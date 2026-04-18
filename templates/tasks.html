@@ -53,8 +53,7 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <div class="task-action-group d-flex flex-nowrap gap-1">
-                                        <!-- Run -->
+                                    <div class="task-action-group d-flex flex-nowrap align-items-center gap-1">
                                         <form method="post" action="{{ url_for('task_action', slug=task.slug) }}"
                                             class="m-0">
                                             <input type="hidden" name="action" value="run">
@@ -64,7 +63,6 @@
                                             </button>
                                         </form>
 
-                                        <!-- Pause / Unpause -->
                                         <form method="post" action="{{ url_for('task_action', slug=task.slug) }}"
                                             class="m-0">
                                             <input type="hidden" name="action" value="pause">
@@ -80,31 +78,40 @@
                                             {% endif %}
                                         </form>
 
-                                        <!-- Edit (pure front-end: loads into the form below) -->
-                                        <button type="button" class="btn btn-sm btn-outline-info btn-edit-task"
-                                            data-name="{{ task.name|e }}" data-urls="{{ (task.urls or '')|e }}"
-                                            data-schedule="{{ (task.schedule or '')|e }}"
-                                            data-command="{{ task.command|e }}">
-                                            Edit
-                                        </button>
-
-                                        <!-- Delete -->
-                                        <form method="post" action="{{ url_for('task_action', slug=task.slug) }}"
-                                            class="m-0"
-                                            onsubmit="return confirm('Delete task {{ task.name }}? This will remove its folder and logs.');">
-                                            <input type="hidden" name="action" value="delete">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger">
-                                                Delete
+                                        <div class="btn-group">
+                                            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                                                data-bs-toggle="dropdown" aria-expanded="false">
+                                                More
                                             </button>
-                                        </form>
-
-                                        <!-- Download logs -->
-                                        <form method="get" action="{{ url_for('download_task_logs', slug=task.slug) }}"
-                                            class="m-0">
-                                            <button type="submit" class="btn btn-sm btn-outline-light">
-                                                Download Logs
-                                            </button>
-                                        </form>
+                                            <ul class="dropdown-menu dropdown-menu-dark">
+                                                <li>
+                                                    <button type="button"
+                                                        class="dropdown-item btn-edit-task"
+                                                        data-name="{{ task.name|e }}"
+                                                        data-urls="{{ (task.urls or '')|e }}"
+                                                        data-schedule="{{ (task.schedule or '')|e }}"
+                                                        data-command="{{ task.command|e }}">
+                                                        Edit
+                                                    </button>
+                                                </li>
+                                                <li><hr class="dropdown-divider"></li>
+                                                <li>
+                                                    <form method="post" action="{{ url_for('task_action', slug=task.slug) }}" class="m-0">
+                                                        <input type="hidden" name="action" value="delete">
+                                                        <button type="submit" class="dropdown-item text-danger">
+                                                            Delete
+                                                        </button>
+                                                    </form>
+                                                </li>
+                                                <li>
+                                                    <form method="get" action="{{ url_for('download_task_logs', slug=task.slug) }}" class="m-0">
+                                                        <button type="submit" class="dropdown-item">
+                                                            Logs
+                                                        </button>
+                                                    </form>
+                                                </li>
+                                            </ul>
+                                        </div>
                                     </div>
                                 </td>
                             </tr>

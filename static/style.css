@@ -249,3 +249,21 @@ code {
 .task-action-group > * {
     flex: 0 0 auto;
 }
+
+.task-action-group .btn-group {
+    flex: 0 0 auto;
+}
+
+.task-action-group .dropdown-menu {
+    min-width: 10rem;
+}
+
+@media (max-width: 992px) {
+    .task-action-group {
+        gap: 0.35rem;
+    }
+
+    .task-action-group .btn-sm {
+        min-width: 3.5rem;
+    }
+}
