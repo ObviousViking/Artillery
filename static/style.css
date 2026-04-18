@@ -239,3 +239,12 @@ code {
     border-color: #f97316;
     box-shadow: 0 0 0 0.2rem rgba(249, 115, 22, 0.25);
 }
+
+.task-action-group {
+    overflow-x: auto;
+    padding-bottom: 0.125rem;
+}
+
+.task-action-group > * {
+    flex: 0 0 auto;
+}
