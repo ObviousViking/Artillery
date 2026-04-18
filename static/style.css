@@ -241,7 +241,8 @@ code {
 }
 
 .task-action-group {
-    overflow-x: auto;
+    overflow-x: visible;
+    white-space: nowrap;
     padding-bottom: 0.125rem;
 }
 
