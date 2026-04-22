@@ -2,461 +2,704 @@
 {% block content %}
 
 <style>
-.task-list-item {
-    background: transparent;
-    border: none;
+/* ── Shell: full-height layout ───────────────────────────────────────── */
+main.container { margin-bottom: 0 !important; }
+
+.t-shell {
+    display: flex;
+    height: calc(100vh - 96px);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    overflow: hidden;
+    /* Break out of Bootstrap container's side padding */
+    margin-left: -0.75rem;
+    margin-right: -0.75rem;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────── */
+.t-sidebar {
+    width: 272px;
+    min-width: 272px;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.t-sidebar-hd {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 14px;
     border-bottom: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    flex-shrink: 0;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.t-list { flex: 1; overflow-y: auto; }
+
+/* Task list item */
+.t-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 10px 14px 10px 11px;
+    border: none;
+    border-left: 3px solid transparent;
+    border-bottom: 1px solid var(--border-color);
+    background: transparent;
     color: var(--text-primary);
     cursor: pointer;
-    padding: 0.75rem 1rem;
-    text-align: left;
-    transition: background 0.15s;
-    width: 100%;
+    transition: background 0.1s;
 }
-.task-list-item:hover { background: var(--bg-tertiary); }
-.task-list-item.selected {
-    background: var(--bg-tertiary);
-    border-left: 3px solid var(--focus-color);
-    padding-left: calc(1rem - 3px);
+.t-item:hover { background: rgba(255,255,255,0.025); }
+.t-item.sel {
+    background: rgba(249,115,22,0.08);
+    border-left-color: var(--focus-color);
 }
-.task-item-meta { font-size: 0.75rem; color: var(--text-muted); }
-
-#detailCard .nav-tabs { border-bottom: 1px solid var(--border-color); }
-#detailCard .nav-link {
+.t-item-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+}
+.t-item-name {
+    flex: 1;
+    font-size: 0.84rem;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.t-item-meta {
+    font-size: 0.69rem;
     color: var(--text-muted);
+    margin-top: 3px;
+    padding-left: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── Status dot ──────────────────────────────────────────────────────── */
+.sdot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-block;
+    transition: background 0.3s;
+}
+.sdot.running  { background: #3b82f6; animation: sdot-pulse 1.3s ease-in-out infinite; }
+.sdot.error    { background: #ef4444; }
+.sdot.complete { background: #22c55e; }
+.sdot.paused   { background: #f59e0b; }
+.sdot.idle     { background: #6b7280; }
+@keyframes sdot-pulse { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+/* ── Main area ───────────────────────────────────────────────────────── */
+.t-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg-primary);
+    min-width: 0;
+}
+
+/* Empty state */
+#pEmpty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem;
+    text-align: center;
+    user-select: none;
+    color: var(--text-muted);
+}
+.p-icon { font-size: 2.8rem; opacity: 0.1; margin-bottom: 1rem; }
+
+/* New task panel */
+#pNew {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.75rem 2rem;
+}
+
+/* Task detail */
+#pTask {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Detail header */
+.t-det-hd {
+    padding: 14px 20px 0;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+.t-det-title {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 10px;
+    min-width: 0;
+}
+.t-det-name {
+    font-size: 0.95rem;
+    font-weight: 600;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.t-det-stat {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+/* Tabs */
+.t-tabs {
+    display: flex;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.t-tab {
+    background: none;
     border: none;
     border-bottom: 2px solid transparent;
-    border-radius: 0;
-    padding: 0.4rem 0.85rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.78rem;
+    padding: 8px 18px;
     margin-bottom: -1px;
+    transition: color 0.12s, border-color 0.12s;
 }
-#detailCard .nav-link:hover { color: var(--text-primary); background: transparent; }
-#detailCard .nav-link.active {
-    color: var(--focus-color);
-    background: transparent;
-    border-bottom-color: var(--focus-color);
+.t-tab:hover { color: var(--text-primary); }
+.t-tab.on { color: var(--focus-color); border-bottom-color: var(--focus-color); }
+
+/* Tab body */
+.t-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+}
+
+/* Log box */
+#logBox {
+    font-family: monospace;
+    font-size: 0.8rem;
+    line-height: 1.55;
+    height: max(180px, calc(100vh - 340px));
+    overflow-y: auto;
+    padding: 12px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border-input);
+    background: var(--bg-secondary) !important;
+    word-break: break-all;
+}
+#logBox pre { margin: 0; white-space: pre-wrap; color: var(--text-secondary); }
+
+/* URL gate (lazy-load panel) */
+.url-gate {
+    border: 1px dashed var(--border-input);
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    text-align: center;
+}
+
+/* ── Mobile: stack vertically ────────────────────────────────────────── */
+@media (max-width: 767px) {
+    .t-shell {
+        flex-direction: column;
+        height: auto;
+        min-height: calc(100vh - 96px);
+        border-radius: 6px;
+    }
+    .t-sidebar {
+        width: 100%;
+        min-width: unset;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .t-list { max-height: 45vh; }
+    .t-main { min-height: 55vh; }
 }
 </style>
 
-<div class="row g-3">
+<div class="t-shell">
 
-    <!-- Left: detail panel -->
-    <div class="col-lg-8 order-last order-lg-first">
+  <!-- ── Left sidebar ─────────────────────────────────────────────────── -->
+  <aside class="t-sidebar">
+    <div class="t-sidebar-hd">
+      <span>Tasks</span>
+      <button type="button" id="btnNew"
+        class="btn btn-sm btn-outline-success py-0 px-2"
+        style="font-size:0.7rem;line-height:1.85;">+ New</button>
+    </div>
 
-        <!-- Empty state -->
-        <div id="panelEmpty" class="card shadow-sm border-secondary">
-            <div class="card-body d-flex flex-column align-items-center justify-content-center text-center py-5" style="min-height:360px;">
-                <div style="font-size:3rem; opacity:0.12; margin-bottom:1rem;">&#9889;</div>
-                <p class="text-muted mb-1">Select a task to view details</p>
-                <p class="text-muted small mb-0">or click <strong>+ New</strong> to create one</p>
+    <div class="t-list">
+      {% if tasks %}
+        {% for task in tasks %}
+        {% set st = task.status %}
+        {% set uc = task.url_count %}
+        <button type="button" class="t-item"
+          data-slug="{{ task.slug|e }}"
+          data-name="{{ task.name|e }}"
+          data-status="{{ st|e }}"
+          data-schedule="{{ (task.schedule or '')|e }}"
+          data-last-run="{{ (task.last_run or '')|e }}"
+          data-url-count="{{ uc }}"
+          data-command="{{ (task.command or '')|e }}"
+          data-action-url="{{ url_for('task_action', slug=task.slug) }}"
+          data-logs-dl-url="{{ url_for('download_task_logs', slug=task.slug) }}"
+          data-logs-api="/tasks/{{ task.slug|e }}/logs"
+          data-urls-api="/tasks/{{ task.slug|e }}/urls">
+          <div class="t-item-row">
+            <span class="sdot {{ st }}" data-sdot></span>
+            <span class="t-item-name">{{ task.name }}</span>
+          </div>
+          <div class="t-item-meta">
+            {%- if uc -%}
+              {%- if uc >= 1000000 -%}{{ "%.1f"|format(uc/1000000) }}M URLs
+              {%- elif uc >= 1000 -%}{{ "{:,}".format(uc) }} URLs
+              {%- else -%}{{ uc }} URL{{ "s" if uc != 1 else "" }}
+              {%- endif -%}
+              {%- if task.schedule %} &middot; {{ task.schedule }}{% endif -%}
+            {%- elif task.schedule -%}{{ task.schedule }}
+            {%- endif -%}
+          </div>
+        </button>
+        {% endfor %}
+      {% else %}
+        <div class="p-3 text-center" style="font-size:0.8rem;color:var(--text-muted);">No tasks yet.</div>
+      {% endif %}
+    </div>
+  </aside>
+
+  <!-- ── Right main panel ─────────────────────────────────────────────── -->
+  <div class="t-main">
+
+    <!-- Empty state -->
+    <div id="pEmpty">
+      <div class="p-icon">&#9889;</div>
+      <p class="mb-1" style="font-size:0.9rem;">Select a task from the list</p>
+      <p class="small mb-0">or click <strong>+ New</strong> to create one</p>
+    </div>
+
+    <!-- New task form -->
+    <div id="pNew" style="display:none;">
+      <h5 class="mb-4" style="font-weight:700;">New Task</h5>
+      <form method="post" action="{{ url_for('tasks') }}" id="fCreate">
+        <input type="hidden" name="editing_flag" value="0"/>
+        <div class="row g-4">
+          <div class="col-md-5">
+            <div class="mb-3">
+              <label class="form-label" for="cName">Task name</label>
+              <input type="text" id="cName" name="name" class="form-control form-control-sm" required/>
+              <div class="form-text">Folder: <code>/data/tasks/&lt;name&gt;</code></div>
             </div>
+            <div class="mb-3">
+              <label class="form-label" for="cUrls">URLs <span class="text-muted fw-normal">(one per line)</span></label>
+              <textarea id="cUrls" name="urls" class="form-control form-control-sm" rows="8"
+                placeholder="https://example.com/profile&#10;https://example.com/gallery" required></textarea>
+            </div>
+            <div class="mb-0">
+              <label class="form-label" for="cSched">Cron schedule <span class="text-muted fw-normal">(optional)</span></label>
+              <input type="text" id="cSched" name="schedule" class="form-control form-control-sm" placeholder="*/5 * * * *"/>
+              <div class="form-text"><code>*/5 * * * *</code> = every 5 min</div>
+            </div>
+          </div>
+          <div class="col-md-7">
+            <div class="mb-3">
+              <label class="form-label">gallery-dl options</label>
+              <div class="row g-1">
+                <div class="col-6">
+                  <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc1" data-flag="--write-metadata"><label class="form-check-label small" for="cc1">Write metadata</label></div>
+                  <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc2" data-flag="--write-info-json"><label class="form-check-label small" for="cc2">Save info JSON</label></div>
+                  <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc3" data-flag="--write-tags"><label class="form-check-label small" for="cc3">Write tags</label></div>
+                  <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc4" data-flag="--mtime date"><label class="form-check-label small" for="cc4">Set mtime from date</label></div>
+                  <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc5" data-flag="--zip"><label class="form-check-label small" for="cc5">Store in ZIP</label></div>
+                </div>
+                <div class="col-6">
+                  <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc6" data-flag="--download-archive archive.sqlite"><label class="form-check-label small" for="cc6">Use archive DB</label></div>
+                  <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc7" data-flag="--no-skip"><label class="form-check-label small" for="cc7">Don't skip existing</label></div>
+                  <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc8" data-flag="-v"><label class="form-check-label small" for="cc8">Verbose</label></div>
+                </div>
+              </div>
+            </div>
+            <div class="mb-4">
+              <label class="form-label" for="cCmd">Command</label>
+              <textarea id="cCmd" class="form-control form-control-sm" rows="2" name="command_display"></textarea>
+              <div class="form-text">Backend adds <code>--config</code> and <code>--destination</code> if missing.</div>
+            </div>
+            <input type="hidden" id="cCmdH" name="command"/>
+            <button type="submit" class="btn btn-sm btn-danger">Create task</button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <!-- Task detail panel -->
+    <div id="pTask" style="display:none;">
+
+      <!-- Header + tabs -->
+      <div class="t-det-hd">
+        <div class="t-det-title">
+          <span class="sdot" id="dDot"></span>
+          <span class="t-det-name" id="dName">—</span>
+          <span class="t-det-stat" id="dStat">—</span>
+        </div>
+        <ul class="t-tabs">
+          <li><button class="t-tab on" data-tab="logs">Logs</button></li>
+          <li><button class="t-tab"    data-tab="details">Details</button></li>
+          <li><button class="t-tab"    data-tab="edit">Edit</button></li>
+        </ul>
+      </div>
+
+      <!-- Tab bodies -->
+      <div class="t-body">
+
+        <!-- Logs -->
+        <div id="tLogs">
+          <div id="logBox"><span class="text-muted">Loading&hellip;</span></div>
+          <div class="mt-2">
+            <small class="text-muted">Auto-refreshes every 1 s &middot; last 50 lines shown</small>
+          </div>
         </div>
 
-        <!-- New task panel -->
-        <div id="panelNew" style="display:none;">
-            <div class="card shadow-sm border-secondary">
-                <div class="card-header">
-                    <h5 class="mb-0">New Task</h5>
-                </div>
-                <div class="card-body">
-                    <form method="post" action="{{ url_for('tasks') }}" id="formCreate">
-                        <input type="hidden" name="editing_flag" value="0" />
-
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label" for="createName">Task name</label>
-                                    <input type="text" id="createName" name="name" class="form-control form-control-sm" required />
-                                    <div class="form-text">Folder: <code>/data/tasks/&lt;task-name&gt;</code></div>
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label" for="createUrls">URLs <span class="text-muted fw-normal">(one per line)</span></label>
-                                    <textarea id="createUrls" name="urls" class="form-control form-control-sm" rows="6"
-                                        placeholder="https://example.com/image1&#10;https://example.com/image2" required></textarea>
-                                </div>
-                                <div class="mb-0">
-                                    <label class="form-label" for="createSchedule">Cron schedule <span class="text-muted fw-normal">(optional)</span></label>
-                                    <input type="text" id="createSchedule" name="schedule" class="form-control form-control-sm" placeholder="*/5 * * * *" />
-                                    <div class="form-text"><code>*/5 * * * *</code> = every 5 min</div>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">gallery-dl options</label>
-                                    <div class="row g-1">
-                                        <div class="col-6">
-                                            <div class="form-check"><input class="form-check-input gd-opt-create" type="checkbox" id="c_metadata" data-flag="--write-metadata"><label class="form-check-label small" for="c_metadata">Write metadata</label></div>
-                                            <div class="form-check"><input class="form-check-input gd-opt-create" type="checkbox" id="c_info_json" data-flag="--write-info-json"><label class="form-check-label small" for="c_info_json">Save info JSON</label></div>
-                                            <div class="form-check"><input class="form-check-input gd-opt-create" type="checkbox" id="c_tags" data-flag="--write-tags"><label class="form-check-label small" for="c_tags">Write tags</label></div>
-                                            <div class="form-check"><input class="form-check-input gd-opt-create" type="checkbox" id="c_mtime" data-flag="--mtime date"><label class="form-check-label small" for="c_mtime">Set mtime from date</label></div>
-                                            <div class="form-check"><input class="form-check-input gd-opt-create" type="checkbox" id="c_zip" data-flag="--zip"><label class="form-check-label small" for="c_zip">Store in ZIP</label></div>
-                                        </div>
-                                        <div class="col-6">
-                                            <div class="form-check"><input class="form-check-input gd-opt-create" type="checkbox" id="c_archive" data-flag="--download-archive archive.sqlite"><label class="form-check-label small" for="c_archive">Use archive DB</label></div>
-                                            <div class="form-check"><input class="form-check-input gd-opt-create" type="checkbox" id="c_no_skip" data-flag="--no-skip"><label class="form-check-label small" for="c_no_skip">Don't skip existing</label></div>
-                                            <div class="form-check"><input class="form-check-input gd-opt-create" type="checkbox" id="c_verbose" data-flag="-v"><label class="form-check-label small" for="c_verbose">Verbose</label></div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="mb-4">
-                                    <label class="form-label" for="createCommandPreview">Command</label>
-                                    <textarea id="createCommandPreview" class="form-control form-control-sm" rows="2" name="command_display"></textarea>
-                                    <div class="form-text">Backend adds <code>--config</code> and <code>--destination</code> if missing.</div>
-                                </div>
-                                <input type="hidden" id="createCommand" name="command" />
-                            </div>
-                        </div>
-
-                        <button type="submit" class="btn btn-sm btn-danger">Create task</button>
-                    </form>
-                </div>
-            </div>
+        <!-- Details -->
+        <div id="tDetails" style="display:none;">
+          <dl class="row small mb-4" style="max-width:440px;">
+            <dt class="col-4 fw-normal text-muted">Schedule</dt>
+            <dd class="col-8" id="dSched">—</dd>
+            <dt class="col-4 fw-normal text-muted">Last run</dt>
+            <dd class="col-8" id="dLastRun">Never</dd>
+            <dt class="col-4 fw-normal text-muted">URLs</dt>
+            <dd class="col-8" id="dUrlCount">—</dd>
+          </dl>
+          <div class="d-flex gap-2 flex-wrap">
+            <form id="fRun" method="post" class="m-0">
+              <input type="hidden" name="action" value="run">
+              <button type="submit" id="bRun" class="btn btn-sm btn-outline-success">&#9654; Run</button>
+            </form>
+            <form id="fPause" method="post" class="m-0">
+              <input type="hidden" name="action" value="pause">
+              <button type="submit" id="bPause" class="btn btn-sm btn-outline-secondary">&#9646;&#9646; Pause</button>
+            </form>
+            <a id="bDlLogs" href="#" class="btn btn-sm btn-outline-secondary">&#8659; Download Logs</a>
+            <form id="fDelete" method="post" class="m-0"
+              onsubmit="return confirm('Delete this task? Its folder and logs will be removed.')">
+              <input type="hidden" name="action" value="delete">
+              <button type="submit" class="btn btn-sm btn-outline-danger">&#128465; Delete</button>
+            </form>
+          </div>
         </div>
 
-        <!-- Task detail panel -->
-        <div id="panelTask" style="display:none;">
-            <div class="card shadow-sm border-secondary" id="detailCard">
-                <div class="card-header">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <div>
-                            <span class="fw-semibold" id="detailName" style="font-size:1.05rem;">—</span>
-                            <span class="badge ms-2" id="detailBadge">—</span>
-                        </div>
-                    </div>
-                    <ul class="nav nav-tabs" id="detailTabs">
-                        <li class="nav-item"><button class="nav-link active" data-tab="logs">Logs</button></li>
-                        <li class="nav-item"><button class="nav-link" data-tab="details">Details</button></li>
-                        <li class="nav-item"><button class="nav-link" data-tab="edit">Edit</button></li>
-                    </ul>
+        <!-- Edit -->
+        <div id="tEdit" style="display:none;">
+          <form method="post" action="{{ url_for('tasks') }}" id="fEdit">
+            <input type="hidden" name="editing_flag" value="1"/>
+            <!-- Tells backend not to overwrite urls.txt unless the user explicitly loaded and edited them -->
+            <input type="hidden" id="eKeepUrls" name="keep_existing_urls" value="1"/>
+            <div class="row g-4">
+              <div class="col-md-5">
+                <div class="mb-3">
+                  <label class="form-label" for="eName">Task name</label>
+                  <input type="text" id="eName" name="name" class="form-control form-control-sm" required/>
                 </div>
-                <div class="card-body">
 
-                    <!-- Logs tab -->
-                    <div id="tabLogs">
-                        <div id="logContainer" class="p-3 rounded"
-                            style="height:380px;overflow-y:auto;font-family:monospace;font-size:0.85rem;border:1px solid var(--border-input);background:var(--bg-secondary);">
-                            <p class="text-muted mb-0">Loading…</p>
-                        </div>
-                        <div class="mt-2"><small class="text-muted">Auto-refreshes every 1 s &middot; last 50 lines</small></div>
-                    </div>
-
-                    <!-- Details tab -->
-                    <div id="tabDetails" style="display:none;">
-                        <dl class="row mb-4 small">
-                            <dt class="col-sm-3 text-muted fw-normal">Schedule</dt>
-                            <dd class="col-sm-9" id="detailSchedule">—</dd>
-                            <dt class="col-sm-3 text-muted fw-normal">Last run</dt>
-                            <dd class="col-sm-9" id="detailLastRun">Never</dd>
-                        </dl>
-                        <div class="d-flex gap-2 flex-wrap">
-                            <form id="formRun" method="post" class="m-0">
-                                <input type="hidden" name="action" value="run">
-                                <button type="submit" id="btnDetailRun" class="btn btn-sm btn-outline-success">&#9654; Run</button>
-                            </form>
-                            <form id="formPause" method="post" class="m-0">
-                                <input type="hidden" name="action" value="pause">
-                                <button type="submit" id="btnDetailPause" class="btn btn-sm btn-outline-secondary">&#9646;&#9646; Pause</button>
-                            </form>
-                            <a id="linkDownloadLogs" href="#" class="btn btn-sm btn-outline-secondary">&#8659; Download Logs</a>
-                            <form id="formDelete" method="post" class="m-0"
-                                onsubmit="return confirm('Delete this task? This will remove its folder and logs.')">
-                                <input type="hidden" name="action" value="delete">
-                                <button type="submit" class="btn btn-sm btn-outline-danger">&#128465; Delete</button>
-                            </form>
-                        </div>
-                    </div>
-
-                    <!-- Edit tab -->
-                    <div id="tabEdit" style="display:none;">
-                        <form method="post" action="{{ url_for('tasks') }}" id="formEdit">
-                            <input type="hidden" name="editing_flag" value="1" />
-
-                            <div class="row g-3">
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label" for="editName">Task name</label>
-                                        <input type="text" id="editName" name="name" class="form-control form-control-sm" required />
-                                    </div>
-                                    <div class="mb-3">
-                                        <label class="form-label" for="editUrls">URLs <span class="text-muted fw-normal">(one per line)</span></label>
-                                        <textarea id="editUrls" name="urls" class="form-control form-control-sm" rows="6" required></textarea>
-                                    </div>
-                                    <div class="mb-0">
-                                        <label class="form-label" for="editSchedule">Cron schedule <span class="text-muted fw-normal">(optional)</span></label>
-                                        <input type="text" id="editSchedule" name="schedule" class="form-control form-control-sm" />
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label">gallery-dl options</label>
-                                        <div class="row g-1">
-                                            <div class="col-6">
-                                                <div class="form-check"><input class="form-check-input gd-opt-edit" type="checkbox" id="e_metadata" data-flag="--write-metadata"><label class="form-check-label small" for="e_metadata">Write metadata</label></div>
-                                                <div class="form-check"><input class="form-check-input gd-opt-edit" type="checkbox" id="e_info_json" data-flag="--write-info-json"><label class="form-check-label small" for="e_info_json">Save info JSON</label></div>
-                                                <div class="form-check"><input class="form-check-input gd-opt-edit" type="checkbox" id="e_tags" data-flag="--write-tags"><label class="form-check-label small" for="e_tags">Write tags</label></div>
-                                                <div class="form-check"><input class="form-check-input gd-opt-edit" type="checkbox" id="e_mtime" data-flag="--mtime date"><label class="form-check-label small" for="e_mtime">Set mtime from date</label></div>
-                                                <div class="form-check"><input class="form-check-input gd-opt-edit" type="checkbox" id="e_zip" data-flag="--zip"><label class="form-check-label small" for="e_zip">Store in ZIP</label></div>
-                                            </div>
-                                            <div class="col-6">
-                                                <div class="form-check"><input class="form-check-input gd-opt-edit" type="checkbox" id="e_archive" data-flag="--download-archive archive.sqlite"><label class="form-check-label small" for="e_archive">Use archive DB</label></div>
-                                                <div class="form-check"><input class="form-check-input gd-opt-edit" type="checkbox" id="e_no_skip" data-flag="--no-skip"><label class="form-check-label small" for="e_no_skip">Don't skip existing</label></div>
-                                                <div class="form-check"><input class="form-check-input gd-opt-edit" type="checkbox" id="e_verbose" data-flag="-v"><label class="form-check-label small" for="e_verbose">Verbose</label></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="mb-4">
-                                        <label class="form-label" for="editCommandPreview">Command</label>
-                                        <textarea id="editCommandPreview" class="form-control form-control-sm" rows="2" name="command_display"></textarea>
-                                        <div class="form-text">Backend adds <code>--config</code> and <code>--destination</code> if missing.</div>
-                                    </div>
-                                    <input type="hidden" id="editCommand" name="command" />
-                                </div>
-                            </div>
-
-                            <button type="submit" class="btn btn-sm btn-danger">Save changes</button>
-                        </form>
-                    </div>
-
+                <div class="mb-3">
+                  <label class="form-label">
+                    URLs <span id="eUrlCntLbl" class="text-muted fw-normal small"></span>
+                  </label>
+                  <!-- Shown until URLs are loaded -->
+                  <div id="urlGate" class="url-gate">
+                    <p id="urlGateMsg" class="text-muted small mb-2"></p>
+                    <button type="button" id="bLoadUrls" class="btn btn-sm btn-outline-secondary"
+                      style="display:none;">Load for editing</button>
+                  </div>
+                  <!-- Hidden until loaded -->
+                  <textarea id="eUrls" name="urls" class="form-control form-control-sm"
+                    rows="8" style="display:none;"></textarea>
                 </div>
+
+                <div class="mb-0">
+                  <label class="form-label" for="eSched">Cron schedule <span class="text-muted fw-normal">(optional)</span></label>
+                  <input type="text" id="eSched" name="schedule" class="form-control form-control-sm"/>
+                </div>
+              </div>
+
+              <div class="col-md-7">
+                <div class="mb-3">
+                  <label class="form-label">gallery-dl options</label>
+                  <div class="row g-1">
+                    <div class="col-6">
+                      <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec1" data-flag="--write-metadata"><label class="form-check-label small" for="ec1">Write metadata</label></div>
+                      <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec2" data-flag="--write-info-json"><label class="form-check-label small" for="ec2">Save info JSON</label></div>
+                      <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec3" data-flag="--write-tags"><label class="form-check-label small" for="ec3">Write tags</label></div>
+                      <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec4" data-flag="--mtime date"><label class="form-check-label small" for="ec4">Set mtime from date</label></div>
+                      <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec5" data-flag="--zip"><label class="form-check-label small" for="ec5">Store in ZIP</label></div>
+                    </div>
+                    <div class="col-6">
+                      <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec6" data-flag="--download-archive archive.sqlite"><label class="form-check-label small" for="ec6">Use archive DB</label></div>
+                      <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec7" data-flag="--no-skip"><label class="form-check-label small" for="ec7">Don't skip existing</label></div>
+                      <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec8" data-flag="-v"><label class="form-check-label small" for="ec8">Verbose</label></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mb-4">
+                  <label class="form-label" for="eCmd">Command</label>
+                  <textarea id="eCmd" class="form-control form-control-sm" rows="2" name="command_display"></textarea>
+                  <div class="form-text">Backend adds <code>--config</code> and <code>--destination</code> if missing.</div>
+                </div>
+                <input type="hidden" id="eCmdH" name="command"/>
+                <button type="submit" class="btn btn-sm btn-danger">Save changes</button>
+              </div>
             </div>
+          </form>
         </div>
 
-    </div><!-- /left detail panel -->
+      </div><!-- /.t-body -->
+    </div><!-- /#pTask -->
 
-    <!-- Right: task sidebar -->
-    <div class="col-lg-4 order-first order-lg-last">
-        <div class="card shadow-sm border-secondary">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span class="fw-medium">Tasks</span>
-                <button type="button" class="btn btn-sm btn-outline-success" id="btnNewTask">+ New</button>
-            </div>
-            {% if tasks %}
-            <div class="d-flex flex-column" id="taskListContainer">
-                {% for task in tasks %}
-                {% set status = task.status %}
-                <button type="button" class="task-list-item"
-                    data-slug="{{ task.slug|e }}"
-                    data-name="{{ task.name|e }}"
-                    data-status="{{ status|e }}"
-                    data-schedule="{{ (task.schedule or '')|e }}"
-                    data-last-run="{{ (task.last_run or '')|e }}"
-                    data-urls="{{ (task.urls or '')|e }}"
-                    data-command="{{ (task.command or '')|e }}"
-                    data-action-url="{{ url_for('task_action', slug=task.slug) }}"
-                    data-logs-url="{{ url_for('download_task_logs', slug=task.slug) }}"
-                    data-logs-api="/tasks/{{ task.slug|e }}/logs">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span class="task-item-name">{{ task.name }}</span>
-                        <span class="badge task-sidebar-badge
-                            {% if status == 'running' %} bg-primary
-                            {% elif status == 'error' %} bg-danger
-                            {% elif status == 'complete' %} bg-success
-                            {% elif status == 'paused' %} bg-warning text-dark
-                            {% else %} bg-secondary
-                            {% endif %}">{{ status }}</span>
-                    </div>
-                    {% if task.schedule %}
-                    <div class="task-item-meta mt-1">{{ task.schedule }}</div>
-                    {% endif %}
-                </button>
-                {% endfor %}
-            </div>
-            {% else %}
-            <div class="card-body text-muted text-center py-4 small">No tasks yet.</div>
-            {% endif %}
-        </div>
-    </div><!-- /right sidebar -->
-
-</div><!-- /row -->
+  </div><!-- /.t-main -->
+</div><!-- /.t-shell -->
 
 <script>
 (function () {
-    var selectedSlug = null;
-    var activeTab = 'logs';
-    var logPollInterval = null;
-    var shouldAutoScroll = true;
+    'use strict';
 
-    // Panel refs
-    var panelEmpty   = document.getElementById('panelEmpty');
-    var panelNew     = document.getElementById('panelNew');
-    var panelTask    = document.getElementById('panelTask');
-    var btnNewTask   = document.getElementById('btnNewTask');
+    /* ── Config ───────────────────────────────────────────────────────── */
+    var URL_EDIT_LIMIT = 100000; // refuse in-browser editing above this many lines
 
-    // Detail header
-    var detailName  = document.getElementById('detailName');
-    var detailBadge = document.getElementById('detailBadge');
+    /* ── State ────────────────────────────────────────────────────────── */
+    var selSlug      = null;
+    var selUrlCount  = 0;
+    var selUrlsApi   = null;
+    var activeTab    = 'logs';
+    var logTimer     = null;
+    var autoScroll   = true;
+    var urlsLoaded   = false;
+    var urlsFetching = false;
 
-    // Tab content
-    var tabLogs    = document.getElementById('tabLogs');
-    var tabDetails = document.getElementById('tabDetails');
-    var tabEdit    = document.getElementById('tabEdit');
+    /* ── Shorthand ────────────────────────────────────────────────────── */
+    function $(id) { return document.getElementById(id); }
 
-    // Logs
-    var logContainer = document.getElementById('logContainer');
+    /* ── Refs ─────────────────────────────────────────────────────────── */
+    var pEmpty = $('pEmpty'), pNew = $('pNew'), pTask = $('pTask');
+    var btnNew = $('btnNew');
+    var dDot = $('dDot'), dName = $('dName'), dStat = $('dStat');
+    var tLogs = $('tLogs'), tDetails = $('tDetails'), tEdit = $('tEdit');
+    var logBox = $('logBox');
+    var fRun = $('fRun'), fPause = $('fPause'), fDelete = $('fDelete');
+    var bRun = $('bRun'), bPause = $('bPause'), bDlLogs = $('bDlLogs');
+    var dSched = $('dSched'), dLastRun = $('dLastRun'), dUrlCount = $('dUrlCount');
+    var eName = $('eName'), eUrls = $('eUrls'), eSched = $('eSched');
+    var eCmd = $('eCmd'), eCmdH = $('eCmdH'), eKeepUrls = $('eKeepUrls');
+    var eUrlCntLbl = $('eUrlCntLbl'), urlGate = $('urlGate');
+    var urlGateMsg = $('urlGateMsg'), bLoadUrls = $('bLoadUrls');
+    var cCmd = $('cCmd'), cCmdH = $('cCmdH');
 
-    // Details tab elements
-    var formRun          = document.getElementById('formRun');
-    var formPause        = document.getElementById('formPause');
-    var formDelete       = document.getElementById('formDelete');
-    var linkDownloadLogs = document.getElementById('linkDownloadLogs');
-    var btnDetailRun     = document.getElementById('btnDetailRun');
-    var btnDetailPause   = document.getElementById('btnDetailPause');
-    var detailSchedule   = document.getElementById('detailSchedule');
-    var detailLastRun    = document.getElementById('detailLastRun');
-
-    // Edit form elements
-    var editName           = document.getElementById('editName');
-    var editUrls           = document.getElementById('editUrls');
-    var editSchedule       = document.getElementById('editSchedule');
-    var editCommandPreview = document.getElementById('editCommandPreview');
-    var editCommand        = document.getElementById('editCommand');
-
-    // Create form elements
-    var createCommandPreview = document.getElementById('createCommandPreview');
-    var createCommand        = document.getElementById('createCommand');
-
-    // ── Helpers ──────────────────────────────────────────────────────────────
-
-    function statusClassFor(s) {
-        return s === 'running'  ? 'bg-primary' :
-               s === 'error'    ? 'bg-danger' :
-               s === 'complete' ? 'bg-success' :
-               s === 'paused'   ? 'bg-warning text-dark' :
-                                  'bg-secondary';
+    /* ── Helpers ──────────────────────────────────────────────────────── */
+    function dotCls(s) {
+        return 'sdot ' + ({running:'running',error:'error',complete:'complete',paused:'paused'}[s] || 'idle');
     }
 
-    function showPanel(mode) {
-        panelEmpty.style.display = mode === 'empty' ? '' : 'none';
-        panelNew.style.display   = mode === 'new'   ? '' : 'none';
-        panelTask.style.display  = mode === 'task'  ? '' : 'none';
-        if (mode !== 'task') stopLogPolling();
+    function fmtN(n) {
+        n = parseInt(n, 10) || 0;
+        if (!n)       return '0 URLs';
+        if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M URLs';
+        if (n >= 1e3) return n.toLocaleString() + ' URLs';
+        return n + (n === 1 ? ' URL' : ' URLs');
     }
 
-    function switchTab(tab) {
-        activeTab = tab;
-        tabLogs.style.display    = tab === 'logs'    ? '' : 'none';
-        tabDetails.style.display = tab === 'details' ? '' : 'none';
-        tabEdit.style.display    = tab === 'edit'    ? '' : 'none';
-        document.querySelectorAll('#detailTabs .nav-link').forEach(function (btn) {
-            btn.classList.toggle('active', btn.dataset.tab === tab);
+    function fmtDate(s) { return s ? s.slice(0, 19).replace('T', ' ') : 'Never'; }
+
+    /* ── Panels ───────────────────────────────────────────────────────── */
+    function showPanel(p) {
+        pEmpty.style.display = p === 'empty' ? '' : 'none';
+        pNew.style.display   = p === 'new'   ? '' : 'none';
+        pTask.style.display  = p === 'task'  ? '' : 'none';
+        if (p !== 'task') stopLog();
+    }
+
+    function switchTab(t) {
+        activeTab = t;
+        tLogs.style.display    = t === 'logs'    ? '' : 'none';
+        tDetails.style.display = t === 'details' ? '' : 'none';
+        tEdit.style.display    = t === 'edit'    ? '' : 'none';
+        document.querySelectorAll('.t-tab').forEach(function (b) {
+            b.classList.toggle('on', b.dataset.tab === t);
         });
-        if (tab === 'logs' && selectedSlug) {
-            startLogPolling('/tasks/' + selectedSlug + '/logs');
-        } else {
-            stopLogPolling();
-        }
+        if (t === 'logs' && selSlug) startLog('/tasks/' + selSlug + '/logs');
+        else stopLog();
     }
 
-    // ── Task selection ────────────────────────────────────────────────────────
-
+    /* ── Task selection ───────────────────────────────────────────────── */
     function selectTask(btn) {
-        var slug      = btn.dataset.slug;
-        var name      = btn.dataset.name;
-        var status    = btn.dataset.status;
-        var schedule  = btn.dataset.schedule;
-        var lastRun   = btn.dataset.lastRun;
-        var urls      = btn.dataset.urls;
-        var command   = btn.dataset.command;
-        var actionUrl = btn.dataset.actionUrl;
-        var logsUrl   = btn.dataset.logsUrl;
+        var newSlug = btn.dataset.slug;
+        var changed = newSlug !== selSlug;
+        selSlug     = newSlug;
+        selUrlCount = parseInt(btn.dataset.urlCount, 10) || 0;
+        selUrlsApi  = btn.dataset.urlsApi;
+        if (changed) urlsLoaded = false;
 
-        selectedSlug = slug;
-
-        // Sidebar highlight
-        document.querySelectorAll('.task-list-item').forEach(function (el) {
-            el.classList.toggle('selected', el.dataset.slug === slug);
+        /* Sidebar: highlight selected */
+        document.querySelectorAll('.t-item').forEach(function (el) {
+            el.classList.toggle('sel', el.dataset.slug === selSlug);
         });
 
-        // Detail header
-        detailName.textContent = name;
-        detailBadge.className  = 'badge ms-2 ' + statusClassFor(status);
-        detailBadge.textContent = status;
+        /* Header */
+        var st = btn.dataset.status || 'idle';
+        dDot.className    = dotCls(st);
+        dName.textContent = btn.dataset.name;
+        dStat.textContent = st;
 
-        // Details tab
-        detailSchedule.textContent = schedule || '—';
-        detailLastRun.textContent  = lastRun ? lastRun.slice(0, 19).replace('T', ' ') : 'Never';
-        formRun.action    = actionUrl;
-        formPause.action  = actionUrl;
-        formDelete.action = actionUrl;
-        linkDownloadLogs.href = logsUrl;
-        btnDetailRun.disabled = (status === 'running');
-        updatePauseBtn(status);
+        /* Details tab */
+        dSched.textContent    = btn.dataset.schedule || '—';
+        dLastRun.textContent  = fmtDate(btn.dataset.lastRun);
+        dUrlCount.textContent = fmtN(selUrlCount);
 
-        // Edit form
-        editName.value           = name;
-        editUrls.value           = urls;
-        editSchedule.value       = schedule;
-        editCommandPreview.value = command;
-        editCommand.value        = command;
-        syncEditCheckboxes(command);
+        /* Action form targets */
+        var au = btn.dataset.actionUrl;
+        fRun.action = fPause.action = fDelete.action = au;
+        bDlLogs.href   = btn.dataset.logsDlUrl;
+        bRun.disabled  = (st === 'running');
+        setPauseBtn(st);
+
+        /* Edit form */
+        eName.value          = btn.dataset.name;
+        eSched.value         = btn.dataset.schedule || '';
+        eCmd.value           = btn.dataset.command;
+        eCmdH.value          = btn.dataset.command;
+        eUrlCntLbl.textContent = selUrlCount ? '— ' + fmtN(selUrlCount) : '';
+        syncEditCbs(btn.dataset.command);
+        if (changed) resetUrlGate();
 
         showPanel('task');
         switchTab(activeTab);
 
-        // Scroll into view on mobile
-        if (window.innerWidth < 992) {
-            panelTask.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
+        if (window.innerWidth < 768)
+            pTask.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
-    function updatePauseBtn(status) {
-        if (status === 'paused') {
-            btnDetailPause.textContent = '▶ Unpause';
-            btnDetailPause.className = 'btn btn-sm btn-outline-warning';
+    function setPauseBtn(st) {
+        if (st === 'paused') {
+            bPause.innerHTML = '&#9654; Unpause';
+            bPause.className = 'btn btn-sm btn-outline-warning';
         } else {
-            btnDetailPause.textContent = '⏸ Pause';
-            btnDetailPause.className = 'btn btn-sm btn-outline-secondary';
+            bPause.innerHTML = '&#9646;&#9646; Pause';
+            bPause.className = 'btn btn-sm btn-outline-secondary';
         }
     }
 
-    // ── Log polling ───────────────────────────────────────────────────────────
+    /* ── URL gate ─────────────────────────────────────────────────────── */
+    function resetUrlGate() {
+        eUrls.style.display   = 'none';
+        urlGate.style.display = '';
+        eKeepUrls.value       = '1';
+        eUrls.value           = '';
 
-    function parseLogColors(text) {
-        var map = { warning: 'log-warning', error: 'log-error', success: 'log-success', info: 'log-info', debug: 'log-debug' };
+        if (selUrlCount > URL_EDIT_LIMIT) {
+            urlGateMsg.textContent = fmtN(selUrlCount) + ' — too large to edit safely in the browser. Edit the file directly on disk.';
+            bLoadUrls.style.display = 'none';
+        } else if (selUrlCount === 0) {
+            urlGateMsg.textContent  = 'No URLs yet.';
+            bLoadUrls.style.display = 'none';
+        } else {
+            urlGateMsg.textContent  = fmtN(selUrlCount) + ' — click to load for editing.';
+            bLoadUrls.style.display = '';
+            bLoadUrls.disabled      = false;
+        }
+    }
+
+    function doLoadUrls() {
+        if (urlsFetching || !selUrlsApi) return;
+        urlsFetching        = true;
+        bLoadUrls.disabled  = true;
+        urlGateMsg.textContent = 'Loading…';
+
+        fetch(selUrlsApi)
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                urlsFetching = false;
+                if (data.error) {
+                    urlGateMsg.textContent = 'Error: ' + data.error;
+                    bLoadUrls.disabled = false;
+                } else {
+                    eUrls.value           = data.content || '';
+                    eUrls.style.display   = '';
+                    urlGate.style.display = 'none';
+                    eKeepUrls.value       = '0';
+                    urlsLoaded            = true;
+                }
+            })
+            .catch(function (err) {
+                urlsFetching           = false;
+                urlGateMsg.textContent = 'Failed: ' + err.message;
+                bLoadUrls.disabled     = false;
+            });
+    }
+
+    /* ── Log polling ──────────────────────────────────────────────────── */
+    var LOG_LEVEL_MAP = {warning:'log-warning',error:'log-error',success:'log-success',info:'log-info',debug:'log-debug'};
+
+    function colorize(text) {
         text = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        for (var level in map) {
-            text = text.replace(new RegExp('\\[' + level + '\\]', 'gi'), '<span class="' + map[level] + '">[$&]</span>');
+        for (var k in LOG_LEVEL_MAP) {
+            text = text.replace(new RegExp('\\[' + k + '\\]', 'gi'),
+                '<span class="' + LOG_LEVEL_MAP[k] + '">[$&]</span>');
         }
         return text;
     }
 
-    function fetchLogs(apiUrl) {
-        fetch(apiUrl + '?tail=50')
+    function fetchLog(api) {
+        fetch(api + '?tail=50')
             .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (data.error) {
-                    logContainer.innerHTML = '<p class="text-danger mb-0">Error: ' + data.error + '</p>';
-                } else {
-                    var content = data.content || '(no output yet)';
-                    logContainer.innerHTML = '<pre>' + parseLogColors(content) + '</pre>';
-                    if (shouldAutoScroll) logContainer.scrollTop = logContainer.scrollHeight;
-                }
+            .then(function (d) {
+                logBox.innerHTML = d.error
+                    ? '<span class="text-danger">' + d.error + '</span>'
+                    : '<pre>' + colorize(d.content || '(no output yet)') + '</pre>';
+                if (autoScroll) logBox.scrollTop = logBox.scrollHeight;
             })
-            .catch(function (err) {
-                logContainer.innerHTML = '<p class="text-danger mb-0">Failed to fetch logs: ' + err.message + '</p>';
+            .catch(function (e) {
+                logBox.innerHTML = '<span class="text-danger">' + e.message + '</span>';
             });
     }
 
-    function startLogPolling(apiUrl) {
-        stopLogPolling();
-        fetchLogs(apiUrl);
-        logPollInterval = setInterval(function () { fetchLogs(apiUrl); }, 1000);
+    function startLog(api) {
+        stopLog();
+        fetchLog(api);
+        logTimer = setInterval(function () { fetchLog(api); }, 1000);
+    }
+    function stopLog() {
+        if (logTimer) { clearInterval(logTimer); logTimer = null; }
     }
 
-    function stopLogPolling() {
-        if (logPollInterval) { clearInterval(logPollInterval); logPollInterval = null; }
-    }
-
-    // ── Edit form checkbox logic ──────────────────────────────────────────────
-
-    function syncEditCheckboxes(cmd) {
-        document.querySelectorAll('.gd-opt-edit').forEach(function (cb) {
+    /* ── Edit form checkboxes ─────────────────────────────────────────── */
+    function syncEditCbs(cmd) {
+        document.querySelectorAll('.gde').forEach(function (cb) {
             cb.checked = cb.dataset.flag ? cmd.includes(cb.dataset.flag) : false;
         });
     }
 
-    function toggleFlagInCommand(previewEl, hiddenEl, flag, checked) {
-        var cmd = previewEl.value;
+    function patchCmd(prev, hid, flag, checked) {
+        var cmd = prev.value;
         if (checked) {
             cmd = cmd.includes('--input-file')
                 ? cmd.replace('--input-file', flag + ' --input-file')
@@ -465,109 +708,88 @@
             var esc = flag.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
             cmd = cmd.replace(new RegExp('\\s*' + esc, 'g'), '');
         }
-        previewEl.value = cmd.replace(/\s+/g, ' ').trim();
-        hiddenEl.value  = previewEl.value;
+        prev.value = hid.value = cmd.replace(/\s+/g, ' ').trim();
     }
 
-    // ── Create form command builder ───────────────────────────────────────────
-
-    function buildCreateCommand() {
+    /* ── Create form ──────────────────────────────────────────────────── */
+    function buildCreateCmd() {
         var flags = [];
-        document.querySelectorAll('.gd-opt-create:checked').forEach(function (cb) {
+        document.querySelectorAll('.gdc:checked').forEach(function (cb) {
             if (cb.dataset.flag) flags.push(cb.dataset.flag);
         });
-        var cmd = 'gallery-dl' + (flags.length ? ' ' + flags.join(' ') : '') + ' --input-file urls.txt';
-        createCommandPreview.value = cmd;
-        createCommand.value = cmd;
+        cCmd.value = cCmdH.value =
+            'gallery-dl' + (flags.length ? ' ' + flags.join(' ') : '') + ' --input-file urls.txt';
     }
 
-    // ── Status polling ────────────────────────────────────────────────────────
-
+    /* ── Status polling ───────────────────────────────────────────────── */
     function pollStatus() {
         fetch('/api/tasks')
-            .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+            .then(function (r) { if (!r.ok) throw 0; return r.json(); })
             .then(function (tasks) {
-                tasks.forEach(function (task) {
-                    // Update sidebar badge
-                    var btn = document.querySelector('.task-list-item[data-slug="' + task.slug + '"]');
+                tasks.forEach(function (t) {
+                    var btn = document.querySelector('.t-item[data-slug="' + t.slug + '"]');
                     if (btn) {
-                        var badge = btn.querySelector('.task-sidebar-badge');
-                        if (badge) {
-                            badge.className = 'badge task-sidebar-badge ' + statusClassFor(task.status);
-                            badge.textContent = task.status;
-                        }
-                        btn.dataset.status = task.status;
-                        if (task.last_run) btn.dataset.lastRun = task.last_run;
+                        var dot = btn.querySelector('[data-sdot]');
+                        if (dot) dot.className = dotCls(t.status);
+                        btn.dataset.status = t.status;
+                        if (t.last_run) btn.dataset.lastRun = t.last_run;
                     }
-
-                    // Update detail panel if this task is selected
-                    if (task.slug === selectedSlug) {
-                        detailBadge.className = 'badge ms-2 ' + statusClassFor(task.status);
-                        detailBadge.textContent = task.status;
-                        btnDetailRun.disabled = (task.status === 'running');
-                        updatePauseBtn(task.status);
-                        if (task.last_run) {
-                            detailLastRun.textContent = task.last_run.slice(0, 19).replace('T', ' ');
-                        }
+                    if (t.slug === selSlug) {
+                        dDot.className    = dotCls(t.status);
+                        dStat.textContent = t.status;
+                        bRun.disabled     = (t.status === 'running');
+                        setPauseBtn(t.status);
+                        if (t.last_run) dLastRun.textContent = fmtDate(t.last_run);
                     }
                 });
             })
-            .catch(function () { /* ignore transient errors */ });
+            .catch(function () {});
     }
 
-    // ── Wire up events ────────────────────────────────────────────────────────
-
+    /* ── Init ─────────────────────────────────────────────────────────── */
     document.addEventListener('DOMContentLoaded', function () {
 
-        // Task list clicks
-        document.querySelectorAll('.task-list-item').forEach(function (btn) {
+        document.querySelectorAll('.t-item').forEach(function (btn) {
             btn.addEventListener('click', function () { selectTask(this); });
         });
 
-        // New task button
-        btnNewTask.addEventListener('click', function () {
-            selectedSlug = null;
-            document.querySelectorAll('.task-list-item').forEach(function (el) {
-                el.classList.remove('selected');
-            });
-            document.getElementById('formCreate').reset();
-            buildCreateCommand();
+        btnNew.addEventListener('click', function () {
+            selSlug = null;
+            document.querySelectorAll('.t-item').forEach(function (el) { el.classList.remove('sel'); });
+            stopLog();
+            $('fCreate').reset();
+            buildCreateCmd();
             showPanel('new');
-            if (window.innerWidth < 992) {
-                panelNew.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }
+            if (window.innerWidth < 768)
+                $('pNew').scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
 
-        // Tab switching
-        document.querySelectorAll('#detailTabs .nav-link').forEach(function (btn) {
+        document.querySelectorAll('.t-tab').forEach(function (btn) {
             btn.addEventListener('click', function () { switchTab(this.dataset.tab); });
         });
 
-        // Edit form checkboxes
-        document.querySelectorAll('.gd-opt-edit').forEach(function (cb) {
-            cb.addEventListener('change', function () {
-                toggleFlagInCommand(editCommandPreview, editCommand, this.dataset.flag, this.checked);
-            });
-        });
-        editCommandPreview.addEventListener('input', function () { editCommand.value = this.value; });
+        bLoadUrls.addEventListener('click', doLoadUrls);
 
-        // Create form checkboxes
-        document.querySelectorAll('.gd-opt-create').forEach(function (cb) {
-            cb.addEventListener('change', buildCreateCommand);
+        document.querySelectorAll('.gde').forEach(function (cb) {
+            cb.addEventListener('change', function () { patchCmd(eCmd, eCmdH, this.dataset.flag, this.checked); });
         });
-        createCommandPreview.addEventListener('input', function () { createCommand.value = this.value; });
+        eCmd.addEventListener('input', function () { eCmdH.value = this.value; });
 
-        // Log scroll tracking
-        logContainer.addEventListener('scroll', function () {
-            shouldAutoScroll = logContainer.scrollTop + logContainer.clientHeight >= logContainer.scrollHeight - 10;
+        document.querySelectorAll('.gdc').forEach(function (cb) {
+            cb.addEventListener('change', buildCreateCmd);
+        });
+        cCmd.addEventListener('input', function () { cCmdH.value = this.value; });
+
+        logBox.addEventListener('scroll', function () {
+            autoScroll = logBox.scrollTop + logBox.clientHeight >= logBox.scrollHeight - 10;
         });
 
-        // Initial state
-        buildCreateCommand();
+        buildCreateCmd();
         pollStatus();
         setInterval(pollStatus, 5000);
     });
-})();
+
+}());
 </script>
 
 {% endblock %}

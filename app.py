@@ -275,6 +275,21 @@ def _extract_relpath_from_log_line(line: str, downloads_root: str) -> Optional[s
 
     return None
 
+def _count_file_lines(path: str) -> int:
+    """Count lines in a file by streaming in chunks — safe for very large files."""
+    try:
+        count = 0
+        with open(path, 'rb') as f:
+            while True:
+                block = f.read(65536)
+                if not block:
+                    break
+                count += block.count(b'\n')
+        return count
+    except Exception:
+        return 0
+
+
 def _tail_lines(path: str, max_lines: int = 500, chunk_size: int = 8192) -> List[str]:
     try:
         with open(path, "rb") as f:
@@ -508,7 +523,7 @@ def load_tasks():
         schedule = read_text(os.path.join(task_path, "cron.txt"))
         command = read_text(os.path.join(task_path, "command.txt")) or "gallery-dl --input-file urls.txt"
         last_run = read_text(os.path.join(task_path, "last_run.txt"))
-        urls = read_text(os.path.join(task_path, "urls.txt"))
+        url_count = _count_file_lines(os.path.join(task_path, "urls.txt"))
 
         lock_path = os.path.join(task_path, "lock")
         paused_path = os.path.join(task_path, "paused")
@@ -530,7 +545,7 @@ def load_tasks():
             "task_path": task_path,
             "urls_file": "urls.txt",
             "command": command,
-            "urls": urls,
+            "url_count": url_count,
         }
         _TASK_CACHE[slug] = {"_mtimes": mtimes, "task": task}
         tasks.append(task)
@@ -731,7 +746,9 @@ def tasks():
             flash("Task name is required.", "error")
             return redirect(url_for("tasks"))
 
-        if not urls_text:
+        keep_existing_urls = request.form.get("keep_existing_urls", "0") == "1"
+
+        if not keep_existing_urls and not urls_text:
             flash("You need to provide at least one URL.", "error")
             return redirect(url_for("tasks"))
 
@@ -740,7 +757,8 @@ def tasks():
         os.makedirs(task_folder, exist_ok=True)
 
         write_text(os.path.join(task_folder, "name.txt"), name)
-        write_text(os.path.join(task_folder, "urls.txt"), urls_text.strip() + "\n")
+        if not keep_existing_urls:
+            write_text(os.path.join(task_folder, "urls.txt"), urls_text.strip() + "\n")
 
         if schedule:
             write_text(os.path.join(task_folder, "cron.txt"), schedule)
@@ -1047,6 +1065,24 @@ def task_logs(slug):
         return jsonify({"error": str(exc)}), 500
     
     return jsonify({"slug": slug, "content": content})
+
+
+# ---------------------------------------------------------------------
+# Task URLs endpoint (lazy-loaded by the UI)
+# ---------------------------------------------------------------------
+
+@app.route("/tasks/<slug>/urls")
+def task_urls(slug):
+    ensure_data_dirs(ensure_downloads=False)
+    task_folder = os.path.join(TASKS_ROOT, slug)
+    if not os.path.isdir(task_folder):
+        return jsonify({"error": "Task not found"}), 404
+    urls_path = os.path.join(task_folder, "urls.txt")
+    try:
+        content = read_text(urls_path) or ""
+        return jsonify({"slug": slug, "content": content})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 # ---------------------------------------------------------------------
