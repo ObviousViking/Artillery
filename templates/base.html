@@ -18,6 +18,28 @@
 
     <!-- Your dark theme styles -->
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+
+    <!-- Theme initialization (must run before page renders) -->
+    <script>
+        (function() {
+            const THEME_KEY = 'artillery-theme';
+            const DARK_THEME = 'dark';
+            const LIGHT_THEME = 'light';
+
+            function getSystemPreference() {
+                return window.matchMedia('(prefers-color-scheme: dark)').matches ? DARK_THEME : LIGHT_THEME;
+            }
+
+            function getCurrentTheme() {
+                const stored = localStorage.getItem(THEME_KEY);
+                if (stored) return stored;
+                return getSystemPreference();
+            }
+
+            const theme = getCurrentTheme();
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
 </head>
 
 <body>
@@ -109,14 +131,11 @@
         const DARK_THEME = 'dark';
         const LIGHT_THEME = 'light';
 
-        function getSystemPreference() {
-            return window.matchMedia('(prefers-color-scheme: dark)').matches ? DARK_THEME : LIGHT_THEME;
-        }
-
         function getCurrentTheme() {
             const stored = localStorage.getItem(THEME_KEY);
             if (stored) return stored;
-            return getSystemPreference();
+            const systemPref = window.matchMedia('(prefers-color-scheme: dark)').matches ? DARK_THEME : LIGHT_THEME;
+            return systemPref;
         }
 
         function applyTheme(theme) {
@@ -138,21 +157,16 @@
             applyTheme(next);
         }
 
-        // Initialize on page load
+        // Initialize toggle on page load
         document.addEventListener('DOMContentLoaded', function() {
             const theme = getCurrentTheme();
-            applyTheme(theme);
+            updateToggleCheckbox(theme);
 
             const toggle = document.getElementById('themeToggle');
             if (toggle) {
                 toggle.addEventListener('change', toggleTheme);
             }
         });
-
-        // Apply theme before page renders to avoid flashing
-        const initialTheme = getCurrentTheme();
-        document.documentElement.setAttribute('data-theme', initialTheme);
-        updateToggleCheckbox(initialTheme);
     </script></output>
 
     <!-- Swiper JS (before closing body) -->
