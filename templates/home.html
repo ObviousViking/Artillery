@@ -3,71 +3,199 @@
 
 <div class="row mb-4">
   <div class="col-12">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h1 class="card-title mb-3">Welcome to Artillery</h1>
-        <p class="mb-3">
-          Artillery is your lightweight web front-end for
-          <code>gallery-dl</code>. Create repeatable download tasks, schedule
-          them with cron, and keep everything isolated per task folder.
-        </p>
+    <div class="card border-0 shadow-sm overflow-hidden artillery-hero">
+      <div class="card-body p-4 p-lg-5">
+        <div class="row align-items-center g-4">
+          <div class="col-lg-8">
+            <div class="d-inline-flex align-items-center gap-2 px-3 py-2 rounded-pill artillery-hero-badge mb-3">
+              <span class="artillery-hero-dot"></span>
+              <span class="small fw-semibold text-uppercase">Artillery</span>
+            </div>
 
-        <ul class="mb-3">
-          <li>Each task has its own folder under <code>/tasks/&lt;task-name&gt;</code>.</li>
-          <li>Downloads go to <code>/downloads</code> using your global <code>gallery-dl.conf</code>.</li>
-          <li>Tasks can be run manually, paused, or scheduled via cron.</li>
-          <li>All output is logged to each task's <code>logs.txt</code> for troubleshooting.</li>
-        </ul>
+            <h1 class="card-title display-6 fw-bold mb-3">Welcome to Artillery</h1>
 
-        <div class="d-flex flex-wrap gap-2">
-          <a href="{{ url_for('tasks') }}" class="btn btn-danger">View tasks</a>
-          <a href="{{ url_for('config_page') }}" class="btn btn-outline-light">Edit config</a>
+            <p class="lead mb-0 artillery-hero-copy">
+              A lightweight front-end for <code>gallery-dl</code>, built for tidy task management,
+              repeatable runs, and a clean view of the media you’ve already cached.
+            </p>
+          </div>
+
+          <div class="col-lg-4">
+            <div class="artillery-hero-panel">
+              <div class="artillery-hero-panel-grid">
+                <div class="artillery-mini-card">
+                  <div class="artillery-mini-label">Tasks</div>
+                  <div class="artillery-mini-value">Organised</div>
+                </div>
+                <div class="artillery-mini-card">
+                  <div class="artillery-mini-label">Runs</div>
+                  <div class="artillery-mini-value">Repeatable</div>
+                </div>
+                <div class="artillery-mini-card">
+                  <div class="artillery-mini-label">Logs</div>
+                  <div class="artillery-mini-value">Per task</div>
+                </div>
+                <div class="artillery-mini-card">
+                  <div class="artillery-mini-label">Media wall</div>
+                  <div class="artillery-mini-value">Live cache</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
+
+      <div class="artillery-hero-glow artillery-hero-glow-1"></div>
+      <div class="artillery-hero-glow artillery-hero-glow-2"></div>
     </div>
   </div>
 </div>
-
-{% if media_wall_enabled %}
-<!-- Media wall with infinite vertical scroll -->
-<div class="row">
-  <div class="col-12">
-    <div class="card shadow-sm"
-         data-media-wall-poll-interval="{{ media_wall_poll_interval|default(60) }}"
-         data-media-wall-sse="{{ '1' if media_wall_sse_enabled else '0' }}">
-      <div class="card-body">
-
-        <div id="media-wall-loader" class="media-wall-loader">
-          <div class="spinner-border text-light" role="status"></div>
-          <span class="ms-2">Refreshing media wall...</span>
-        </div>
-
-        <div id="media-wall-empty" class="text-muted mb-0" {% if has_media %}style="display:none"{% endif %}>
-          No media cached yet. Run a task, then refresh the media wall.
-        </div>
-
-        <!-- Infinite scroll container -->
-        <div id="media-wall-container" class="media-wall-vertical" style="display:none;"></div>
-
-      </div>
-    </div>
-  </div>
-</div>
-
-<footer class="media-wall-footer">
-  <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-    <div>
-      <div class="fw-semibold">Media wall scale</div>
-    </div>
-    <div class="d-flex align-items-center gap-3">
-      <span class="text-muted small">Large</span>
-      <input id="media-wall-scale-range" class="form-range media-wall-scale-range" type="range" min="1" max="6" step="1" />
-      <span class="text-muted small">Compact</span>
-    </div>
-  </div>
-</footer>
 
 <style>
+  .artillery-hero {
+    position: relative;
+    background:
+      radial-gradient(circle at top left, rgba(99, 102, 241, 0.20), transparent 32%),
+      radial-gradient(circle at bottom right, rgba(56, 189, 248, 0.16), transparent 34%),
+      linear-gradient(135deg, rgba(17, 24, 39, 0.98), rgba(31, 41, 55, 0.96));
+    color: #f8fafc;
+    border-radius: 1.25rem;
+    isolation: isolate;
+  }
+
+  .artillery-hero .card-body {
+    position: relative;
+    z-index: 2;
+  }
+
+  .artillery-hero-badge {
+    background: rgba(255, 255, 255, 0.08);
+    color: #e2e8f0;
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    letter-spacing: 0.06em;
+  }
+
+  .artillery-hero-dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #60a5fa, #818cf8);
+    box-shadow: 0 0 0 0.2rem rgba(96, 165, 250, 0.15);
+    flex: 0 0 auto;
+  }
+
+  .artillery-hero h1 {
+    color: #ffffff;
+    letter-spacing: -0.03em;
+  }
+
+  .artillery-hero-copy {
+    max-width: 42rem;
+    color: rgba(226, 232, 240, 0.92);
+    font-size: 1.1rem;
+    line-height: 1.7;
+  }
+
+  .artillery-hero code {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.10);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 0.5rem;
+    padding: 0.15rem 0.45rem;
+  }
+
+  .artillery-hero-panel {
+    position: relative;
+    padding: 1rem;
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    backdrop-filter: blur(10px);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+
+  .artillery-hero-panel-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .artillery-mini-card {
+    padding: 0.9rem 0.95rem;
+    border-radius: 0.9rem;
+    background: rgba(15, 23, 42, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .artillery-mini-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(148, 163, 184, 0.95);
+    margin-bottom: 0.35rem;
+  }
+
+  .artillery-mini-value {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #f8fafc;
+    line-height: 1.2;
+  }
+
+  .artillery-hero-glow {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(40px);
+    opacity: 0.55;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .artillery-hero-glow-1 {
+    width: 220px;
+    height: 220px;
+    top: -60px;
+    right: 10%;
+    background: rgba(99, 102, 241, 0.22);
+  }
+
+  .artillery-hero-glow-2 {
+    width: 180px;
+    height: 180px;
+    bottom: -70px;
+    left: 8%;
+    background: rgba(34, 211, 238, 0.14);
+  }
+
+  @media (max-width: 991.98px) {
+    .artillery-hero-panel-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .artillery-hero-copy {
+      font-size: 1rem;
+    }
+  }
+
+  @media (max-width: 575.98px) {
+    .artillery-hero {
+      border-radius: 1rem;
+    }
+
+    .artillery-hero .card-body {
+      padding: 1.25rem !important;
+    }
+
+    .artillery-hero-panel-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .artillery-mini-card {
+      padding: 0.85rem 0.9rem;
+    }
+  }
+
   .media-wall-vertical {
     display: flex;
     gap: 0;
@@ -123,7 +251,6 @@
     background: transparent;
   }
 
-  /* Patchwork sizing: vary item heights while preserving aspect ratio */
   .media-strip-vertical .media-item { height: auto; }
 
   .media-wall-loader {
@@ -145,6 +272,45 @@
     width: min(320px, 70vw);
   }
 </style>
+
+{% if media_wall_enabled %}
+<!-- Media wall with infinite vertical scroll -->
+<div class="row">
+  <div class="col-12">
+    <div class="card shadow-sm"
+         data-media-wall-poll-interval="{{ media_wall_poll_interval|default(60) }}"
+         data-media-wall-sse="{{ '1' if media_wall_sse_enabled else '0' }}">
+      <div class="card-body">
+
+        <div id="media-wall-loader" class="media-wall-loader">
+          <div class="spinner-border text-light" role="status"></div>
+          <span class="ms-2">Refreshing media wall...</span>
+        </div>
+
+        <div id="media-wall-empty" class="text-muted mb-0" {% if has_media %}style="display:none"{% endif %}>
+          No media cached yet. Run a task, then refresh the media wall.
+        </div>
+
+        <!-- Infinite scroll container -->
+        <div id="media-wall-container" class="media-wall-vertical" style="display:none;"></div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer class="media-wall-footer">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+    <div>
+      <div class="fw-semibold">Media wall scale</div>
+    </div>
+    <div class="d-flex align-items-center gap-3">
+      <span class="text-muted small">Large</span>
+      <input id="media-wall-scale-range" class="form-range media-wall-scale-range" type="range" min="1" max="6" step="1" />
+      <span class="text-muted small">Compact</span>
+    </div>
+  </div>
+</footer>
 
 <script>
 (function () {
@@ -260,13 +426,11 @@
       }
       lastSig = sig;
 
-      // Distribute images across N columns evenly
       const rows = Array.from({ length: rowCount }, () => []);
       items.forEach((item, idx) => {
         rows[idx % rowCount].push(item);
       });
 
-      // preload a small sample to ensure smooth transition
       const preloadImgs = [];
       rows.forEach(rowItems => {
         for (let i = 0; i < Math.min(2, rowItems.length); i++) {
@@ -380,7 +544,6 @@
   });
 })();
 </script>
-
 {% endif %}
 
 {% endblock %}
