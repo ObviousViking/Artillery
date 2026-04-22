@@ -264,13 +264,20 @@ main.container { margin-bottom: 0 !important; }
     padding: 0.4rem;
     overflow: hidden;
     min-width: 0;
+    text-decoration: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+a.r-item:hover {
+    border-color: var(--focus-color);
+    box-shadow: 0 0 0 2px var(--focus-shadow);
 }
 .r-item img {
     width: 100%;
-    height: 88px;
-    object-fit: cover;
+    height: 100px;
+    object-fit: contain;
     border-radius: 5px;
     display: block;
+    background: var(--bg-tertiary);
 }
 .r-item-label {
     font-size: 0.63rem;
@@ -283,7 +290,7 @@ main.container { margin-bottom: 0 !important; }
     width: 100%;
 }
 .r-item-video {
-    height: 88px;
+    height: 100px;
     justify-content: center;
     font-size: 1.6rem;
     opacity: 0.45;
@@ -768,15 +775,15 @@ main.container { margin-bottom: 0 !important; }
                 var html = '';
                 d.items.forEach(function (item) {
                     if (item.is_image) {
-                        html += '<div class="r-item">'
+                        html += '<a class="r-item" href="' + item.url + '" target="_blank" rel="noopener noreferrer">'
                               + '<img src="' + item.url + '" loading="lazy" alt="">'
                               + '<span class="r-item-label">' + item.filename + '</span>'
-                              + '</div>';
+                              + '</a>';
                     } else {
-                        html += '<div class="r-item r-item-video">'
+                        html += '<a class="r-item r-item-video" href="' + item.url + '" target="_blank" rel="noopener noreferrer">'
                               + '<span>&#127916;</span>'
                               + '<span class="r-item-label">' + item.filename + '</span>'
-                              + '</div>';
+                              + '</a>';
                     }
                 });
                 recentGrid.innerHTML = html;
