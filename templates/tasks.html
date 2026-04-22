@@ -1,625 +1,1274 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card shadow-sm border-secondary">
-            <div class="card-body">
-                <h2 class="card-title mb-3">Tasks</h2>
+<style>
+  /* ── Layout shell ─────────────────────────────────────────── */
+  .tasks-shell {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    overflow: hidden;
+    background: var(--card-bg);
+    /* fill viewport below fixed navbar (56px) minus container padding */
+    height: calc(100vh - 80px);
+    min-height: 500px;
+  }
 
-                {% if tasks %}
-                <div class="table-responsive">
-                    <table class="table table-striped align-middle">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Status</th>
-                                <th>Cron</th>
-                                <th>Last run</th>
-                                <th style="min-width: 220px;">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for task in tasks %}
-                            {% set status = task.status %}
-                            {% set schedule = task.schedule %}
-                            {% set lr = task.last_run %}
-                            <tr data-slug="{{ task.slug }}">
-                                <td>{{ task.name }}</td>
-                                <td>
-                                    <span class="badge task-status-badge
-                        {% if status == 'running' %} bg-primary
-                        {% elif status == 'error' %} bg-danger
-                        {% elif status == 'complete' %} bg-success
-                        {% elif status == 'paused' %} bg-warning text-dark
-                        {% else %} bg-secondary
-                        {% endif %}
-                      ">
-                                        {{ status }}
-                                    </span>
-                                </td>
-                                <td>
-                                    {% if schedule %}
-                                    <code>{{ schedule }}</code>
-                                    {% else %}
-                                    <span class="text-muted">None</span>
-                                    {% endif %}
-                                </td>
-                                <td class="task-last-run">
-                                    {% if lr %}
-                                    {{ lr[:19].replace('T', ' ') }} UTC
-                                    {% else %}
-                                    <span class="text-muted">Never</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <div class="task-action-group d-flex flex-nowrap align-items-center gap-1">
-                                        <form method="post" action="{{ url_for('task_action', slug=task.slug) }}"
-                                            class="m-0">
-                                            <input type="hidden" name="action" value="run">
-                                            <button type="submit" class="btn btn-sm btn-outline-light task-run-btn" {%
-                                                if status=='running' %}disabled{% endif %}>
-                                                Run
-                                            </button>
-                                        </form>
+  /* ── Sidebar ──────────────────────────────────────────────── */
+  .ts-sidebar {
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    background: var(--sidebar-bg);
+    overflow: hidden;
+  }
 
-                                        <form method="post" action="{{ url_for('task_action', slug=task.slug) }}"
-                                            class="m-0">
-                                            <input type="hidden" name="action" value="pause">
-                                            {% if status == 'paused' %}
-                                            <button type="submit" class="btn btn-sm btn-outline-warning task-pause-btn">
-                                                Unpause
-                                            </button>
-                                            {% else %}
-                                            <button type="submit"
-                                                class="btn btn-sm btn-outline-secondary task-pause-btn">
-                                                Pause
-                                            </button>
-                                            {% endif %}
-                                        </form>
+  .ts-sidebar-head {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
 
-                                        <div class="btn-group">
-                                            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle"
-                                                data-bs-toggle="dropdown" aria-expanded="false">
-                                                More
-                                            </button>
-                                            <ul class="dropdown-menu">
-                                                <li>
-                                                    <button type="button"
-                                                        class="dropdown-item btn-edit-task"
-                                                        data-name="{{ task.name|e }}"
-                                                        data-urls="{{ (task.urls or '')|e }}"
-                                                        data-schedule="{{ (task.schedule or '')|e }}"
-                                                        data-command="{{ task.command|e }}">
-                                                        Edit
-                                                    </button>
-                                                </li>
-                                                <li><hr class="dropdown-divider"></li>
-                                                <li>
-                                                    <form method="post" action="{{ url_for('task_action', slug=task.slug) }}" class="m-0">
-                                                        <input type="hidden" name="action" value="delete">
-                                                        <button type="submit" class="dropdown-item text-danger">
-                                                            Delete
-                                                        </button>
-                                                    </form>
-                                                </li>
-                                                <li>
-                                                    <form method="get" action="{{ url_for('download_task_logs', slug=task.slug) }}" class="m-0">
-                                                        <button type="submit" class="dropdown-item">
-                                                            Logs
-                                                        </button>
-                                                    </form>
-                                                </li>
-                                            </ul>
-                                        </div>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% else %}
-                <p class="text-muted mb-0">No tasks yet. Create one below.</p>
-                {% endif %}
-            </div>
-        </div>
+  .ts-sidebar-head-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin: 0;
+  }
+
+  .ts-search {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+  }
+
+  .ts-search input {
+    width: 100%;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+    border-radius: 0.3rem;
+    border: 1px solid var(--border-color);
+    background: var(--input-bg);
+    color: var(--text-primary);
+  }
+
+  .ts-search input:focus {
+    outline: none;
+    border-color: var(--bs-primary);
+  }
+
+  .ts-list {
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .ts-item {
+    padding: 0.65rem 1rem;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border-color);
+    transition: background 0.1s;
+    border-left: 3px solid transparent;
+  }
+
+  .ts-item:hover { background: var(--hover-bg); }
+
+  .ts-item.active {
+    background: var(--active-bg);
+    border-left-color: var(--bs-primary);
+  }
+
+  .ts-item-name {
+    font-size: 0.8rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-primary);
+    margin-bottom: 0.3rem;
+  }
+
+  .ts-item-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.25rem;
+  }
+
+  .ts-cron {
+    font-family: monospace;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ── Main pane ────────────────────────────────────────────── */
+  .ts-main {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .ts-main-header {
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .ts-main-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .ts-main-title h2 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 260px;
+  }
+
+  .ts-header-actions {
+    display: flex;
+    gap: 0.4rem;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+
+  /* ── Tabs ─────────────────────────────────────────────────── */
+  .ts-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border-color);
+    padding: 0 1.25rem;
+    flex-shrink: 0;
+  }
+
+  .ts-tab {
+    padding: 0.55rem 0;
+    margin-right: 1.25rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--text-muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.1s;
+    user-select: none;
+  }
+
+  .ts-tab.active {
+    color: var(--text-primary);
+    border-bottom-color: var(--bs-primary);
+  }
+
+  /* ── Pane bodies ──────────────────────────────────────────── */
+  .ts-pane {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.25rem;
+    display: none;
+  }
+
+  .ts-pane.active { display: block; }
+
+  /* ── Empty / no-selection state ───────────────────────────── */
+  .ts-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    gap: 0.5rem;
+  }
+
+  /* ── Stat cards ───────────────────────────────────────────── */
+  .ts-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.6rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .ts-stat {
+    background: var(--stat-bg);
+    border-radius: 0.4rem;
+    padding: 0.65rem 0.8rem;
+    border: 1px solid var(--border-color);
+  }
+
+  .ts-stat-val {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.1rem;
+  }
+
+  .ts-stat-lbl {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* ── Section label ────────────────────────────────────────── */
+  .ts-section-lbl {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  /* ── Progress bar ─────────────────────────────────────────── */
+  .ts-progress-wrap {
+    margin-bottom: 1.25rem;
+  }
+
+  .ts-progress-track {
+    height: 3px;
+    border-radius: 2px;
+    background: var(--border-color);
+    overflow: hidden;
+    margin-bottom: 0.35rem;
+  }
+
+  .ts-progress-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--bs-primary);
+    width: 40%;
+    animation: ts-prog 2.5s ease-in-out infinite alternate;
+  }
+
+  @keyframes ts-prog { from { width: 25%; } to { width: 70%; } }
+
+  /* ── URL summary block ────────────────────────────────────── */
+  .ts-url-summary {
+    background: var(--stat-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 0.4rem;
+    padding: 0.7rem 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .ts-url-count {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .ts-url-file {
+    font-size: 0.72rem;
+    font-family: monospace;
+    color: var(--text-muted);
+    margin-top: 0.15rem;
+  }
+
+  /* ── Command box ──────────────────────────────────────────── */
+  .ts-cmd-box {
+    background: var(--stat-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 0.4rem;
+    padding: 0.6rem 0.8rem;
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    word-break: break-all;
+    line-height: 1.5;
+  }
+
+  /* ── Log box ──────────────────────────────────────────────── */
+  .ts-log-box {
+    background: var(--log-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 0.4rem;
+    padding: 0.7rem 0.9rem;
+    font-family: monospace;
+    font-size: 0.75rem;
+    line-height: 1.75;
+    height: 340px;
+    overflow-y: auto;
+    color: var(--text-primary);
+  }
+
+  .log-info    { color: #60a5fa; }
+  .log-success { color: #4ade80; }
+  .log-warning { color: #fbbf24; }
+  .log-error   { color: #f87171; }
+  .log-debug   { color: var(--text-muted); }
+
+  /* ── Edit form ────────────────────────────────────────────── */
+  .ts-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.9rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .ts-field { margin-bottom: 0.9rem; }
+  .ts-field:last-child { margin-bottom: 0; }
+
+  .ts-flabel {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    display: block;
+    margin-bottom: 0.3rem;
+  }
+
+  .ts-field input[type="text"],
+  .ts-field textarea {
+    width: 100%;
+    border-radius: 0.3rem;
+    border: 1px solid var(--border-color);
+    background: var(--input-bg);
+    padding: 0.35rem 0.6rem;
+    font-size: 0.8rem;
+    font-family: inherit;
+    color: var(--text-primary);
+    transition: border-color 0.1s;
+  }
+
+  .ts-field input[type="text"]:focus,
+  .ts-field textarea:focus {
+    outline: none;
+    border-color: var(--bs-primary);
+  }
+
+  .ts-field textarea { resize: vertical; }
+  .ts-hint { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.25rem; }
+
+  .ts-flags {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem 0.9rem;
+    padding: 0.7rem 0.9rem;
+    background: var(--stat-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 0.4rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .ts-flag {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    cursor: pointer;
+    color: var(--text-primary);
+  }
+
+  .ts-flag code {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+  }
+
+  .ts-flag input { cursor: pointer; }
+
+  .ts-divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: 0.9rem 0;
+  }
+
+  .ts-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding-top: 0.25rem;
+  }
+
+  /* ── URL edit section ─────────────────────────────────────── */
+  .ts-url-edit {
+    background: var(--stat-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 0.4rem;
+    padding: 0.75rem 0.9rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .ts-url-edit-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 0.65rem;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .ts-url-edit-title {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .ts-url-edit-note {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 0.15rem;
+  }
+
+  .ts-url-append {
+    display: flex;
+    gap: 0.4rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .ts-url-append input {
+    flex: 1;
+    height: 30px;
+    border-radius: 0.3rem;
+    border: 1px solid var(--border-color);
+    background: var(--input-bg);
+    padding: 0 0.6rem;
+    font-size: 0.78rem;
+    font-family: monospace;
+    color: var(--text-primary);
+  }
+
+  .ts-url-list {
+    font-family: monospace;
+    font-size: 0.72rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .ts-url-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .ts-url-row span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-primary);
+    flex: 1;
+  }
+
+  .ts-url-rm {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    padding: 0 0.2rem;
+    flex-shrink: 0;
+    border-radius: 0.2rem;
+  }
+
+  .ts-url-rm:hover { color: #f87171; }
+
+  .ts-url-overflow {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border-color);
+    line-height: 1.5;
+  }
+
+  .ts-replace-area { display: none; margin-bottom: 0.6rem; }
+
+  /* ── New task button ──────────────────────────────────────── */
+  .ts-new-btn {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.6rem;
+  }
+
+  /* ── CSS vars (light / dark) ──────────────────────────────── */
+  :root,
+  [data-theme="dark"] {
+    --sidebar-bg:   #1a1a1a;
+    --active-bg:    #222;
+    --hover-bg:     #1e1e1e;
+    --stat-bg:      #1e1e1e;
+    --log-bg:       #111;
+    --input-bg:     #252525;
+    --text-primary: #e5e5e5;
+    --text-muted:   #666;
+    --border-color: #2a2a2a;
+    --card-bg:      #141414;
+  }
+
+  [data-theme="light"] {
+    --sidebar-bg:   #f5f5f5;
+    --active-bg:    #fff;
+    --hover-bg:     #ececec;
+    --stat-bg:      #f0f0f0;
+    --log-bg:       #fafafa;
+    --input-bg:     #fff;
+    --text-primary: #1a1a1a;
+    --text-muted:   #888;
+    --border-color: #e0e0e0;
+    --card-bg:      #fff;
+  }
+
+  /* pulse dot */
+  .status-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+  }
+
+  .status-dot.pulse { animation: ts-pulse 1.4s infinite; }
+  @keyframes ts-pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+</style>
+
+{# ──────────────────────────────────────────────────────────────── #}
+{# Shell                                                            #}
+{# ──────────────────────────────────────────────────────────────── #}
+<div class="tasks-shell">
+
+  {# ── Sidebar ── #}
+  <div class="ts-sidebar">
+    <div class="ts-sidebar-head">
+      <span class="ts-sidebar-head-title">Tasks</span>
+      <button class="btn btn-sm btn-outline-secondary ts-new-btn" id="btnNewTask">+ New</button>
     </div>
+
+    <div class="ts-search">
+      <input type="text" placeholder="Search tasks…" id="tsSearchInput" autocomplete="off" />
+    </div>
+
+    <div class="ts-list" id="tsTaskList">
+      {% if tasks %}
+        {% for task in tasks %}
+        {% set status = task.status %}
+        <div class="ts-item" data-slug="{{ task.slug }}"
+             data-name="{{ task.name|e }}"
+             data-urls="{{ (task.urls or '')|e }}"
+             data-schedule="{{ (task.schedule or '')|e }}"
+             data-command="{{ task.command|e }}"
+             data-status="{{ status }}"
+             data-lastrun="{{ task.last_run or '' }}">
+          <div class="ts-item-name">{{ task.name }}</div>
+          <div class="ts-item-meta">
+            <span class="ts-cron">
+              {% if task.schedule %}<code>{{ task.schedule }}</code>
+              {% else %}<span>no schedule</span>{% endif %}
+            </span>
+            <span class="badge ts-status-badge
+              {% if status == 'running' %}bg-primary
+              {% elif status == 'error' %}bg-danger
+              {% elif status == 'complete' %}bg-success
+              {% elif status == 'paused' %}bg-warning text-dark
+              {% else %}bg-secondary{% endif %}">
+              {{ status }}
+            </span>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="p-3 text-muted" style="font-size:0.8rem">No tasks yet.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Main pane ── #}
+  <div class="ts-main" id="tsMain">
+
+    {# Empty state (shown when nothing selected) #}
+    <div class="ts-empty" id="tsEmptyState">
+      <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2" opacity=".3">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
+      </svg>
+      <span>Select a task to view details</span>
+    </div>
+
+    {# Detail view (hidden until task selected) #}
+    <div id="tsDetail" style="display:none; flex-direction:column; height:100%; overflow:hidden;">
+
+      <div class="ts-main-header">
+        <div class="ts-main-title">
+          <h2 id="detailName">—</h2>
+          <span class="badge" id="detailBadge">—</span>
+        </div>
+        <div class="ts-header-actions" id="detailActions">
+          {# Buttons injected by JS using the selected task's slug #}
+        </div>
+      </div>
+
+      <div class="ts-tabs">
+        <div class="ts-tab active" data-tab="overview">Overview</div>
+        <div class="ts-tab" data-tab="logs">Logs</div>
+        <div class="ts-tab" data-tab="edit">Edit task</div>
+      </div>
+
+      {# ── Overview pane ── #}
+      <div class="ts-pane active" id="pane-overview">
+        <div class="ts-stats">
+          <div class="ts-stat">
+            <div class="ts-stat-val" id="ov-lastrun">—</div>
+            <div class="ts-stat-lbl">Last run</div>
+          </div>
+          <div class="ts-stat">
+            <div class="ts-stat-val" id="ov-sched">—</div>
+            <div class="ts-stat-lbl">Schedule</div>
+          </div>
+          <div class="ts-stat">
+            <div class="ts-stat-val" id="ov-status">—</div>
+            <div class="ts-stat-lbl">State</div>
+          </div>
+        </div>
+
+        <div id="ovProgressSection" style="display:none" class="ts-progress-wrap">
+          <div class="ts-section-lbl">Currently running</div>
+          <div class="ts-progress-track"><div class="ts-progress-fill"></div></div>
+          <div style="font-size:0.72rem; color:var(--text-muted); margin-top:0.25rem">gallery-dl is running — check Logs tab for live output</div>
+        </div>
+
+        <div class="ts-section-lbl">URLs file</div>
+        <div class="ts-url-summary">
+          <div>
+            <div class="ts-url-count" id="ov-urlcount">—</div>
+            <div class="ts-url-file" id="ov-urlfile">urls.txt</div>
+          </div>
+          <div>
+            <a id="ovDownloadUrls" href="#" class="btn btn-sm btn-outline-secondary" style="font-size:0.75rem">Download urls.txt</a>
+          </div>
+        </div>
+
+        <div class="ts-section-lbl">Command</div>
+        <div class="ts-cmd-box" id="ov-cmd">—</div>
+      </div>
+
+      {# ── Logs pane ── #}
+      <div class="ts-pane" id="pane-logs">
+        <div class="ts-section-lbl">
+          <span>Output <span id="logTaskName" style="font-weight:400;text-transform:none;letter-spacing:0"></span></span>
+          <a id="logsDownloadBtn" href="#" class="btn btn-sm btn-outline-secondary" style="font-size:0.72rem">Download full log</a>
+        </div>
+        <div class="ts-log-box" id="logContainer">
+          <span class="text-muted">Select a task to view logs…</span>
+        </div>
+        <div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.4rem">
+          Auto-refreshing every 2s while running · last 50 lines shown
+        </div>
+      </div>
+
+      {# ── Edit pane ── #}
+      <div class="ts-pane" id="pane-edit">
+        <form method="post" action="{{ url_for('tasks') }}" id="taskForm">
+          <input type="hidden" id="editingFlag" name="editing_flag" value="1" />
+
+          <div class="ts-form-grid">
+            <div class="ts-field">
+              <label class="ts-flabel" for="editName">Task name</label>
+              <input type="text" id="editName" name="name" required />
+              <div class="ts-hint">Folder name under <code>/tasks/</code></div>
+            </div>
+            <div class="ts-field">
+              <label class="ts-flabel" for="editSchedule">Cron schedule</label>
+              <input type="text" id="editSchedule" name="schedule" placeholder="e.g. */30 * * * *" />
+              <div class="ts-hint">
+                <code>*/5 * * * *</code> = every 5 min ·
+                <a href="https://crontab.guru" target="_blank" rel="noopener" style="color:var(--bs-primary)">crontab.guru ↗</a>
+              </div>
+            </div>
+          </div>
+
+          {# URL management - avoids loading huge files into a textarea #}
+          <div class="ts-url-edit">
+            <div class="ts-url-edit-top">
+              <div>
+                <div class="ts-url-edit-title">URLs</div>
+                <div class="ts-url-edit-note" id="editUrlCount">—</div>
+              </div>
+              <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+                <a id="editDownloadUrls" href="#" class="btn btn-sm btn-outline-secondary" style="font-size:0.72rem">Download urls.txt</a>
+                <button type="button" class="btn btn-sm btn-outline-secondary" style="font-size:0.72rem" id="btnToggleReplace" onclick="tsToggleReplace()">Replace file…</button>
+              </div>
+            </div>
+
+            {# Append single URL #}
+            <div class="ts-url-append">
+              <input type="text" id="appendUrlInput" placeholder="https://example.com/new-url — append a single URL" />
+              <button type="button" class="btn btn-sm btn-outline-secondary" style="font-size:0.72rem" onclick="tsAppendUrl()">+ Append</button>
+            </div>
+
+            {# Hidden textarea only used for small URL lists OR replace mode #}
+            <div class="ts-replace-area" id="replaceArea">
+              <label class="ts-flabel">Paste new URLs (will replace entire urls.txt)</label>
+              <textarea id="replaceTextarea" rows="5" style="width:100%;font-family:monospace;font-size:0.75rem;border-radius:0.3rem;border:1px solid var(--border-color);background:var(--input-bg);color:var(--text-primary);padding:0.4rem 0.6rem"></textarea>
+              <div style="display:flex;gap:0.4rem;margin-top:0.4rem">
+                <button type="button" class="btn btn-sm btn-danger" style="font-size:0.72rem" onclick="tsConfirmReplace()">Replace all URLs</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" style="font-size:0.72rem" onclick="tsToggleReplace()">Cancel</button>
+              </div>
+            </div>
+
+            {# Small list: shown inline. Large list: shows message only #}
+            <div class="ts-url-list" id="editUrlList"></div>
+            <div class="ts-url-overflow" id="editUrlOverflow" style="display:none"></div>
+
+            {# Hidden field carrying the (possibly modified) URL list back to server #}
+            <input type="hidden" id="urlsHidden" name="urls" />
+          </div>
+
+          <div class="ts-divider"></div>
+
+          <div class="ts-flabel" style="margin-bottom:0.5rem">gallery-dl flags</div>
+          <div class="ts-flags">
+            <label class="ts-flag"><input class="gd-option" type="checkbox" data-flag="--download-archive archive.sqlite" /> Use archive DB <code>--download-archive</code></label>
+            <label class="ts-flag"><input class="gd-option" type="checkbox" data-flag="-v" /> Verbose <code>-v</code></label>
+            <label class="ts-flag"><input class="gd-option" type="checkbox" data-flag="--write-metadata" /> Write metadata <code>--write-metadata</code></label>
+            <label class="ts-flag"><input class="gd-option" type="checkbox" data-flag="--write-info-json" /> Save info JSON <code>--write-info-json</code></label>
+            <label class="ts-flag"><input class="gd-option" type="checkbox" data-flag="--write-tags" /> Write tags <code>--write-tags</code></label>
+            <label class="ts-flag"><input class="gd-option" type="checkbox" data-flag="--no-skip" /> Don't skip existing <code>--no-skip</code></label>
+            <label class="ts-flag"><input class="gd-option" type="checkbox" data-flag="--mtime date" /> Set mtime <code>--mtime date</code></label>
+            <label class="ts-flag"><input class="gd-option" type="checkbox" data-flag="--zip" /> Store as ZIP <code>--zip</code></label>
+          </div>
+
+          <div class="ts-field">
+            <label class="ts-flabel" for="editCommand">Raw command</label>
+            <textarea id="editCommand" name="command_display" rows="2" style="font-family:monospace;font-size:0.75rem"></textarea>
+            <div class="ts-hint">Backend injects <code>--config</code> and <code>--destination</code> automatically.</div>
+            <input type="hidden" id="commandHidden" name="command" />
+          </div>
+
+          <div class="ts-form-actions">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="tsCancelEdit()">Cancel</button>
+            <button type="submit" class="btn btn-sm btn-danger" onclick="tsPrepareSubmit()">Save task</button>
+          </div>
+        </form>
+      </div>
+
+    </div>{# /tsDetail #}
+  </div>{# /ts-main #}
+</div>{# /tasks-shell #}
+
+{# ──────────────────────────────────────────────────────────────── #}
+{# New task modal                                                   #}
+{# ──────────────────────────────────────────────────────────────── #}
+<div class="modal fade" id="newTaskModal" tabindex="-1" aria-labelledby="newTaskModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="newTaskModalLabel">New Task</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="{{ url_for('tasks') }}" id="newTaskForm">
+        <div class="modal-body">
+          <input type="hidden" name="editing_flag" value="0" />
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small" for="newName">Task name</label>
+              <input type="text" id="newName" name="name" class="form-control form-control-sm" required />
+              <div class="form-text">Folder: <code>/tasks/&lt;slug&gt;</code></div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small" for="newSchedule">Cron schedule (optional)</label>
+              <input type="text" id="newSchedule" name="schedule" class="form-control form-control-sm" placeholder="e.g. */30 * * * *" />
+              <div class="form-text">Leave blank for manual-only.</div>
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <label class="form-label fw-semibold small" for="newUrls">URLs <span class="text-muted fw-normal">(one per line)</span></label>
+            <textarea id="newUrls" name="urls" class="form-control form-control-sm" rows="5"
+              placeholder="https://example.com/gallery" required
+              style="font-family:monospace;font-size:0.8rem"></textarea>
+            <div class="form-text">Stored as <code>urls.txt</code>. Large lists can be uploaded via the edit panel after creation.</div>
+          </div>
+
+          <div class="mt-3">
+            <label class="form-label fw-semibold small">gallery-dl flags</label>
+            <div class="row g-1">
+              {% set new_flags = [
+                ('--download-archive archive.sqlite', 'Use archive DB'),
+                ('--write-metadata', 'Write metadata'),
+                ('--write-info-json', 'Save info JSON'),
+                ('--write-tags', 'Write tags'),
+                ('--no-skip', "Don't skip existing"),
+                ('--mtime date', 'Set mtime'),
+                ('--zip', 'Store as ZIP'),
+                ('-v', 'Verbose'),
+              ] %}
+              {% for flag, label in new_flags %}
+              <div class="col-sm-6">
+                <div class="form-check">
+                  <input class="form-check-input new-gd-option" type="checkbox" id="new_{{ loop.index }}" data-flag="{{ flag }}" />
+                  <label class="form-check-label small" for="new_{{ loop.index }}">{{ label }} <code class="text-muted" style="font-size:0.65rem">{{ flag }}</code></label>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <label class="form-label fw-semibold small" for="newCommand">Command preview</label>
+            <textarea id="newCommand" name="command_display" class="form-control form-control-sm" rows="2" style="font-family:monospace;font-size:0.78rem"></textarea>
+            <input type="hidden" id="newCommandHidden" name="command" />
+            <div class="form-text">Backend injects <code>--config</code> and <code>--destination</code>.</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-danger" onclick="newPrepareSubmit()">Create task</button>
+        </div>
+      </form>
+    </div>
+  </div>
 </div>
 
-<!-- Output Panel -->
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card shadow-sm border-secondary">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h2 class="card-title mb-0">Output</h2>
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnToggleOutput"
-                    data-collapsed="true">
-                    Show
-                </button>
-            </div>
-            <div id="outputPanel" class="card-body" style="display: none;">
-                <div class="mb-3">
-                    <label class="form-label" for="taskSelector">Select task to view logs:</label>
-                    <select id="taskSelector" class="form-control">
-                        <option value="">-- Choose a task --</option>
-                        {% for task in tasks %}
-                        <option value="{{ task.slug }}">{{ task.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div id="logContainer" class="bg-dark p-3 rounded"
-                    style="max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.875rem; border: 1px solid #374151;">
-                    <p class="text-muted mb-0">Select a task to view its output...</p>
-                </div>
-                <div class="mt-2">
-                    <small class="text-muted">Auto-refreshing every 1 second - Only the last 50 lines shown. Please
-                        review logs in full for more detail</small>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="row">
-    <div class="col-12">
-        <div class="card shadow-sm border-secondary">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h2 class="card-title mb-0" id="taskFormTitle">Create / Edit Task</h2>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNewTask">
-                        New task
-                    </button>
-                </div>
-
-                <form method="post" action="{{ url_for('tasks') }}" id="taskForm">
-                    <input type="hidden" id="editingFlag" name="editing_flag" value="0" />
-
-                    <div class="row">
-                        <div class="col-md-6">
-                            <h5 class="mb-3">Basic info</h5>
-
-                            <div class="mb-3">
-                                <label class="form-label" for="name">Task name</label>
-                                <input type="text" id="name" name="name" class="form-control" required />
-                                <div class="form-text">
-                                    Used for the folder under <code>/data/tasks/&lt;task-name&gt;</code>.
-                                    Editing a task with the same name will overwrite its settings.
-                                </div>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="form-label" for="urls">URLs (one per line)</label>
-                                <textarea id="urls" name="urls" class="form-control" rows="6" placeholder="https://example.com/image1
-https://example.com/image2" required></textarea>
-                                <div class="form-text">
-                                    Stored as <code>urls.txt</code> in the task folder.
-                                </div>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="form-label" for="schedule">Cron schedule (optional)</label>
-                                <input type="text" id="schedule" name="schedule" class="form-control"
-                                    placeholder="e.g. */5 * * * *" />
-                                <div class="form-text">
-                                    <code>* * * * *</code> = every minute,
-                                    <code>*/5 * * * *</code> = every 5 minutes, etc.
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="col-md-6">
-                            <h5 class="mb-3">gallery-dl options</h5>
-
-                            <div id="optionsHelperPanel">
-                                <p class="text-muted small" id="optionsHelperHint">
-                                    Checkboxes build the command for new tasks. When editing, they add or remove flags from the existing command.
-                                </p>
-
-                                <div id="checkboxesWrapper">
-                                    <div class="row">
-                                        <!-- Left column -->
-                                        <div class="col-sm-6">
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_metadata"
-                                                    data-flag="--write-metadata" />
-                                                <label class="form-check-label" for="opt_metadata">
-                                                    Write metadata (<code>--write-metadata</code>)
-                                                </label>
-                                            </div>
-
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_metadata_json"
-                                                    data-flag="--write-info-json" />
-                                                <label class="form-check-label" for="opt_metadata_json">
-                                                    Save info JSON (<code>--write-info-json</code>)
-                                                </label>
-                                            </div>
-
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_write_tags"
-                                                    data-flag="--write-tags" />
-                                                <label class="form-check-label" for="opt_write_tags">
-                                                    Write tags (<code>--write-tags</code>)
-                                                </label>
-                                            </div>
-
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_mtime"
-                                                    data-flag="--mtime date" />
-                                                <label class="form-check-label" for="opt_mtime">
-                                                    Set mtime from date (<code>--mtime date</code>)
-                                                </label>
-                                            </div>
-
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_zip"
-                                                    data-flag="--zip" />
-                                                <label class="form-check-label" for="opt_zip">
-                                                    Store in ZIP (<code>--zip</code>)
-                                                </label>
-                                            </div>
-                                        </div>
-
-                                        <!-- Right column -->
-                                        <div class="col-sm-6">
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_archive"
-                                                    data-flag="--download-archive archive.sqlite" />
-                                                <label class="form-check-label" for="opt_archive">
-                                                    Use archive DB (<code>--download-archive archive.sqlite</code>)
-                                                </label>
-                                            </div>
-
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_no_skip"
-                                                    data-flag="--no-skip" />
-                                                <label class="form-check-label" for="opt_no_skip">
-                                                    Don't skip existing (<code>--no-skip</code>)
-                                                </label>
-                                            </div>
-
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_verbose"
-                                                    data-flag="-v" />
-                                                <label class="form-check-label" for="opt_verbose">
-                                                    Verbose (<code>-v</code>)
-                                                </label>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div><!-- /checkboxesWrapper -->
-                            </div><!-- /optionsHelperPanel -->
-
-                            <div class="mt-3">
-                                <label class="form-label" for="commandPreview">Command</label>
-                                <textarea id="commandPreview" class="form-control" rows="3"
-                                    name="command_display"></textarea>
-                                <div class="form-text">
-                                    For new tasks, this is built from the options above.
-                                    For existing tasks, edit this directly. The backend will
-                                    still ensure <code>--config /data/config/gallery-dl.conf</code>
-                                    and <code>--destination /downloads</code> are present.
-                                </div>
-                            </div>
-
-                            <input type="hidden" id="command" name="command" />
-                        </div>
-                    </div>
-
-                    <div class="mt-4">
-                        <button type="submit" class="btn btn-danger">
-                            Save task
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-
+{# ──────────────────────────────────────────────────────────────── #}
+{# JavaScript                                                       #}
+{# ──────────────────────────────────────────────────────────────── #}
 <script>
-    (function () {
-        let isEditingExistingTask = false;
-        let outputPollInterval = null;
-        let shouldAutoScroll = true;
+(function () {
+  /* ── State ─────────────────────────────────────────────────── */
+  let selectedSlug = null;
+  let logPollInterval = null;
+  let logAutoScroll = true;
+  let taskPollInterval = null;
+  // In-memory url list for the currently edited task
+  // null = large file (don't load into memory)
+  let editUrlList = null;
+  const URL_INLINE_LIMIT = 200; // lines — above this we show summary only
 
-        const nameInput = document.getElementById("name");
-        const urlsTextarea = document.getElementById("urls");
-        const scheduleInput = document.getElementById("schedule");
-        const commandPreview = document.getElementById("commandPreview");
-        const commandHidden = document.getElementById("command");
-        const editingFlag = document.getElementById("editingFlag");
-        const taskFormTitle = document.getElementById("taskFormTitle");
-        const btnNewTask = document.getElementById("btnNewTask");
-        const checkboxesWrapper = document.getElementById("checkboxesWrapper");
+  /* ── DOM refs ───────────────────────────────────────────────── */
+  const tsDetail      = document.getElementById('tsDetail');
+  const tsEmptyState  = document.getElementById('tsEmptyState');
+  const detailName    = document.getElementById('detailName');
+  const detailBadge   = document.getElementById('detailBadge');
+  const detailActions = document.getElementById('detailActions');
+  const logContainer  = document.getElementById('logContainer');
 
-        // Output panel elements
-        const btnToggleOutput = document.getElementById("btnToggleOutput");
-        const outputPanel = document.getElementById("outputPanel");
-        const taskSelector = document.getElementById("taskSelector");
-        const logContainer = document.getElementById("logContainer");
+  /* ── Helpers ────────────────────────────────────────────────── */
+  function badgeClass(status) {
+    switch (status) {
+      case 'running':  return 'bg-primary';
+      case 'error':    return 'bg-danger';
+      case 'complete': return 'bg-success';
+      case 'paused':   return 'bg-warning text-dark';
+      default:         return 'bg-secondary';
+    }
+  }
 
-        function buildCommandFromOptions() {
-            const flags = [];
-            document.querySelectorAll(".gd-option:checked").forEach(function (cb) {
-                const flag = cb.getAttribute("data-flag");
-                if (flag) flags.push(flag);
-            });
+  function formatLastRun(lr) {
+    if (!lr) return 'Never';
+    return lr.slice(0, 19).replace('T', ' ') + ' UTC';
+  }
 
-            let cmd = "gallery-dl";
-            if (flags.length > 0) {
-                cmd += " " + flags.join(" ");
-            }
-            cmd += " --input-file urls.txt";
-            return cmd;
+  function countLines(str) {
+    if (!str) return 0;
+    return str.split('\n').filter(l => l.trim() !== '').length;
+  }
+
+  function parseLogColors(text) {
+    text = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const map = {warning:'log-warning', error:'log-error', success:'log-success', info:'log-info', debug:'log-debug'};
+    for (const [k, cls] of Object.entries(map)) {
+      text = text.replace(new RegExp(`\\[(${k})\\]`, 'gi'),
+        (_, m) => `<span class="${cls}">[${m}]</span>`);
+    }
+    return text;
+  }
+
+  /* ── Select task ────────────────────────────────────────────── */
+  function selectTask(el) {
+    document.querySelectorAll('.ts-item').forEach(i => i.classList.remove('active'));
+    el.classList.add('active');
+
+    const slug     = el.dataset.slug;
+    const name     = el.dataset.name;
+    const urls     = el.dataset.urls || '';
+    const schedule = el.dataset.schedule || '';
+    const command  = el.dataset.command || '';
+    const status   = el.dataset.status || 'idle';
+    const lastRun  = el.dataset.lastrun || '';
+
+    selectedSlug = slug;
+
+    // Show detail panel
+    tsEmptyState.style.display = 'none';
+    tsDetail.style.display = 'flex';
+
+    // Header
+    detailName.textContent = name;
+    detailBadge.className = 'badge ' + badgeClass(status);
+    detailBadge.textContent = status;
+
+    // Action buttons (forms pointing at the correct slug)
+    detailActions.innerHTML = `
+      <form method="post" action="/tasks/${slug}/action" class="m-0">
+        <input type="hidden" name="action" value="run">
+        <button type="submit" class="btn btn-sm btn-outline-success" ${status === 'running' ? 'disabled' : ''}>&#9654; Run</button>
+      </form>
+      <form method="post" action="/tasks/${slug}/action" class="m-0">
+        <input type="hidden" name="action" value="pause">
+        <button type="submit" class="btn btn-sm ${status === 'paused' ? 'btn-outline-warning' : 'btn-outline-secondary'}">
+          ${status === 'paused' ? '&#9654; Unpause' : '&#9646;&#9646; Pause'}
+        </button>
+      </form>
+      <form method="post" action="/tasks/${slug}/action" class="m-0"
+            onsubmit="return confirm('Delete task &quot;${name}&quot;? This will remove its folder and all logs.');">
+        <input type="hidden" name="action" value="delete">
+        <button type="submit" class="btn btn-sm btn-outline-danger">&#10005; Delete</button>
+      </form>`;
+
+    // Overview pane
+    document.getElementById('ov-lastrun').textContent = formatLastRun(lastRun);
+    document.getElementById('ov-sched').textContent   = schedule || 'Manual';
+    document.getElementById('ov-status').textContent  = status;
+    document.getElementById('ov-cmd').textContent     = command;
+
+    // URL count
+    const lineCount = countLines(urls);
+    document.getElementById('ov-urlcount').textContent = lineCount.toLocaleString() + ' URL' + (lineCount !== 1 ? 's' : '');
+    document.getElementById('ov-urlfile').textContent  = 'urls.txt';
+
+    // Running progress section
+    document.getElementById('ovProgressSection').style.display = status === 'running' ? 'block' : 'none';
+
+    // Download links
+    const dlUrl = `/tasks/${slug}/logs/download`;
+    document.getElementById('logsDownloadBtn').href = dlUrl;
+    document.getElementById('logTaskName').textContent = '— ' + name;
+    document.getElementById('ovDownloadUrls').href = '#'; // no url-download route yet, placeholder
+
+    // Populate edit form
+    document.getElementById('editName').value     = name;
+    document.getElementById('editSchedule').value = schedule;
+    document.getElementById('editCommand').value  = command;
+    document.getElementById('commandHidden').value = command;
+    document.getElementById('editDownloadUrls').href = '#';
+    syncCheckboxesToCommand(command);
+
+    // URL handling in edit form
+    const urlLines = urls ? urls.split('\n').filter(l => l.trim()) : [];
+    document.getElementById('editUrlCount').textContent = urlLines.length.toLocaleString() + ' URLs in urls.txt';
+    document.getElementById('urlsHidden').value = urls;
+
+    const urlListEl    = document.getElementById('editUrlList');
+    const urlOverflowEl = document.getElementById('editUrlOverflow');
+
+    if (urlLines.length > 0 && urlLines.length <= URL_INLINE_LIMIT) {
+      editUrlList = [...urlLines];
+      renderUrlList();
+      urlOverflowEl.style.display = 'none';
+    } else if (urlLines.length > URL_INLINE_LIMIT) {
+      editUrlList = null;
+      urlListEl.innerHTML = '';
+      urlOverflowEl.style.display = 'block';
+      urlOverflowEl.innerHTML =
+        `File has <strong>${urlLines.length.toLocaleString()}</strong> URLs — too large to preview inline. ` +
+        `Use the download button to view or edit the full file. You can append individual URLs above, or use "Replace file…" to paste a new list.`;
+    } else {
+      editUrlList = [];
+      urlListEl.innerHTML = '';
+      urlOverflowEl.style.display = 'none';
+    }
+
+    // Start log polling
+    stopLogPoll();
+    fetchLogs(slug);
+    if (status === 'running') startLogPoll(slug);
+  }
+
+  /* ── URL list rendering ─────────────────────────────────────── */
+  function renderUrlList() {
+    const el = document.getElementById('editUrlList');
+    if (!editUrlList) { el.innerHTML = ''; return; }
+    el.innerHTML = editUrlList.map((u, i) =>
+      `<div class="ts-url-row">
+        <span title="${u}">${u}</span>
+        <button type="button" class="ts-url-rm" onclick="tsRemoveUrl(${i})" title="Remove">✕</button>
+      </div>`
+    ).join('');
+  }
+
+  window.tsRemoveUrl = function(i) {
+    if (!editUrlList) return;
+    editUrlList.splice(i, 1);
+    document.getElementById('urlsHidden').value = editUrlList.join('\n');
+    document.getElementById('editUrlCount').textContent = editUrlList.length.toLocaleString() + ' URLs in urls.txt';
+    renderUrlList();
+  };
+
+  window.tsAppendUrl = function() {
+    const input = document.getElementById('appendUrlInput');
+    const val = input.value.trim();
+    if (!val) return;
+    if (editUrlList !== null) {
+      editUrlList.push(val);
+      document.getElementById('urlsHidden').value = editUrlList.join('\n');
+      document.getElementById('editUrlCount').textContent = editUrlList.length.toLocaleString() + ' URLs in urls.txt';
+      renderUrlList();
+    } else {
+      // Large file — we can't hold it in memory; just note that append
+      // needs to go via the hidden field. Warn user.
+      alert('This task has a large URL file. Append is not supported in the browser for files above ' + URL_INLINE_LIMIT + ' URLs. Download urls.txt, edit it locally, then use "Replace file…" to re-upload.');
+    }
+    input.value = '';
+  };
+
+  window.tsToggleReplace = function() {
+    const area = document.getElementById('replaceArea');
+    area.style.display = area.style.display === 'none' ? 'block' : 'none';
+  };
+
+  window.tsConfirmReplace = function() {
+    const text = document.getElementById('replaceTextarea').value.trim();
+    if (!text) return;
+    const lines = text.split('\n').filter(l => l.trim());
+    if (!confirm(`Replace all current URLs with ${lines.length.toLocaleString()} new URLs?`)) return;
+    editUrlList = lines.length <= URL_INLINE_LIMIT ? [...lines] : null;
+    document.getElementById('urlsHidden').value = text;
+    document.getElementById('editUrlCount').textContent = lines.length.toLocaleString() + ' URLs in urls.txt';
+    if (editUrlList) renderUrlList();
+    else {
+      document.getElementById('editUrlList').innerHTML = '';
+      document.getElementById('editUrlOverflow').style.display = 'block';
+      document.getElementById('editUrlOverflow').innerHTML =
+        `Replaced with <strong>${lines.length.toLocaleString()}</strong> URLs. Save to apply.`;
+    }
+    tsToggleReplace();
+    document.getElementById('replaceTextarea').value = '';
+  };
+
+  /* ── Tab switching ──────────────────────────────────────────── */
+  document.querySelectorAll('.ts-tab').forEach(tab => {
+    tab.addEventListener('click', function () {
+      document.querySelectorAll('.ts-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.ts-pane').forEach(p => p.classList.remove('active'));
+      this.classList.add('active');
+      document.getElementById('pane-' + this.dataset.tab).classList.add('active');
+
+      if (this.dataset.tab === 'logs' && selectedSlug) {
+        fetchLogs(selectedSlug);
+        if (document.querySelector('.ts-item.active')?.dataset.status === 'running') {
+          startLogPoll(selectedSlug);
         }
+      } else {
+        stopLogPoll();
+      }
+    });
+  });
 
-        function syncHiddenFromPreview() {
-            if (!commandHidden || !commandPreview) return;
-            commandHidden.value = commandPreview.value;
+  /* ── Log fetching ───────────────────────────────────────────── */
+  function fetchLogs(slug) {
+    if (!slug) return;
+    fetch(`/tasks/${slug}/logs?tail=50`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) {
+          logContainer.innerHTML = `<span class="log-error">${data.error}</span>`;
+        } else {
+          logContainer.innerHTML = `<pre style="margin:0">${parseLogColors(data.content || '')}</pre>`;
+          if (logAutoScroll) logContainer.scrollTop = logContainer.scrollHeight;
         }
+      })
+      .catch(err => {
+        logContainer.innerHTML = `<span class="log-error">Failed: ${err.message}</span>`;
+      });
+  }
 
-        function updateCommandPreview() {
-            if (isEditingExistingTask) {
-                syncHiddenFromPreview();
-                return;
-            }
-            if (!commandPreview) return;
-            commandPreview.value = buildCommandFromOptions();
-            syncHiddenFromPreview();
-        }
+  function startLogPoll(slug) {
+    if (logPollInterval) return;
+    logPollInterval = setInterval(() => fetchLogs(slug), 2000);
+  }
 
-        function setEditMode(editing) {
-            isEditingExistingTask = editing;
-            commandPreview.readOnly = false;
-        }
+  function stopLogPoll() {
+    if (logPollInterval) { clearInterval(logPollInterval); logPollInterval = null; }
+  }
 
-        // Tick/untick checkboxes to match flags already in the command string
-        function syncCheckboxesToCommand(cmd) {
-            document.querySelectorAll(".gd-option").forEach(function (cb) {
-                const flag = cb.getAttribute("data-flag");
-                cb.checked = flag ? cmd.includes(flag) : false;
-            });
-        }
+  logContainer.addEventListener('scroll', function () {
+    logAutoScroll = this.scrollTop + this.clientHeight >= this.scrollHeight - 10;
+  });
 
-        // In edit mode: add or remove a flag token from the existing command string
-        function toggleFlagInCommand(flag, checked) {
-            let cmd = commandPreview.value;
-            if (checked) {
-                // Insert before --input-file, or append if not present
-                if (cmd.includes("--input-file")) {
-                    cmd = cmd.replace("--input-file", flag + " --input-file");
-                } else {
-                    cmd = cmd.trimEnd() + " " + flag;
-                }
+  /* ── Task list polling (/api/tasks every 5s) ────────────────── */
+  function pollTasks() {
+    fetch('/api/tasks')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+        data.forEach(task => {
+          const item = document.querySelector(`.ts-item[data-slug="${task.slug}"]`);
+          if (!item) return;
+
+          // Update data attrs
+          item.dataset.status  = task.status;
+          item.dataset.lastrun = task.last_run || '';
+
+          // Badge in sidebar
+          const badge = item.querySelector('.ts-status-badge');
+          if (badge) {
+            badge.className = 'badge ts-status-badge ' + badgeClass(task.status);
+            badge.textContent = task.status;
+          }
+
+          // If this is the currently selected task, update the detail header too
+          if (task.slug === selectedSlug) {
+            detailBadge.className = 'badge ' + badgeClass(task.status);
+            detailBadge.textContent = task.status;
+            document.getElementById('ov-status').textContent  = task.status;
+            document.getElementById('ov-lastrun').textContent = formatLastRun(task.last_run);
+            document.getElementById('ovProgressSection').style.display =
+              task.status === 'running' ? 'block' : 'none';
+
+            // Start/stop log polling based on running state
+            if (task.status === 'running') {
+              startLogPoll(task.slug);
             } else {
-                // Remove the flag (escape regex special chars)
-                const escaped = flag.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
-                cmd = cmd.replace(new RegExp('\\s*' + escaped, 'g'), '');
-            }
-            commandPreview.value = cmd.replace(/\s+/g, ' ').trim();
-            syncHiddenFromPreview();
-        }
-
-        // Output panel functions
-        function toggleOutputPanel() {
-            const isCollapsed = btnToggleOutput.getAttribute("data-collapsed") === "true";
-            if (isCollapsed) {
-                outputPanel.style.display = "block";
-                btnToggleOutput.textContent = "Hide";
-                btnToggleOutput.setAttribute("data-collapsed", "false");
-                startOutputPolling();
-            } else {
-                outputPanel.style.display = "none";
-                btnToggleOutput.textContent = "Show";
-                btnToggleOutput.setAttribute("data-collapsed", "true");
-                stopOutputPolling();
-            }
-        }
-
-        function parseLogColors(text) {
-            const levelMap = {
-                'warning': 'log-warning',
-                'error': 'log-error',
-                'success': 'log-success',
-                'info': 'log-info',
-                'debug': 'log-debug'
-            };
-
-            text = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-            for (const [level, cssClass] of Object.entries(levelMap)) {
-                const pattern = new RegExp(`\\[${level}\\]`, 'gi');
-                text = text.replace(pattern, `<span class="${cssClass}">[$&]</span>`);
+              stopLogPoll();
             }
 
-            return text;
-        }
-
-        function fetchTaskLogs(slug) {
-            if (!slug) {
-                logContainer.innerHTML = '<p class="text-muted mb-0">Select a task to view its output...</p>';
-                return;
+            // Refresh action buttons
+            const runBtn   = detailActions.querySelector('button[type="submit"]:first-of-type');
+            const pauseBtn = detailActions.querySelectorAll('button[type="submit"]')[1];
+            if (runBtn)   runBtn.disabled = task.status === 'running';
+            if (pauseBtn) {
+              pauseBtn.className = 'btn btn-sm ' + (task.status === 'paused' ? 'btn-outline-warning' : 'btn-outline-secondary');
+              pauseBtn.innerHTML = task.status === 'paused' ? '&#9654; Unpause' : '&#9646;&#9646; Pause';
             }
-
-            fetch(`/tasks/${slug}/logs?tail=50`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        logContainer.innerHTML = `<p class="text-danger mb-0">Error: ${data.error}</p>`;
-                    } else {
-                        const coloredContent = parseLogColors(data.content || "");
-                        logContainer.innerHTML = `<pre>${coloredContent}</pre>`;
-                        if (shouldAutoScroll) {
-                            logContainer.scrollTop = logContainer.scrollHeight;
-                        }
-                    }
-                })
-                .catch(err => {
-                    logContainer.innerHTML = `<p class="text-danger mb-0">Failed to fetch logs: ${err.message}</p>`;
-                });
-        }
-
-        function startOutputPolling() {
-            if (outputPollInterval) return;
-            outputPollInterval = setInterval(() => {
-                const slug = taskSelector.value;
-                if (slug) fetchTaskLogs(slug);
-            }, 1000);
-        }
-
-        function stopOutputPolling() {
-            if (outputPollInterval) {
-                clearInterval(outputPollInterval);
-                outputPollInterval = null;
-            }
-        }
-
-        logContainer.addEventListener("scroll", function () {
-            const isAtBottom = logContainer.scrollTop + logContainer.clientHeight >= logContainer.scrollHeight - 10;
-            shouldAutoScroll = isAtBottom;
+          }
         });
+      })
+      .catch(() => {});
+  }
 
-        document.addEventListener("DOMContentLoaded", function () {
-            // Hook checkbox changes
-            document.querySelectorAll(".gd-option").forEach(function (cb) {
-                cb.addEventListener("change", function () {
-                    if (isEditingExistingTask) {
-                        // Patch the existing command directly
-                        toggleFlagInCommand(this.getAttribute("data-flag"), this.checked);
-                    } else {
-                        // Rebuild command from scratch
-                        updateCommandPreview();
-                    }
-                });
-            });
+  document.addEventListener('DOMContentLoaded', function () {
+    pollTasks();
+    taskPollInterval = setInterval(pollTasks, 5000);
+  });
 
-            // Keep hidden command in sync if user types directly
-            if (commandPreview) {
-                commandPreview.addEventListener("input", function () {
-                    syncHiddenFromPreview();
-                });
-            }
+  /* ── Search ─────────────────────────────────────────────────── */
+  document.getElementById('tsSearchInput').addEventListener('input', function () {
+    const q = this.value.toLowerCase();
+    document.querySelectorAll('.ts-item').forEach(item => {
+      item.style.display = item.dataset.name.toLowerCase().includes(q) ? '' : 'none';
+    });
+  });
 
-            // Output panel
-            if (btnToggleOutput) {
-                btnToggleOutput.addEventListener("click", toggleOutputPanel);
-            }
+  /* ── Sidebar item clicks ────────────────────────────────────── */
+  document.querySelectorAll('.ts-item').forEach(item => {
+    item.addEventListener('click', function () { selectTask(this); });
+  });
 
-            if (taskSelector) {
-                taskSelector.addEventListener("change", function () {
-                    fetchTaskLogs(this.value);
-                });
-            }
+  /* ── New task button → modal ────────────────────────────────── */
+  document.getElementById('btnNewTask').addEventListener('click', function () {
+    const modal = new bootstrap.Modal(document.getElementById('newTaskModal'));
+    modal.show();
+  });
 
-            // Edit buttons
-            document.querySelectorAll(".btn-edit-task").forEach(function (btn) {
-                btn.addEventListener("click", function () {
-                    const name = this.getAttribute("data-name") || "";
-                    const urls = this.getAttribute("data-urls") || "";
-                    const schedule = this.getAttribute("data-schedule") || "";
-                    const command = this.getAttribute("data-command") || "";
+  /* ── Edit form: flag checkboxes ─────────────────────────────── */
+  function syncCheckboxesToCommand(cmd) {
+    document.querySelectorAll('.gd-option').forEach(cb => {
+      cb.checked = cmd.includes(cb.dataset.flag);
+    });
+  }
 
-                    nameInput.value = name;
-                    urlsTextarea.value = urls;
-                    scheduleInput.value = schedule;
-                    commandPreview.value = command;
-                    syncHiddenFromPreview();
-                    syncCheckboxesToCommand(command);
+  function toggleFlagInCommand(flag, checked) {
+    let cmd = document.getElementById('editCommand').value;
+    if (checked) {
+      cmd = cmd.includes('--input-file')
+        ? cmd.replace('--input-file', flag + ' --input-file')
+        : cmd.trimEnd() + ' ' + flag;
+    } else {
+      const esc = flag.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+      cmd = cmd.replace(new RegExp('\\s*' + esc, 'g'), '');
+    }
+    cmd = cmd.replace(/\s+/g, ' ').trim();
+    document.getElementById('editCommand').value  = cmd;
+    document.getElementById('commandHidden').value = cmd;
+  }
 
-                    editingFlag.value = "1";
-                    taskFormTitle.textContent = "Edit Task: " + name;
-                    setEditMode(true);
+  document.querySelectorAll('.gd-option').forEach(cb => {
+    cb.addEventListener('change', function () {
+      toggleFlagInCommand(this.dataset.flag, this.checked);
+    });
+  });
 
-                    document.getElementById("taskForm").scrollIntoView({ behavior: "smooth", block: "start" });
-                });
-            });
+  document.getElementById('editCommand').addEventListener('input', function () {
+    document.getElementById('commandHidden').value = this.value;
+  });
 
-            // "New task" button: reset to builder mode
-            if (btnNewTask) {
-                btnNewTask.addEventListener("click", function () {
-                    document.getElementById("taskForm").reset();
-                    editingFlag.value = "0";
-                    taskFormTitle.textContent = "Create / Edit Task";
-                    setEditMode(false);
-                    updateCommandPreview();
-                });
-            }
+  /* ── Edit form: cancel ──────────────────────────────────────── */
+  window.tsCancelEdit = function () {
+    document.querySelector('.ts-tab[data-tab="overview"]').click();
+  };
 
-            // Initial state: new task mode
-            setEditMode(false);
-            updateCommandPreview();
-        });
-    })();
-</script>
+  /* ── Edit form: prepare submit (sync hidden fields) ─────────── */
+  window.tsPrepareSubmit = function () {
+    document.getElementById('commandHidden').value = document.getElementById('editCommand').value;
+    // urlsHidden is already kept in sync by the URL management functions
+  };
 
-<script>
-    (function () {
-        function statusClassFor(status) {
-            switch (status) {
-                case 'running':  return 'bg-primary';
-                case 'error':    return 'bg-danger';
-                case 'complete': return 'bg-success';
-                case 'paused':   return 'bg-warning text-dark';
-                default:         return 'bg-secondary';
-            }
-        }
+  /* ── New task modal: flag checkboxes ────────────────────────── */
+  function buildNewCommand() {
+    const flags = [];
+    document.querySelectorAll('.new-gd-option:checked').forEach(cb => {
+      if (cb.dataset.flag) flags.push(cb.dataset.flag);
+    });
+    return 'gallery-dl' + (flags.length ? ' ' + flags.join(' ') : '') + ' --input-file urls.txt';
+  }
 
-        function updateFromData(tasks) {
-            tasks.forEach(function (task) {
-                var tr = document.querySelector('tr[data-slug="' + task.slug + '"]');
-                if (!tr) return;
+  document.querySelectorAll('.new-gd-option').forEach(cb => {
+    cb.addEventListener('change', function () {
+      const cmd = buildNewCommand();
+      document.getElementById('newCommand').value       = cmd;
+      document.getElementById('newCommandHidden').value = cmd;
+    });
+  });
 
-                var badge = tr.querySelector('.task-status-badge');
-                if (badge) {
-                    badge.className = 'badge ' + statusClassFor(task.status) + ' task-status-badge';
-                    badge.textContent = task.status;
-                }
+  document.getElementById('newCommand').addEventListener('input', function () {
+    document.getElementById('newCommandHidden').value = this.value;
+  });
 
-                var lrCell = tr.querySelector('.task-last-run');
-                if (lrCell) {
-                    if (task.last_run) {
-                        lrCell.textContent = task.last_run.slice(0, 19).replace('T', ' ') + ' UTC';
-                    } else {
-                        lrCell.innerHTML = '<span class="text-muted">Never</span>';
-                    }
-                }
+  window.newPrepareSubmit = function () {
+    document.getElementById('newCommandHidden').value = document.getElementById('newCommand').value;
+  };
 
-                var runBtn = tr.querySelector('.task-run-btn');
-                if (runBtn) {
-                    runBtn.disabled = (task.status === 'running');
-                }
+  // Init new task command preview
+  document.addEventListener('DOMContentLoaded', function () {
+    const cmd = buildNewCommand();
+    document.getElementById('newCommand').value       = cmd;
+    document.getElementById('newCommandHidden').value = cmd;
+  });
 
-                var pauseBtn = tr.querySelector('.task-pause-btn');
-                if (pauseBtn) {
-                    if (task.status === 'paused') {
-                        pauseBtn.textContent = 'Unpause';
-                        pauseBtn.className = 'btn btn-sm btn-outline-warning task-pause-btn';
-                    } else {
-                        pauseBtn.textContent = 'Pause';
-                        pauseBtn.className = 'btn btn-sm btn-outline-secondary task-pause-btn';
-                    }
-                }
-            });
-        }
+  /* ── Auto-select first task on load ────────────────────────── */
+  document.addEventListener('DOMContentLoaded', function () {
+    const first = document.querySelector('.ts-item');
+    if (first) selectTask(first);
+  });
 
-        async function poll() {
-            try {
-                var resp = await fetch('/api/tasks');
-                if (!resp.ok) return;
-                var data = await resp.json();
-                updateFromData(data);
-            } catch (e) {
-                // ignore transient errors
-            }
-        }
-
-        document.addEventListener('DOMContentLoaded', function () {
-            poll();
-            setInterval(poll, 5000);
-        });
-    })();
+})();
 </script>
 
 {% endblock %}
