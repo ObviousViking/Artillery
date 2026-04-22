@@ -1,23 +1,72 @@
+/* Theme color variables */
+:root[data-theme="dark"] {
+    --bg-primary: #000000;
+    --bg-secondary: #050505;
+    --bg-tertiary: #020617;
+    --text-primary: #f8f9fa;
+    --text-secondary: #e5e7eb;
+    --text-muted: #c2c2c2;
+    --border-color: #111827;
+    --border-input: #374151;
+    --focus-color: #f97316;
+    --focus-shadow: rgba(249, 115, 22, 0.25);
+    --code-color: #f97373;
+    --btn-hover-bg: #020617;
+}
+
+:root[data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f5f5f5;
+    --bg-tertiary: #eeeeee;
+    --text-primary: #1f2937;
+    --text-secondary: #374151;
+    --text-muted: #6b7280;
+    --border-color: #e5e7eb;
+    --border-input: #d1d5db;
+    --focus-color: #f97316;
+    --focus-shadow: rgba(249, 115, 22, 0.25);
+    --code-color: #dc2626;
+    --btn-hover-bg: #f3f4f6;
+}
+
+/* Default to dark theme */
+:root {
+    --bg-primary: #000000;
+    --bg-secondary: #050505;
+    --bg-tertiary: #020617;
+    --text-primary: #f8f9fa;
+    --text-secondary: #e5e7eb;
+    --text-muted: #c2c2c2;
+    --border-color: #111827;
+    --border-input: #374151;
+    --focus-color: #f97316;
+    --focus-shadow: rgba(249, 115, 22, 0.25);
+    --code-color: #f97373;
+    --btn-hover-bg: #020617;
+}
+
 body {
-    background: #000000;
-    color: #f8f9fa;
+    background: var(--bg-primary);
+    color: var(--text-primary);
     padding-top: 80px; /* Account for fixed navbar */
+    transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Cards */
 .card {
-    background-color: #050505;
-    border-color: #111827;
+    background-color: var(--bg-secondary);
+    border-color: var(--border-color);
+    transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 /* Tables */
 .table {
-    color: #e5e7eb;
+    color: var(--text-secondary);
     vertical-align: middle;
 }
 
 .table thead {
-    color: #d1d5db;
+    color: var(--text-secondary);
 }
 
 /* Inputs / textarea */
@@ -25,17 +74,17 @@ textarea.form-control,
 input.form-control,
 select.form-control,
 .form-control {
-    background-color: #050505;
-    color: #e5e7eb;
-    border-color: #374151;
+    background-color: var(--bg-secondary);
+    color: var(--text-secondary);
+    border-color: var(--border-input);
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
-
 .form-control:focus {
-    background-color: #020617;
-    color: #f9fafb;
-    border-color: #f97316;
-    box-shadow: 0 0 0 0.2rem rgba(249, 115, 22, 0.25);
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-color: var(--focus-color);
+    box-shadow: 0 0 0 0.2rem var(--focus-shadow);
 }
 
 /* Main text & labels nice and bright */
@@ -44,7 +93,7 @@ select.form-control,
 .card-body,
 .card-body p,
 .card-body li {
-    color: #f8f9fa;
+    color: var(--text-primary);
 }
 
 /* Helper / muted / small text slightly dimmer but still easy to read */
@@ -52,33 +101,33 @@ select.form-control,
 .text-muted,
 small,
 .small {
-    color: #c2c2c2 !important;
+    color: var(--text-muted) !important;
 }
 
 /* Code snippets (like --write-metadata) */
 code {
-    color: #f97373;
+    color: var(--code-color);
 }
 
 /* Buttons – optional but nice on dark bg */
 .btn-outline-light {
-    color: #f8f9fa;
-    border-color: #6b7280;
+    color: var(--text-primary);
+    border-color: var(--text-muted);
 }
 
 .btn-outline-light:hover {
-    background-color: #f8f9fa;
-    color: #020617;
+    background-color: var(--text-primary);
+    color: var(--bg-primary);
 }
 
 .btn-outline-secondary {
-    color: #e5e7eb;
-    border-color: #6b7280;
+    color: var(--text-secondary);
+    border-color: var(--text-muted);
 }
 
 .btn-outline-secondary:hover {
-    background-color: #e5e7eb;
-    color: #020617;
+    background-color: var(--text-secondary);
+    color: var(--bg-primary);
 }
 
 .btn-outline-warning {
@@ -88,7 +137,7 @@ code {
 
 .btn-outline-warning:hover {
     background-color: #facc15;
-    color: #020617;
+    color: var(--bg-primary);
 }
 
 .btn-outline-danger {
@@ -98,7 +147,7 @@ code {
 
 .btn-outline-danger:hover {
     background-color: #f97373;
-    color: #020617;
+    color: var(--bg-primary);
 }
 
 .btn-danger {
@@ -109,6 +158,33 @@ code {
 .btn-danger:hover {
     background-color: #e53e3e;
     border-color: #e53e3e;
+}
+
+/* Theme toggle button styling */
+#themeToggle {
+    color: var(--text-primary);
+    border: none;
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+}
+
+#themeToggle:hover {
+    opacity: 0.7;
+}
+
+#themeToggle:focus {
+    box-shadow: none;
+    outline: 1px solid var(--text-primary);
+    outline-offset: 2px;
+}
+
+.theme-icon {
+    display: inline-block;
 }
 
 
@@ -203,18 +279,20 @@ code {
 
 /* Output panel styles */
 .card-header {
-    background-color: #050505;
-    border-bottom: 1px solid #374151;
-    color: #f8f9fa;
+    background-color: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-input);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 #logContainer {
-    background-color: #050505 !important;
+    background-color: var(--bg-secondary) !important;
     word-break: break-word;
+    transition: background-color 0.3s ease;
 }
 
 #logContainer pre {
-    color: #d4d4d4;
+    color: var(--text-secondary);
     margin: 0;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -228,16 +306,17 @@ code {
 #logContainer .log-debug   { color: #F0F0F0; }                     /* white */
 
 #taskSelector.form-control {
-    background-color: #050505;
-    color: #e5e7eb;
-    border-color: #374151;
+    background-color: var(--bg-secondary);
+    color: var(--text-secondary);
+    border-color: var(--border-input);
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
 #taskSelector.form-control:focus {
-    background-color: #020617;
-    color: #f9fafb;
-    border-color: #f97316;
-    box-shadow: 0 0 0 0.2rem rgba(249, 115, 22, 0.25);
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-color: var(--focus-color);
+    box-shadow: 0 0 0 0.2rem var(--focus-shadow);
 }
 
 .task-action-group {

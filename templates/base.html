@@ -67,7 +67,11 @@
                             GitHub
                         </a>
                     </li>
-                    
+                    <li class="nav-item">
+                        <button id="themeToggle" class="nav-link btn btn-link" type="button" title="Toggle dark/light mode">
+                            <i class="theme-icon"></i>
+                        </button>
+                    </li>
                 </ul>
             </div>
         </div>
@@ -98,6 +102,62 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
         integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
         crossorigin="anonymous"></script>
+
+    <!-- Dark mode toggle script -->
+    <script>
+        const THEME_KEY = 'artillery-theme';
+        const DARK_THEME = 'dark';
+        const LIGHT_THEME = 'light';
+
+        function getSystemPreference() {
+            return window.matchMedia('(prefers-color-scheme: dark)').matches ? DARK_THEME : LIGHT_THEME;
+        }
+
+        function getCurrentTheme() {
+            const stored = localStorage.getItem(THEME_KEY);
+            if (stored) return stored;
+            return getSystemPreference();
+        }
+
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem(THEME_KEY, theme);
+            updateToggleIcon(theme);
+        }
+
+        function updateToggleIcon(theme) {
+            const icon = document.querySelector('.theme-icon');
+            if (theme === DARK_THEME) {
+                icon.className = 'theme-icon';
+                icon.textContent = '☀️'; // Sun icon for switching to light
+            } else {
+                icon.className = 'theme-icon';
+                icon.textContent = '🌙'; // Moon icon for switching to dark
+            }
+        }
+
+        function toggleTheme() {
+            const current = getCurrentTheme();
+            const next = current === DARK_THEME ? LIGHT_THEME : DARK_THEME;
+            applyTheme(next);
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const theme = getCurrentTheme();
+            applyTheme(theme);
+
+            const toggle = document.getElementById('themeToggle');
+            if (toggle) {
+                toggle.addEventListener('click', toggleTheme);
+            }
+        });
+
+        // Apply theme before page renders to avoid flashing
+        const initialTheme = getCurrentTheme();
+        document.documentElement.setAttribute('data-theme', initialTheme);
+        updateToggleIcon(initialTheme);
+    </script></output>
 
     <!-- Swiper JS (before closing body) -->
     <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
