@@ -61,12 +61,22 @@ body {
 
 /* Tables */
 .table {
-    color: var(--text-secondary);
+    color: var(--text-primary);
+    background-color: var(--bg-secondary);
     vertical-align: middle;
 }
 
 .table thead {
-    color: var(--text-secondary);
+    color: var(--text-primary);
+    background-color: var(--bg-tertiary);
+}
+
+.table tbody {
+    background-color: var(--bg-secondary);
+}
+
+.table tr {
+    border-color: var(--border-color);
 }
 
 /* Inputs / textarea */
@@ -160,31 +170,157 @@ code {
     border-color: #e53e3e;
 }
 
-/* Theme toggle button styling */
-#themeToggle {
+/* Alert styles */
+.alert {
+    background-color: var(--bg-secondary);
+    border-color: var(--border-color);
     color: var(--text-primary);
-    border: none;
-    padding: 0.5rem 0.75rem;
-    display: flex;
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+.alert-danger {
+    background-color: var(--bg-secondary);
+    border-color: #dc2626;
+    color: var(--text-primary);
+}
+
+.alert-success {
+    background-color: var(--bg-secondary);
+    border-color: #16a34a;
+    color: var(--text-primary);
+}
+
+.alert-info {
+    background-color: var(--bg-secondary);
+    border-color: #0284c7;
+    color: var(--text-primary);
+}
+
+/* Navbar in light mode */
+:root[data-theme="light"] .navbar-artillery {
+    background-color: #f8f9fa !important;
+    border-bottom-color: #e5e7eb !important;
+}
+
+:root[data-theme="light"] .navbar-brand,
+:root[data-theme="light"] .nav-link {
+    color: #1f2937 !important;
+}
+
+:root[data-theme="light"] .nav-link:hover {
+    color: #374151 !important;
+}
+
+/* Dropdown menus */
+.dropdown-menu {
+    background-color: var(--bg-secondary);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.dropdown-item {
+    color: var(--text-primary);
+    transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.dropdown-divider {
+    border-color: var(--border-color);
+}
+
+/* Theme toggle slider */
+.theme-toggle-wrapper {
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    font-size: 1.2rem;
     cursor: pointer;
-    transition: opacity 0.2s ease;
+    padding: 0.5rem;
 }
 
-#themeToggle:hover {
-    opacity: 0.7;
+.theme-toggle-checkbox {
+    display: none;
 }
 
-#themeToggle:focus {
-    box-shadow: none;
-    outline: 1px solid var(--text-primary);
+.theme-toggle-slider {
+    position: relative;
+    width: 50px;
+    height: 26px;
+    background-color: var(--border-input);
+    border-radius: 13px;
+    transition: background-color 0.3s ease;
+    border: 2px solid var(--border-color);
+}
+
+.theme-toggle-slider::before {
+    content: '🌙'; /* Moon */
+    position: absolute;
+    left: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.theme-toggle-slider::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background-color: var(--text-primary);
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: left 0.3s ease;
+}
+
+.theme-toggle-checkbox:checked + .theme-toggle-slider {
+    background-color: var(--bg-tertiary);
+}
+
+.theme-toggle-checkbox:checked + .theme-toggle-slider::before {
+    content: '';
+    opacity: 0;
+}
+
+.theme-toggle-checkbox:checked + .theme-toggle-slider::after {
+    left: 26px;
+}
+
+.theme-toggle-wrapper:focus-within .theme-toggle-slider {
+    outline: 2px solid var(--focus-color);
     outline-offset: 2px;
 }
 
-.theme-icon {
-    display: inline-block;
+/* Badge and pill styles */
+.badge {
+    background-color: var(--focus-color);
+    color: white;
+}
+
+.badge-secondary {
+    background-color: var(--border-input);
+    color: var(--text-primary);
+}
+
+/* Ensure proper contrast for links in light mode */
+:root[data-theme="light"] a {
+    color: #2563eb;
+}
+
+:root[data-theme="light"] a:hover {
+    color: #1d4ed8;
+}
+
+/* Modal improvements */
+.modal-content {
+    background-color: var(--bg-secondary);
+    border-color: var(--border-color);
+    color: var(--text-primary);
 }
 
 
@@ -232,7 +368,7 @@ code {
     flex: 0 0 auto;
     border-radius: 0.5rem;
     overflow: hidden;
-    background: #111;
+    background: var(--bg-tertiary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -256,10 +392,11 @@ code {
     max-height: 140px;
     padding: 0.5rem 0.75rem;
     border-radius: inherit;
-    border: 1px dashed rgba(255, 255, 255, 0.1);
+    border: 1px dashed var(--border-color);
     display: flex;
     align-items: center;
     justify-content: center;
+    color: var(--text-muted);
 }
 
 .media-wall-row:hover .media-strip {

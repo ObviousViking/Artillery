@@ -21,8 +21,7 @@
 </head>
 
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark navbar-artillery fixed-top mb-4"
-        style="background-color:#000000;border-bottom:1px solid #111827;">
+    <nav class="navbar navbar-expand-lg navbar-dark navbar-artillery fixed-top mb-4">
 
         <div class="container-fluid">
             <a class="navbar-brand d-flex align-items-center" href="{{ url_for('home') }}">
@@ -68,9 +67,10 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <button id="themeToggle" class="nav-link btn btn-link" type="button" title="Toggle dark/light mode">
-                            <i class="theme-icon"></i>
-                        </button>
+                        <label class="theme-toggle-wrapper" title="Toggle dark/light mode">
+                            <input type="checkbox" id="themeToggle" class="theme-toggle-checkbox" />
+                            <div class="theme-toggle-slider"></div>
+                        </label>
                     </li>
                 </ul>
             </div>
@@ -122,17 +122,13 @@
         function applyTheme(theme) {
             document.documentElement.setAttribute('data-theme', theme);
             localStorage.setItem(THEME_KEY, theme);
-            updateToggleIcon(theme);
+            updateToggleCheckbox(theme);
         }
 
-        function updateToggleIcon(theme) {
-            const icon = document.querySelector('.theme-icon');
-            if (theme === DARK_THEME) {
-                icon.className = 'theme-icon';
-                icon.textContent = '☀️'; // Sun icon for switching to light
-            } else {
-                icon.className = 'theme-icon';
-                icon.textContent = '🌙'; // Moon icon for switching to dark
+        function updateToggleCheckbox(theme) {
+            const checkbox = document.getElementById('themeToggle');
+            if (checkbox) {
+                checkbox.checked = theme === LIGHT_THEME;
             }
         }
 
@@ -149,14 +145,14 @@
 
             const toggle = document.getElementById('themeToggle');
             if (toggle) {
-                toggle.addEventListener('click', toggleTheme);
+                toggle.addEventListener('change', toggleTheme);
             }
         });
 
         // Apply theme before page renders to avoid flashing
         const initialTheme = getCurrentTheme();
         document.documentElement.setAttribute('data-theme', initialTheme);
-        updateToggleIcon(initialTheme);
+        updateToggleCheckbox(initialTheme);
     </script></output>
 
     <!-- Swiper JS (before closing body) -->
