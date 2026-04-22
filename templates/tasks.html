@@ -259,7 +259,6 @@ main.container { margin-bottom: 0 !important; }
   <!-- ── Left sidebar ─────────────────────────────────────────────────── -->
   <aside class="t-sidebar">
     <div class="t-sidebar-hd">
-      <span>Tasks</span>
       <button type="button" id="btnNew"
         class="btn btn-sm btn-outline-success py-0 px-2"
         style="font-size:0.7rem;line-height:1.85;">+ New</button>
@@ -281,7 +280,8 @@ main.container { margin-bottom: 0 !important; }
           data-action-url="{{ url_for('task_action', slug=task.slug) }}"
           data-logs-dl-url="{{ url_for('download_task_logs', slug=task.slug) }}"
           data-logs-api="/tasks/{{ task.slug|e }}/logs"
-          data-urls-api="/tasks/{{ task.slug|e }}/urls">
+          data-urls-api="/tasks/{{ task.slug|e }}/urls"
+          data-has-archive="{{ '1' if task.has_archive else '0' }}">
           <div class="t-item-row">
             <span class="t-item-name">{{ task.name }}</span>
             <span class="t-item-st {{ st }}" data-sstatus>{{ st }}</span>
@@ -378,9 +378,10 @@ main.container { margin-bottom: 0 !important; }
           <span class="t-det-stat" id="dStat">—</span>
         </div>
         <ul class="t-tabs">
-          <li><button class="t-tab"    data-tab="logs">Logs</button></li>
           <li><button class="t-tab on" data-tab="details">Details</button></li>
           <li><button class="t-tab"    data-tab="edit">Edit</button></li>
+          <li><button class="t-tab"    data-tab="logs">Logs</button></li>
+
         </ul>
       </div>
 
@@ -418,7 +419,12 @@ main.container { margin-bottom: 0 !important; }
             <form id="fDelete" method="post" class="m-0"
               onsubmit="return confirm('Delete this task? Its folder and logs will be removed.')">
               <input type="hidden" name="action" value="delete">
-              <button type="submit" class="btn btn-sm btn-outline-danger">&#128465; Delete</button>
+              <button type="submit" class="btn btn-sm btn-danger">&#128465; Delete Task</button>
+            </form>
+            <form id="fDeleteArchive" method="post" class="m-0"
+              onsubmit="return confirm('Delete archive.sqlite? gallery-dl will re-download previously seen items on next run.')">
+              <input type="hidden" name="action" value="delete_archive">
+              <button type="submit" id="bDelArchive" class="btn btn-sm btn-outline-warning" style="display:none;">&#128465; Delete Archive</button>
             </form>
           </div>
         </div>
@@ -519,8 +525,8 @@ main.container { margin-bottom: 0 !important; }
     var dDot = $('dDot'), dName = $('dName'), dStat = $('dStat');
     var tLogs = $('tLogs'), tDetails = $('tDetails'), tEdit = $('tEdit');
     var logBox = $('logBox');
-    var fRun = $('fRun'), fPause = $('fPause'), fDelete = $('fDelete');
-    var bRun = $('bRun'), bPause = $('bPause'), bDlLogs = $('bDlLogs');
+    var fRun = $('fRun'), fPause = $('fPause'), fDelete = $('fDelete'), fDeleteArchive = $('fDeleteArchive');
+    var bRun = $('bRun'), bPause = $('bPause'), bDlLogs = $('bDlLogs'), bDelArchive = $('bDelArchive');
     var dSched = $('dSched'), dLastRun = $('dLastRun'), dUrlCount = $('dUrlCount');
     var eName = $('eName'), eUrls = $('eUrls'), eSched = $('eSched');
     var eCmd = $('eCmd'), eCmdH = $('eCmdH'), eKeepUrls = $('eKeepUrls');
@@ -590,8 +596,9 @@ main.container { margin-bottom: 0 !important; }
 
         /* Action form targets */
         var au = btn.dataset.actionUrl;
-        fRun.action = fPause.action = fDelete.action = au;
+        fRun.action = fPause.action = fDelete.action = fDeleteArchive.action = au;
         bDlLogs.href   = btn.dataset.logsDlUrl;
+        bDelArchive.style.display = (btn.dataset.hasArchive === '1') ? '' : 'none';
         bRun.disabled  = (st === 'running');
         setPauseBtn(st);
 
@@ -749,6 +756,7 @@ main.container { margin-bottom: 0 !important; }
                         }
                         btn.dataset.status = t.status;
                         if (t.last_run) btn.dataset.lastRun = t.last_run;
+                        btn.dataset.hasArchive = t.has_archive ? '1' : '0';
                     }
                     if (t.slug === selSlug) {
                         dDot.className    = dotCls(t.status);
@@ -756,6 +764,7 @@ main.container { margin-bottom: 0 !important; }
                         bRun.disabled     = (t.status === 'running');
                         setPauseBtn(t.status);
                         if (t.last_run) dLastRun.textContent = fmtDate(t.last_run);
+                        bDelArchive.style.display = t.has_archive ? '' : 'none';
                     }
                 });
             })

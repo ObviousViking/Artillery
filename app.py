@@ -211,6 +211,7 @@ def _task_mtimes(task_path: str) -> dict:
         "lock": _mt(os.path.join(task_path, "lock")),
         "paused": _mt(os.path.join(task_path, "paused")),
         "error": _mt(os.path.join(task_path, "error")),
+        "archive": _mt(os.path.join(task_path, "archive.sqlite")),
     }
 
 def _cache_name_for_relpath(relpath: str) -> str:
@@ -524,7 +525,8 @@ def load_tasks():
         schedule = read_text(os.path.join(task_path, "cron.txt"))
         command = read_text(os.path.join(task_path, "command.txt")) or "gallery-dl --input-file urls.txt"
         last_run = read_text(os.path.join(task_path, "last_run.txt"))
-        url_count = _count_file_lines(os.path.join(task_path, "urls.txt"))
+        url_count   = _count_file_lines(os.path.join(task_path, "urls.txt"))
+        has_archive = os.path.exists(os.path.join(task_path, "archive.sqlite"))
 
         lock_path   = os.path.join(task_path, "lock")
         paused_path = os.path.join(task_path, "paused")
@@ -550,6 +552,7 @@ def load_tasks():
             "urls_file": "urls.txt",
             "command": command,
             "url_count": url_count,
+            "has_archive": has_archive,
         }
         _TASK_CACHE[slug] = {"_mtimes": mtimes, "task": task}
         tasks.append(task)
@@ -827,6 +830,7 @@ def api_tasks():
             "schedule": t.get("schedule"),
             "status": t.get("status"),
             "last_run": t.get("last_run"),
+            "has_archive": t.get("has_archive", False),
         })
 
     return jsonify(out)
@@ -958,13 +962,13 @@ def run_task_background(task_folder: str):
         except Exception:
             pass
     finally:
-        # Task completion: just notify clients that media wall should refresh
         if os.path.exists(lock_path):
             os.remove(lock_path)
 
         try:
-            touch_mediawall_notify()
             slug = os.path.basename(task_folder.rstrip("/"))
+            _TASK_CACHE.pop(slug, None)  # force re-read on next poll so error status is visible immediately
+            touch_mediawall_notify()
             print(f"task {slug} finished", flush=True)
         except Exception:
             pass
@@ -1016,6 +1020,18 @@ def task_action(slug):
         else:
             open(paused_path, "w").close()
             flash("Task paused.", "success")
+        return redirect(url_for("tasks"))
+
+    if action == "delete_archive":
+        archive_path = os.path.join(task_folder, "archive.sqlite")
+        if os.path.exists(archive_path):
+            try:
+                os.remove(archive_path)
+                flash("Archive deleted. gallery-dl will re-download previously seen items on next run.", "success")
+            except Exception as exc:
+                flash(f"Failed to delete archive: {exc}", "error")
+        else:
+            flash("No archive file found for this task.", "info")
         return redirect(url_for("tasks"))
 
     flash("Unknown action.", "error")
