@@ -2,17 +2,7 @@
 {% block content %}
 
 <style>
-  main.container {
-    max-width: none !important;
-    width: 100vw !important;
-    padding-left: 0 !important;
-    padding-right: 0 !important;
-    margin: 0 !important;
-  }
 
-  main.container.mb-5 {
-    margin-bottom: 0 !important;
-  }
 
   .tasks-shell {
     display: grid;
@@ -21,10 +11,15 @@
     border-radius: 0;
     overflow: hidden;
     background: var(--card-bg);
-    width: 100%;
+
+    width: 100vw;
+    max-width: 100vw;
+    margin-left: calc(50% - 50vw);
+    margin-right: calc(50% - 50vw);
+    margin-top: 0;
+
     min-height: calc(100vh - 56px);
     height: calc(100vh - 56px);
-    margin: 0;
   }
 
   .ts-sidebar {
