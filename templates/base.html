@@ -17,6 +17,40 @@
     <!-- Your dark theme styles -->
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 
+    <style>
+    /* ── Toast notifications ──────────────────────────────────────────── */
+    #toast-wrap {
+        position: fixed;
+        bottom: 1.5rem;
+        right: 1.5rem;
+        z-index: 1100;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        pointer-events: none;
+        max-width: 380px;
+    }
+    .t-toast {
+        pointer-events: auto;
+        padding: 0.7rem 1.1rem;
+        border-radius: 9px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.28);
+        opacity: 1;
+        transform: translateY(0);
+        transition: opacity 0.35s ease, transform 0.35s ease;
+        color: #fff;
+        word-break: break-word;
+        line-height: 1.4;
+    }
+    .t-toast.success { background: #16a34a; }
+    .t-toast.danger  { background: #dc2626; }
+    .t-toast.info    { background: #2563eb; }
+    .t-toast.warning { background: #d97706; }
+    .t-toast.vanish  { opacity: 0; transform: translateY(6px); pointer-events: none; }
+    </style>
+
     <!-- Theme initialization (must run before page renders) -->
     <script>
         (function() {
@@ -96,25 +130,17 @@
         </div>
     </nav>
 
-    <main class="container mb-5">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-        <div class="mb-3">
-            {% for category, message in messages %}
-            {% set bs_class = 'info' %}
-            {% if category == 'error' %}
-            {% set bs_class = 'danger' %}
-            {% elif category == 'success' %}
-            {% set bs_class = 'success' %}
-            {% endif %}
-            <div class="alert alert-{{ bs_class }} py-2 mb-2">
-                {{ message }}
-            </div>
-            {% endfor %}
-        </div>
-        {% endif %}
-        {% endwith %}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div id="toast-wrap">
+        {% for category, message in messages %}
+        <div class="t-toast {% if category == 'error' %}danger{% elif category == 'success' %}success{% elif category == 'warning' %}warning{% else %}info{% endif %}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
 
+    <main class="container mb-5">
         {% block content %}{% endblock %}
     </main>
 
@@ -160,6 +186,13 @@
             if (toggle) {
                 toggle.addEventListener('change', toggleTheme);
             }
+
+            document.querySelectorAll('.t-toast').forEach(function(el) {
+                setTimeout(function() {
+                    el.classList.add('vanish');
+                    setTimeout(function() { el.remove(); }, 380);
+                }, 3000);
+            });
         });
     </script>
 

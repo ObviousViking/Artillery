@@ -103,18 +103,30 @@ main.container { margin-bottom: 0 !important; }
 .sdot.idle     { background: #6b7280; }
 @keyframes sdot-pulse { 0%,100%{opacity:1} 50%{opacity:.2} }
 
-/* ── Sidebar status label ────────────────────────────────────────────── */
+/* ── Sidebar status badge ────────────────────────────────────────────── */
 .t-item-st {
-    font-size: 0.68rem;
-    font-weight: 500;
+    font-size: 0.6rem;
+    font-weight: 700;
     flex-shrink: 0;
-    letter-spacing: 0.01em;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 100px;
+    line-height: 1.7;
+    white-space: nowrap;
 }
-.t-item-st.running  { color: #3b82f6; animation: sdot-pulse 1.3s ease-in-out infinite; }
-.t-item-st.error    { color: #ef4444; }
-.t-item-st.complete { color: #22c55e; }
-.t-item-st.paused   { color: #f59e0b; }
-.t-item-st.idle     { color: var(--text-muted); }
+.t-item-st.running  { color: #2563eb; background: rgba(59,130,246,0.16); animation: sdot-pulse 1.3s ease-in-out infinite; }
+.t-item-st.error    { color: #dc2626; background: rgba(239,68,68,0.16); }
+.t-item-st.complete { color: #16a34a; background: rgba(34,197,94,0.16); }
+.t-item-st.paused   { color: #b45309; background: rgba(245,158,11,0.16); }
+.t-item-st.idle     { color: #6b7280; background: rgba(107,114,128,0.14); }
+
+/* Dark mode: slightly lighter text so badges pop on dark sidebar */
+[data-theme="dark"] .t-item-st.running  { color: #60a5fa; }
+[data-theme="dark"] .t-item-st.error    { color: #f87171; }
+[data-theme="dark"] .t-item-st.complete { color: #4ade80; }
+[data-theme="dark"] .t-item-st.paused   { color: #fbbf24; }
+[data-theme="dark"] .t-item-st.idle     { color: #9ca3af; }
 
 /* ── Main area ───────────────────────────────────────────────────────── */
 .t-main {
