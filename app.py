@@ -210,6 +210,7 @@ def _task_mtimes(task_path: str) -> dict:
         "urls": _mt(os.path.join(task_path, "urls.txt")),
         "lock": _mt(os.path.join(task_path, "lock")),
         "paused": _mt(os.path.join(task_path, "paused")),
+        "error": _mt(os.path.join(task_path, "error")),
     }
 
 def _cache_name_for_relpath(relpath: str) -> str:
@@ -525,13 +526,16 @@ def load_tasks():
         last_run = read_text(os.path.join(task_path, "last_run.txt"))
         url_count = _count_file_lines(os.path.join(task_path, "urls.txt"))
 
-        lock_path = os.path.join(task_path, "lock")
+        lock_path   = os.path.join(task_path, "lock")
         paused_path = os.path.join(task_path, "paused")
+        error_path  = os.path.join(task_path, "error")
 
         if os.path.exists(lock_path):
             status = "running"
         elif os.path.exists(paused_path):
             status = "paused"
+        elif os.path.exists(error_path):
+            status = "error"
         else:
             status = "idle"
 
@@ -876,11 +880,19 @@ def config_page():
 def run_task_background(task_folder: str):
     ensure_data_dirs(ensure_downloads=True)
 
-    lock_path = os.path.join(task_folder, "lock")
-    logs_path = os.path.join(task_folder, "logs.txt")
+    lock_path     = os.path.join(task_folder, "lock")
+    logs_path     = os.path.join(task_folder, "logs.txt")
     last_run_path = os.path.join(task_folder, "last_run.txt")
-    command_path = os.path.join(task_folder, "command.txt")
-    urls_file = os.path.join(task_folder, "urls.txt")
+    command_path  = os.path.join(task_folder, "command.txt")
+    urls_file     = os.path.join(task_folder, "urls.txt")
+    error_path    = os.path.join(task_folder, "error")
+
+    # Clear any previous error state so status shows "running" immediately
+    try:
+        if os.path.exists(error_path):
+            os.remove(error_path)
+    except Exception:
+        pass
 
     command = read_text(command_path)
     if not command:
@@ -936,10 +948,15 @@ def run_task_background(task_folder: str):
                 logf.write("\nTask finished successfully.\n")
             else:
                 logf.write(f"\nTask exited with code {result.returncode}.\n")
+                open(error_path, "w").close()
 
     except Exception as exc:
         with open(logs_path, "a", encoding="utf-8") as logf:
             logf.write(f"\nERROR while running task: {exc}\n")
+        try:
+            open(error_path, "w").close()
+        except Exception:
+            pass
     finally:
         # Task completion: just notify clients that media wall should refresh
         if os.path.exists(lock_path):

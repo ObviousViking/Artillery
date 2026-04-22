@@ -87,7 +87,7 @@ main.container { margin-bottom: 0 !important; }
     white-space: nowrap;
 }
 
-/* ── Status dot ──────────────────────────────────────────────────────── */
+/* ── Status dot (detail header only) ────────────────────────────────── */
 .sdot {
     width: 7px;
     height: 7px;
@@ -102,6 +102,19 @@ main.container { margin-bottom: 0 !important; }
 .sdot.paused   { background: #f59e0b; }
 .sdot.idle     { background: #6b7280; }
 @keyframes sdot-pulse { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+/* ── Sidebar status label ────────────────────────────────────────────── */
+.t-item-st {
+    font-size: 0.68rem;
+    font-weight: 500;
+    flex-shrink: 0;
+    letter-spacing: 0.01em;
+}
+.t-item-st.running  { color: #3b82f6; animation: sdot-pulse 1.3s ease-in-out infinite; }
+.t-item-st.error    { color: #ef4444; }
+.t-item-st.complete { color: #22c55e; }
+.t-item-st.paused   { color: #f59e0b; }
+.t-item-st.idle     { color: var(--text-muted); }
 
 /* ── Main area ───────────────────────────────────────────────────────── */
 .t-main {
@@ -270,8 +283,8 @@ main.container { margin-bottom: 0 !important; }
           data-logs-api="/tasks/{{ task.slug|e }}/logs"
           data-urls-api="/tasks/{{ task.slug|e }}/urls">
           <div class="t-item-row">
-            <span class="sdot {{ st }}" data-sdot></span>
             <span class="t-item-name">{{ task.name }}</span>
+            <span class="t-item-st {{ st }}" data-sstatus>{{ st }}</span>
           </div>
           <div class="t-item-meta">
             {%- if uc -%}
@@ -365,8 +378,8 @@ main.container { margin-bottom: 0 !important; }
           <span class="t-det-stat" id="dStat">—</span>
         </div>
         <ul class="t-tabs">
-          <li><button class="t-tab on" data-tab="logs">Logs</button></li>
-          <li><button class="t-tab"    data-tab="details">Details</button></li>
+          <li><button class="t-tab"    data-tab="logs">Logs</button></li>
+          <li><button class="t-tab on" data-tab="details">Details</button></li>
           <li><button class="t-tab"    data-tab="edit">Edit</button></li>
         </ul>
       </div>
@@ -491,7 +504,7 @@ main.container { margin-bottom: 0 !important; }
     var selSlug      = null;
     var selUrlCount  = 0;
     var selUrlsApi   = null;
-    var activeTab    = 'logs';
+    var activeTab    = 'details';
     var logTimer     = null;
     var autoScroll   = true;
     var urlsLoaded   = false;
@@ -729,8 +742,11 @@ main.container { margin-bottom: 0 !important; }
                 tasks.forEach(function (t) {
                     var btn = document.querySelector('.t-item[data-slug="' + t.slug + '"]');
                     if (btn) {
-                        var dot = btn.querySelector('[data-sdot]');
-                        if (dot) dot.className = dotCls(t.status);
+                        var lbl = btn.querySelector('[data-sstatus]');
+                        if (lbl) {
+                            lbl.className   = 't-item-st ' + t.status;
+                            lbl.textContent = t.status;
+                        }
                         btn.dataset.status = t.status;
                         if (t.last_run) btn.dataset.lastRun = t.last_run;
                     }
