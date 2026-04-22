@@ -1,315 +1,242 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card shadow-sm border-secondary">
-            <div class="card-body">
-                <h2 class="card-title mb-3">Tasks</h2>
+<div class="row g-4">
 
-                {% if tasks %}
-                <div class="table-responsive">
-                    <table class="table table-dark table-striped align-middle">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Status</th>
-                                <th>Cron</th>
-                                <th>Last run</th>
-                                <th style="width: 220px;">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for task in tasks %}
-                            {% set status = task.status %}
-                            {% set schedule = task.schedule %}
-                            {% set lr = task.last_run %}
-                            <tr data-slug="{{ task.slug }}">
-                                <td>{{ task.name }}</td>
-                                <td>
-                                    <span class="badge task-status-badge
-                        {% if status == 'running' %} bg-primary
-                        {% elif status == 'error' %} bg-danger
-                        {% elif status == 'complete' %} bg-success
-                        {% elif status == 'paused' %} bg-warning text-dark
-                        {% else %} bg-secondary
-                        {% endif %}
-                      ">
-                                        {{ status }}
-                                    </span>
-                                </td>
-                                <td>
-                                    {% if schedule %}
-                                    <code>{{ schedule }}</code>
-                                    {% else %}
-                                    <span class="text-muted">None</span>
-                                    {% endif %}
-                                </td>
-                                <td class="task-last-run">
-                                    {% if lr %}
-                                    {{ lr[:19].replace('T', ' ') }} UTC
-                                    {% else %}
-                                    <span class="text-muted">Never</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <div class="d-flex flex-wrap gap-1">
-                                        <!-- Run -->
-                                        <form method="post" action="{{ url_for('task_action', slug=task.slug) }}"
-                                            class="m-0">
-                                            <input type="hidden" name="action" value="run">
-                                            <button type="submit" class="btn btn-sm btn-outline-light task-run-btn" {%
-                                                if status=='running' %}disabled{% endif %}>
-                                                Run
-                                            </button>
-                                        </form>
+    <!-- Left column: task list + output panel -->
+    <div class="col-lg-7 d-flex flex-column gap-4">
 
-                                        <!-- Pause / Unpause -->
-                                        <form method="post" action="{{ url_for('task_action', slug=task.slug) }}"
-                                            class="m-0">
-                                            <input type="hidden" name="action" value="pause">
-                                            {% if status == 'paused' %}
-                                            <button type="submit" class="btn btn-sm btn-outline-warning task-pause-btn">
-                                                Unpause
-                                            </button>
-                                            {% else %}
-                                            <button type="submit"
-                                                class="btn btn-sm btn-outline-secondary task-pause-btn">
-                                                Pause
-                                            </button>
-                                            {% endif %}
-                                        </form>
-
-                                        <!-- Edit (pure front-end: loads into the form below) -->
-                                        <button type="button" class="btn btn-sm btn-outline-info btn-edit-task"
-                                            data-name="{{ task.name|e }}" data-urls="{{ (task.urls or '')|e }}"
-                                            data-schedule="{{ (task.schedule or '')|e }}"
-                                            data-command="{{ task.command|e }}">
-                                            Edit
-                                        </button>
-
-                                        <!-- Delete -->
-                                        <form method="post" action="{{ url_for('task_action', slug=task.slug) }}"
-                                            class="m-0"
-                                            onsubmit="return confirm('Delete task {{ task.name }}? This will remove its folder and logs.');">
-                                            <input type="hidden" name="action" value="delete">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger">
-                                                Delete
-                                            </button>
-                                        </form>
-
-                                        <!-- Download logs -->
-                                        <form method="get" action="{{ url_for('download_task_logs', slug=task.slug) }}"
-                                            class="m-0">
-                                            <button type="submit" class="btn btn-sm btn-outline-light">
-                                                Download Logs
-                                            </button>
-                                        </form>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% else %}
-                <p class="text-muted mb-0">No tasks yet. Create one below.</p>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Output Panel -->
-<div class="row mb-4">
-    <div class="col-12">
+        <!-- Tasks table -->
         <div class="card shadow-sm border-secondary">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h2 class="card-title mb-0">Output</h2>
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnToggleOutput"
-                    data-collapsed="true">
-                    Show
-                </button>
+                <h2 class="card-title mb-0 fs-5">Tasks</h2>
             </div>
-            <div id="outputPanel" class="card-body" style="display: none;">
+            {% if tasks %}
+            <div class="table-responsive">
+                <table class="table table-dark align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Status</th>
+                            <th>Schedule</th>
+                            <th>Last Run</th>
+                            <th class="text-end" style="width:90px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for task in tasks %}
+                        {% set status = task.status %}
+                        {% set schedule = task.schedule %}
+                        {% set lr = task.last_run %}
+                        <tr data-slug="{{ task.slug }}">
+                            <td class="fw-medium">{{ task.name }}</td>
+                            <td>
+                                <span class="badge task-status-badge
+                                    {% if status == 'running' %} bg-primary
+                                    {% elif status == 'error' %} bg-danger
+                                    {% elif status == 'complete' %} bg-success
+                                    {% elif status == 'paused' %} bg-warning text-dark
+                                    {% else %} bg-secondary
+                                    {% endif %}">{{ status }}</span>
+                            </td>
+                            <td>
+                                {% if schedule %}<code class="small">{{ schedule }}</code>
+                                {% else %}<span class="text-muted">—</span>{% endif %}
+                            </td>
+                            <td class="task-last-run small text-muted">
+                                {% if lr %}{{ lr[:19].replace('T', ' ') }}
+                                {% else %}Never{% endif %}
+                            </td>
+                            <td class="text-end">
+                                <div class="d-flex justify-content-end gap-1">
+                                    <!-- Run -->
+                                    <form method="post" action="{{ url_for('task_action', slug=task.slug) }}" class="m-0">
+                                        <input type="hidden" name="action" value="run">
+                                        <button type="submit" class="btn btn-sm btn-outline-success task-run-btn"
+                                            title="Run" {% if status=='running' %}disabled{% endif %}>&#9654;</button>
+                                    </form>
+
+                                    <!-- More actions dropdown -->
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button"
+                                            class="btn btn-sm btn-outline-secondary dropdown-toggle px-2"
+                                            data-bs-toggle="dropdown" aria-expanded="false"
+                                            title="More actions">&#8943;</button>
+                                        <ul class="dropdown-menu dropdown-menu-end">
+                                            <!-- Pause / Unpause -->
+                                            <li>
+                                                <form method="post" action="{{ url_for('task_action', slug=task.slug) }}" class="m-0">
+                                                    <input type="hidden" name="action" value="pause">
+                                                    <button type="submit" class="dropdown-item task-pause-btn">
+                                                        {% if status == 'paused' %}&#9654; Unpause{% else %}&#9646;&#9646; Pause{% endif %}
+                                                    </button>
+                                                </form>
+                                            </li>
+                                            <!-- Edit -->
+                                            <li>
+                                                <button type="button" class="dropdown-item btn-edit-task"
+                                                    data-name="{{ task.name|e }}"
+                                                    data-urls="{{ (task.urls or '')|e }}"
+                                                    data-schedule="{{ (task.schedule or '')|e }}"
+                                                    data-command="{{ task.command|e }}">
+                                                    &#9998; Edit
+                                                </button>
+                                            </li>
+                                            <li><hr class="dropdown-divider"></li>
+                                            <!-- Download logs -->
+                                            <li>
+                                                <a class="dropdown-item"
+                                                    href="{{ url_for('download_task_logs', slug=task.slug) }}">
+                                                    &#8659; Download Logs
+                                                </a>
+                                            </li>
+                                            <!-- Delete -->
+                                            <li>
+                                                <form method="post" action="{{ url_for('task_action', slug=task.slug) }}" class="m-0"
+                                                    onsubmit="return confirm('Delete task {{ task.name }}? This will remove its folder and logs.');">
+                                                    <input type="hidden" name="action" value="delete">
+                                                    <button type="submit" class="dropdown-item text-danger">
+                                                        &#128465; Delete
+                                                    </button>
+                                                </form>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="card-body text-muted">No tasks yet. Create one using the form.</div>
+            {% endif %}
+        </div>
+
+        <!-- Output panel -->
+        <div class="card shadow-sm border-secondary">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h2 class="card-title mb-0 fs-5">Output</h2>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnToggleOutput"
+                    data-collapsed="true">Show</button>
+            </div>
+            <div id="outputPanel" class="card-body" style="display:none;">
                 <div class="mb-3">
-                    <label class="form-label" for="taskSelector">Select task to view logs:</label>
-                    <select id="taskSelector" class="form-control">
-                        <option value="">-- Choose a task --</option>
+                    <label class="form-label small" for="taskSelector">Select task</label>
+                    <select id="taskSelector" class="form-control form-control-sm">
+                        <option value="">— Choose a task —</option>
                         {% for task in tasks %}
                         <option value="{{ task.slug }}">{{ task.name }}</option>
                         {% endfor %}
                     </select>
                 </div>
-                <div id="logContainer" class="bg-dark p-3 rounded"
-                    style="max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.875rem; border: 1px solid #374151;">
-                    <p class="text-muted mb-0">Select a task to view its output...</p>
+                <div id="logContainer" class="p-3 rounded"
+                    style="max-height:380px;overflow-y:auto;font-family:monospace;font-size:0.85rem;border:1px solid #374151;background:var(--bg-secondary);">
+                    <p class="text-muted mb-0">Select a task to view its output…</p>
                 </div>
                 <div class="mt-2">
-                    <small class="text-muted">Auto-refreshing every 1 second - Only the last 50 lines shown. Please
-                        review logs in full for more detail</small>
+                    <small class="text-muted">Auto-refreshes every 1 s &middot; last 50 lines shown</small>
                 </div>
             </div>
         </div>
-    </div>
-</div>
 
-<div class="row">
-    <div class="col-12">
+    </div><!-- /left column -->
+
+    <!-- Right column: create / edit form -->
+    <div class="col-lg-5">
         <div class="card shadow-sm border-secondary">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h2 class="card-title mb-0 fs-5" id="taskFormTitle">New Task</h2>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNewTask">Reset</button>
+            </div>
             <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h2 class="card-title mb-0" id="taskFormTitle">Create / Edit Task</h2>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNewTask">
-                        New task
-                    </button>
-                </div>
-
                 <form method="post" action="{{ url_for('tasks') }}" id="taskForm">
                     <input type="hidden" id="editingFlag" name="editing_flag" value="0" />
 
-                    <div class="row">
-                        <div class="col-md-6">
-                            <h5 class="mb-3">Basic info</h5>
+                    <div class="mb-3">
+                        <label class="form-label" for="name">Task name</label>
+                        <input type="text" id="name" name="name" class="form-control form-control-sm" required />
+                        <div class="form-text">Folder: <code>/data/tasks/&lt;task-name&gt;</code></div>
+                    </div>
 
-                            <div class="mb-3">
-                                <label class="form-label" for="name">Task name</label>
-                                <input type="text" id="name" name="name" class="form-control" required />
-                                <div class="form-text">
-                                    Used for the folder under <code>/data/tasks/&lt;task-name&gt;</code>.
-                                    Editing a task with the same name will overwrite its settings.
+                    <div class="mb-3">
+                        <label class="form-label" for="urls">URLs <span class="text-muted fw-normal">(one per line)</span></label>
+                        <textarea id="urls" name="urls" class="form-control form-control-sm" rows="5"
+                            placeholder="https://example.com/image1&#10;https://example.com/image2" required></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="schedule">Cron schedule <span class="text-muted fw-normal">(optional)</span></label>
+                        <input type="text" id="schedule" name="schedule" class="form-control form-control-sm"
+                            placeholder="*/5 * * * *" />
+                        <div class="form-text"><code>*/5 * * * *</code> = every 5 min, <code>* * * * *</code> = every min</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">gallery-dl options</label>
+                        <p class="text-muted small mb-2" id="optionsHelperHint">
+                            Checkboxes build the command for new tasks. When editing, they add or remove flags from the existing command.
+                        </p>
+                        <div id="checkboxesWrapper" class="row g-1">
+                            <div class="col-6">
+                                <div class="form-check">
+                                    <input class="form-check-input gd-option" type="checkbox" id="opt_metadata" data-flag="--write-metadata" />
+                                    <label class="form-check-label small" for="opt_metadata">Write metadata</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input gd-option" type="checkbox" id="opt_metadata_json" data-flag="--write-info-json" />
+                                    <label class="form-check-label small" for="opt_metadata_json">Save info JSON</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input gd-option" type="checkbox" id="opt_write_tags" data-flag="--write-tags" />
+                                    <label class="form-check-label small" for="opt_write_tags">Write tags</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input gd-option" type="checkbox" id="opt_mtime" data-flag="--mtime date" />
+                                    <label class="form-check-label small" for="opt_mtime">Set mtime from date</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input gd-option" type="checkbox" id="opt_zip" data-flag="--zip" />
+                                    <label class="form-check-label small" for="opt_zip">Store in ZIP</label>
                                 </div>
                             </div>
-
-                            <div class="mb-3">
-                                <label class="form-label" for="urls">URLs (one per line)</label>
-                                <textarea id="urls" name="urls" class="form-control" rows="6" placeholder="https://example.com/image1
-https://example.com/image2" required></textarea>
-                                <div class="form-text">
-                                    Stored as <code>urls.txt</code> in the task folder.
+                            <div class="col-6">
+                                <div class="form-check">
+                                    <input class="form-check-input gd-option" type="checkbox" id="opt_archive" data-flag="--download-archive archive.sqlite" />
+                                    <label class="form-check-label small" for="opt_archive">Use archive DB</label>
                                 </div>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="form-label" for="schedule">Cron schedule (optional)</label>
-                                <input type="text" id="schedule" name="schedule" class="form-control"
-                                    placeholder="e.g. */5 * * * *" />
-                                <div class="form-text">
-                                    <code>* * * * *</code> = every minute,
-                                    <code>*/5 * * * *</code> = every 5 minutes, etc.
+                                <div class="form-check">
+                                    <input class="form-check-input gd-option" type="checkbox" id="opt_no_skip" data-flag="--no-skip" />
+                                    <label class="form-check-label small" for="opt_no_skip">Don't skip existing</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input gd-option" type="checkbox" id="opt_verbose" data-flag="-v" />
+                                    <label class="form-check-label small" for="opt_verbose">Verbose</label>
                                 </div>
                             </div>
                         </div>
+                    </div>
 
-                        <div class="col-md-6">
-                            <h5 class="mb-3">gallery-dl options</h5>
-
-                            <div id="optionsHelperPanel">
-                                <p class="text-muted small" id="optionsHelperHint">
-                                    Checkboxes build the command for new tasks. When editing, they add or remove flags from the existing command.
-                                </p>
-
-                                <div id="checkboxesWrapper">
-                                    <div class="row">
-                                        <!-- Left column -->
-                                        <div class="col-sm-6">
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_metadata"
-                                                    data-flag="--write-metadata" />
-                                                <label class="form-check-label" for="opt_metadata">
-                                                    Write metadata (<code>--write-metadata</code>)
-                                                </label>
-                                            </div>
-
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_metadata_json"
-                                                    data-flag="--write-info-json" />
-                                                <label class="form-check-label" for="opt_metadata_json">
-                                                    Save info JSON (<code>--write-info-json</code>)
-                                                </label>
-                                            </div>
-
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_write_tags"
-                                                    data-flag="--write-tags" />
-                                                <label class="form-check-label" for="opt_write_tags">
-                                                    Write tags (<code>--write-tags</code>)
-                                                </label>
-                                            </div>
-
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_mtime"
-                                                    data-flag="--mtime date" />
-                                                <label class="form-check-label" for="opt_mtime">
-                                                    Set mtime from date (<code>--mtime date</code>)
-                                                </label>
-                                            </div>
-
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_zip"
-                                                    data-flag="--zip" />
-                                                <label class="form-check-label" for="opt_zip">
-                                                    Store in ZIP (<code>--zip</code>)
-                                                </label>
-                                            </div>
-                                        </div>
-
-                                        <!-- Right column -->
-                                        <div class="col-sm-6">
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_archive"
-                                                    data-flag="--download-archive archive.sqlite" />
-                                                <label class="form-check-label" for="opt_archive">
-                                                    Use archive DB (<code>--download-archive archive.sqlite</code>)
-                                                </label>
-                                            </div>
-
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_no_skip"
-                                                    data-flag="--no-skip" />
-                                                <label class="form-check-label" for="opt_no_skip">
-                                                    Don't skip existing (<code>--no-skip</code>)
-                                                </label>
-                                            </div>
-
-                                            <div class="form-check mb-2">
-                                                <input class="form-check-input gd-option" type="checkbox" id="opt_verbose"
-                                                    data-flag="-v" />
-                                                <label class="form-check-label" for="opt_verbose">
-                                                    Verbose (<code>-v</code>)
-                                                </label>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div><!-- /checkboxesWrapper -->
-                            </div><!-- /optionsHelperPanel -->
-
-                            <div class="mt-3">
-                                <label class="form-label" for="commandPreview">Command</label>
-                                <textarea id="commandPreview" class="form-control" rows="3"
-                                    name="command_display"></textarea>
-                                <div class="form-text">
-                                    For new tasks, this is built from the options above.
-                                    For existing tasks, edit this directly. The backend will
-                                    still ensure <code>--config /data/config/gallery-dl.conf</code>
-                                    and <code>--destination /downloads</code> are present.
-                                </div>
-                            </div>
-
-                            <input type="hidden" id="command" name="command" />
+                    <div class="mb-4">
+                        <label class="form-label" for="commandPreview">Command</label>
+                        <textarea id="commandPreview" class="form-control form-control-sm" rows="2"
+                            name="command_display"></textarea>
+                        <div class="form-text">
+                            Backend ensures <code>--config /data/config/gallery-dl.conf</code>
+                            and <code>--destination /downloads</code> are present.
                         </div>
                     </div>
 
-                    <div class="mt-4">
-                        <button type="submit" class="btn btn-danger">
-                            Save task
-                        </button>
-                    </div>
+                    <input type="hidden" id="command" name="command" />
+
+                    <button type="submit" class="btn btn-sm btn-danger">Save task</button>
                 </form>
             </div>
         </div>
-    </div>
-</div>
+    </div><!-- /right column -->
+
+</div><!-- /row -->
 
 <script>
     (function () {
@@ -327,7 +254,6 @@ https://example.com/image2" required></textarea>
         const btnNewTask = document.getElementById("btnNewTask");
         const checkboxesWrapper = document.getElementById("checkboxesWrapper");
 
-        // Output panel elements
         const btnToggleOutput = document.getElementById("btnToggleOutput");
         const outputPanel = document.getElementById("outputPanel");
         const taskSelector = document.getElementById("taskSelector");
@@ -339,11 +265,8 @@ https://example.com/image2" required></textarea>
                 const flag = cb.getAttribute("data-flag");
                 if (flag) flags.push(flag);
             });
-
             let cmd = "gallery-dl";
-            if (flags.length > 0) {
-                cmd += " " + flags.join(" ");
-            }
+            if (flags.length > 0) cmd += " " + flags.join(" ");
             cmd += " --input-file urls.txt";
             return cmd;
         }
@@ -354,10 +277,7 @@ https://example.com/image2" required></textarea>
         }
 
         function updateCommandPreview() {
-            if (isEditingExistingTask) {
-                syncHiddenFromPreview();
-                return;
-            }
+            if (isEditingExistingTask) { syncHiddenFromPreview(); return; }
             if (!commandPreview) return;
             commandPreview.value = buildCommandFromOptions();
             syncHiddenFromPreview();
@@ -368,7 +288,6 @@ https://example.com/image2" required></textarea>
             commandPreview.readOnly = false;
         }
 
-        // Tick/untick checkboxes to match flags already in the command string
         function syncCheckboxesToCommand(cmd) {
             document.querySelectorAll(".gd-option").forEach(function (cb) {
                 const flag = cb.getAttribute("data-flag");
@@ -376,18 +295,13 @@ https://example.com/image2" required></textarea>
             });
         }
 
-        // In edit mode: add or remove a flag token from the existing command string
         function toggleFlagInCommand(flag, checked) {
             let cmd = commandPreview.value;
             if (checked) {
-                // Insert before --input-file, or append if not present
-                if (cmd.includes("--input-file")) {
-                    cmd = cmd.replace("--input-file", flag + " --input-file");
-                } else {
-                    cmd = cmd.trimEnd() + " " + flag;
-                }
+                cmd = cmd.includes("--input-file")
+                    ? cmd.replace("--input-file", flag + " --input-file")
+                    : cmd.trimEnd() + " " + flag;
             } else {
-                // Remove the flag (escape regex special chars)
                 const escaped = flag.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
                 cmd = cmd.replace(new RegExp('\\s*' + escaped, 'g'), '');
             }
@@ -395,7 +309,6 @@ https://example.com/image2" required></textarea>
             syncHiddenFromPreview();
         }
 
-        // Output panel functions
         function toggleOutputPanel() {
             const isCollapsed = btnToggleOutput.getAttribute("data-collapsed") === "true";
             if (isCollapsed) {
@@ -413,40 +326,30 @@ https://example.com/image2" required></textarea>
 
         function parseLogColors(text) {
             const levelMap = {
-                'warning': 'log-warning',
-                'error': 'log-error',
-                'success': 'log-success',
-                'info': 'log-info',
-                'debug': 'log-debug'
+                'warning': 'log-warning', 'error': 'log-error',
+                'success': 'log-success', 'info': 'log-info', 'debug': 'log-debug'
             };
-
             text = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
             for (const [level, cssClass] of Object.entries(levelMap)) {
                 const pattern = new RegExp(`\\[${level}\\]`, 'gi');
                 text = text.replace(pattern, `<span class="${cssClass}">[$&]</span>`);
             }
-
             return text;
         }
 
         function fetchTaskLogs(slug) {
             if (!slug) {
-                logContainer.innerHTML = '<p class="text-muted mb-0">Select a task to view its output...</p>';
+                logContainer.innerHTML = '<p class="text-muted mb-0">Select a task to view its output…</p>';
                 return;
             }
-
             fetch(`/tasks/${slug}/logs?tail=50`)
-                .then(response => response.json())
+                .then(r => r.json())
                 .then(data => {
                     if (data.error) {
                         logContainer.innerHTML = `<p class="text-danger mb-0">Error: ${data.error}</p>`;
                     } else {
-                        const coloredContent = parseLogColors(data.content || "");
-                        logContainer.innerHTML = `<pre>${coloredContent}</pre>`;
-                        if (shouldAutoScroll) {
-                            logContainer.scrollTop = logContainer.scrollHeight;
-                        }
+                        logContainer.innerHTML = `<pre>${parseLogColors(data.content || "")}</pre>`;
+                        if (shouldAutoScroll) logContainer.scrollTop = logContainer.scrollHeight;
                     }
                 })
                 .catch(err => {
@@ -463,50 +366,36 @@ https://example.com/image2" required></textarea>
         }
 
         function stopOutputPolling() {
-            if (outputPollInterval) {
-                clearInterval(outputPollInterval);
-                outputPollInterval = null;
-            }
+            if (outputPollInterval) { clearInterval(outputPollInterval); outputPollInterval = null; }
         }
 
         logContainer.addEventListener("scroll", function () {
-            const isAtBottom = logContainer.scrollTop + logContainer.clientHeight >= logContainer.scrollHeight - 10;
-            shouldAutoScroll = isAtBottom;
+            shouldAutoScroll = logContainer.scrollTop + logContainer.clientHeight >= logContainer.scrollHeight - 10;
         });
 
         document.addEventListener("DOMContentLoaded", function () {
-            // Hook checkbox changes
             document.querySelectorAll(".gd-option").forEach(function (cb) {
                 cb.addEventListener("change", function () {
                     if (isEditingExistingTask) {
-                        // Patch the existing command directly
                         toggleFlagInCommand(this.getAttribute("data-flag"), this.checked);
                     } else {
-                        // Rebuild command from scratch
                         updateCommandPreview();
                     }
                 });
             });
 
-            // Keep hidden command in sync if user types directly
             if (commandPreview) {
-                commandPreview.addEventListener("input", function () {
-                    syncHiddenFromPreview();
-                });
+                commandPreview.addEventListener("input", syncHiddenFromPreview);
             }
 
-            // Output panel
             if (btnToggleOutput) {
                 btnToggleOutput.addEventListener("click", toggleOutputPanel);
             }
 
             if (taskSelector) {
-                taskSelector.addEventListener("change", function () {
-                    fetchTaskLogs(this.value);
-                });
+                taskSelector.addEventListener("change", function () { fetchTaskLogs(this.value); });
             }
 
-            // Edit buttons
             document.querySelectorAll(".btn-edit-task").forEach(function (btn) {
                 btn.addEventListener("click", function () {
                     const name = this.getAttribute("data-name") || "";
@@ -522,25 +411,23 @@ https://example.com/image2" required></textarea>
                     syncCheckboxesToCommand(command);
 
                     editingFlag.value = "1";
-                    taskFormTitle.textContent = "Edit Task: " + name;
+                    taskFormTitle.textContent = "Edit: " + name;
                     setEditMode(true);
 
                     document.getElementById("taskForm").scrollIntoView({ behavior: "smooth", block: "start" });
                 });
             });
 
-            // "New task" button: reset to builder mode
             if (btnNewTask) {
                 btnNewTask.addEventListener("click", function () {
                     document.getElementById("taskForm").reset();
                     editingFlag.value = "0";
-                    taskFormTitle.textContent = "Create / Edit Task";
+                    taskFormTitle.textContent = "New Task";
                     setEditMode(false);
                     updateCommandPreview();
                 });
             }
 
-            // Initial state: new task mode
             setEditMode(false);
             updateCommandPreview();
         });
@@ -572,26 +459,20 @@ https://example.com/image2" required></textarea>
 
                 var lrCell = tr.querySelector('.task-last-run');
                 if (lrCell) {
-                    if (task.last_run) {
-                        lrCell.textContent = task.last_run.slice(0, 19).replace('T', ' ') + ' UTC';
-                    } else {
-                        lrCell.innerHTML = '<span class="text-muted">Never</span>';
-                    }
+                    lrCell.textContent = task.last_run
+                        ? task.last_run.slice(0, 19).replace('T', ' ')
+                        : 'Never';
                 }
 
                 var runBtn = tr.querySelector('.task-run-btn');
-                if (runBtn) {
-                    runBtn.disabled = (task.status === 'running');
-                }
+                if (runBtn) runBtn.disabled = (task.status === 'running');
 
                 var pauseBtn = tr.querySelector('.task-pause-btn');
                 if (pauseBtn) {
                     if (task.status === 'paused') {
-                        pauseBtn.textContent = 'Unpause';
-                        pauseBtn.className = 'btn btn-sm btn-outline-warning task-pause-btn';
+                        pauseBtn.textContent = '▶ Unpause';
                     } else {
-                        pauseBtn.textContent = 'Pause';
-                        pauseBtn.className = 'btn btn-sm btn-outline-secondary task-pause-btn';
+                        pauseBtn.textContent = '⏸ Pause';
                     }
                 }
             });
@@ -601,11 +482,8 @@ https://example.com/image2" required></textarea>
             try {
                 var resp = await fetch('/api/tasks');
                 if (!resp.ok) return;
-                var data = await resp.json();
-                updateFromData(data);
-            } catch (e) {
-                // ignore transient errors
-            }
+                updateFromData(await resp.json());
+            } catch (e) { /* ignore */ }
         }
 
         document.addEventListener('DOMContentLoaded', function () {
