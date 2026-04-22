@@ -76,28 +76,41 @@ body {
 }
 
 .table tr {
-    border-color: var(--border-color);
+    border-color: var(--border-color) !important;
     background-color: var(--bg-secondary) !important;
+}
+
+.table tbody tr {
+    background-color: var(--bg-secondary) !important;
+}
+
+.table tbody td {
+    background-color: var(--bg-secondary) !important;
+    color: var(--text-primary) !important;
 }
 
 .table tbody tr:hover {
     background-color: var(--bg-tertiary) !important;
 }
 
-/* Remove Bootstrap's table-dark class forcing */
-.table.table-dark {
-    background-color: var(--bg-secondary);
-    color: var(--text-primary);
+.table tbody tr:hover td {
+    background-color: var(--bg-tertiary) !important;
 }
 
-.table.table-dark thead {
-    background-color: var(--bg-tertiary);
-    color: var(--text-primary);
+/* Ensure theme applies to all table variants */
+.table,
+.table.table-dark,
+.table.table-striped {
+    background-color: var(--bg-secondary) !important;
+    color: var(--text-primary) !important;
 }
 
-.table.table-dark tbody {
-    background-color: var(--bg-secondary);
-    color: var(--text-primary);
+.table thead,
+.table.table-dark thead,
+.table thead th {
+    background-color: var(--bg-tertiary) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
 }
 
 /* Inputs / textarea */
@@ -232,21 +245,36 @@ code {
 }
 
 .alert-danger {
-    background-color: var(--bg-secondary);
-    border-color: #dc2626;
-    color: var(--text-primary);
+    background-color: rgba(220, 38, 38, 0.2) !important;
+    border-color: #dc2626 !important;
+    color: #991b1b !important;
 }
 
 .alert-success {
-    background-color: var(--bg-secondary);
-    border-color: #16a34a;
-    color: var(--text-primary);
+    background-color: rgba(22, 163, 74, 0.2) !important;
+    border-color: #16a34a !important;
+    color: #15803d !important;
 }
 
 .alert-info {
-    background-color: var(--bg-secondary);
-    border-color: #0284c7;
-    color: var(--text-primary);
+    background-color: rgba(2, 132, 199, 0.2) !important;
+    border-color: #0284c7 !important;
+    color: #0c4a6e !important;
+}
+
+:root[data-theme="light"] .alert-danger {
+    background-color: rgba(220, 38, 38, 0.15) !important;
+    color: #991b1b !important;
+}
+
+:root[data-theme="light"] .alert-success {
+    background-color: rgba(22, 163, 74, 0.15) !important;
+    color: #15803d !important;
+}
+
+:root[data-theme="light"] .alert-info {
+    background-color: rgba(2, 132, 199, 0.15) !important;
+    color: #0c4a6e !important;
 }
 
 /* Navbar in light mode */
