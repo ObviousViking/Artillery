@@ -210,6 +210,8 @@ def _task_mtimes(task_path: str) -> dict:
         "urls": _mt(os.path.join(task_path, "urls.txt")),
         "lock": _mt(os.path.join(task_path, "lock")),
         "paused": _mt(os.path.join(task_path, "paused")),
+        "error": _mt(os.path.join(task_path, "error")),
+        "archive": _mt(os.path.join(task_path, "archive.sqlite")),
     }
 
 def _cache_name_for_relpath(relpath: str) -> str:
@@ -274,6 +276,21 @@ def _extract_relpath_from_log_line(line: str, downloads_root: str) -> Optional[s
                 return rel
 
     return None
+
+def _count_file_lines(path: str) -> int:
+    """Count lines in a file by streaming in chunks — safe for very large files."""
+    try:
+        count = 0
+        with open(path, 'rb') as f:
+            while True:
+                block = f.read(65536)
+                if not block:
+                    break
+                count += block.count(b'\n')
+        return count
+    except Exception:
+        return 0
+
 
 def _tail_lines(path: str, max_lines: int = 500, chunk_size: int = 8192) -> List[str]:
     try:
@@ -508,15 +525,19 @@ def load_tasks():
         schedule = read_text(os.path.join(task_path, "cron.txt"))
         command = read_text(os.path.join(task_path, "command.txt")) or "gallery-dl --input-file urls.txt"
         last_run = read_text(os.path.join(task_path, "last_run.txt"))
-        urls = read_text(os.path.join(task_path, "urls.txt"))
+        url_count   = _count_file_lines(os.path.join(task_path, "urls.txt"))
+        has_archive = os.path.exists(os.path.join(task_path, "archive.sqlite"))
 
-        lock_path = os.path.join(task_path, "lock")
+        lock_path   = os.path.join(task_path, "lock")
         paused_path = os.path.join(task_path, "paused")
+        error_path  = os.path.join(task_path, "error")
 
         if os.path.exists(lock_path):
             status = "running"
         elif os.path.exists(paused_path):
             status = "paused"
+        elif os.path.exists(error_path):
+            status = "error"
         else:
             status = "idle"
 
@@ -530,7 +551,8 @@ def load_tasks():
             "task_path": task_path,
             "urls_file": "urls.txt",
             "command": command,
-            "urls": urls,
+            "url_count": url_count,
+            "has_archive": has_archive,
         }
         _TASK_CACHE[slug] = {"_mtimes": mtimes, "task": task}
         tasks.append(task)
@@ -731,7 +753,9 @@ def tasks():
             flash("Task name is required.", "error")
             return redirect(url_for("tasks"))
 
-        if not urls_text:
+        keep_existing_urls = request.form.get("keep_existing_urls", "0") == "1"
+
+        if not keep_existing_urls and not urls_text:
             flash("You need to provide at least one URL.", "error")
             return redirect(url_for("tasks"))
 
@@ -740,7 +764,8 @@ def tasks():
         os.makedirs(task_folder, exist_ok=True)
 
         write_text(os.path.join(task_folder, "name.txt"), name)
-        write_text(os.path.join(task_folder, "urls.txt"), urls_text.strip() + "\n")
+        if not keep_existing_urls:
+            write_text(os.path.join(task_folder, "urls.txt"), urls_text.strip() + "\n")
 
         if schedule:
             write_text(os.path.join(task_folder, "cron.txt"), schedule)
@@ -805,6 +830,7 @@ def api_tasks():
             "schedule": t.get("schedule"),
             "status": t.get("status"),
             "last_run": t.get("last_run"),
+            "has_archive": t.get("has_archive", False),
         })
 
     return jsonify(out)
@@ -858,11 +884,19 @@ def config_page():
 def run_task_background(task_folder: str):
     ensure_data_dirs(ensure_downloads=True)
 
-    lock_path = os.path.join(task_folder, "lock")
-    logs_path = os.path.join(task_folder, "logs.txt")
+    lock_path     = os.path.join(task_folder, "lock")
+    logs_path     = os.path.join(task_folder, "logs.txt")
     last_run_path = os.path.join(task_folder, "last_run.txt")
-    command_path = os.path.join(task_folder, "command.txt")
-    urls_file = os.path.join(task_folder, "urls.txt")
+    command_path  = os.path.join(task_folder, "command.txt")
+    urls_file     = os.path.join(task_folder, "urls.txt")
+    error_path    = os.path.join(task_folder, "error")
+
+    # Clear any previous error state so status shows "running" immediately
+    try:
+        if os.path.exists(error_path):
+            os.remove(error_path)
+    except Exception:
+        pass
 
     command = read_text(command_path)
     if not command:
@@ -918,18 +952,23 @@ def run_task_background(task_folder: str):
                 logf.write("\nTask finished successfully.\n")
             else:
                 logf.write(f"\nTask exited with code {result.returncode}.\n")
+                open(error_path, "w").close()
 
     except Exception as exc:
         with open(logs_path, "a", encoding="utf-8") as logf:
             logf.write(f"\nERROR while running task: {exc}\n")
+        try:
+            open(error_path, "w").close()
+        except Exception:
+            pass
     finally:
-        # Task completion: just notify clients that media wall should refresh
         if os.path.exists(lock_path):
             os.remove(lock_path)
 
         try:
-            touch_mediawall_notify()
             slug = os.path.basename(task_folder.rstrip("/"))
+            _TASK_CACHE.pop(slug, None)  # force re-read on next poll so error status is visible immediately
+            touch_mediawall_notify()
             print(f"task {slug} finished", flush=True)
         except Exception:
             pass
@@ -981,6 +1020,18 @@ def task_action(slug):
         else:
             open(paused_path, "w").close()
             flash("Task paused.", "success")
+        return redirect(url_for("tasks"))
+
+    if action == "delete_archive":
+        archive_path = os.path.join(task_folder, "archive.sqlite")
+        if os.path.exists(archive_path):
+            try:
+                os.remove(archive_path)
+                flash("Archive deleted. gallery-dl will re-download previously seen items on next run.", "success")
+            except Exception as exc:
+                flash(f"Failed to delete archive: {exc}", "error")
+        else:
+            flash("No archive file found for this task.", "info")
         return redirect(url_for("tasks"))
 
     flash("Unknown action.", "error")
@@ -1047,6 +1098,39 @@ def task_logs(slug):
         return jsonify({"error": str(exc)}), 500
     
     return jsonify({"slug": slug, "content": content})
+
+
+# ---------------------------------------------------------------------
+# Task URLs endpoint (lazy-loaded by the UI)
+# ---------------------------------------------------------------------
+
+@app.route("/tasks/<slug>/urls")
+def task_urls(slug):
+    ensure_data_dirs(ensure_downloads=False)
+    task_folder = os.path.join(TASKS_ROOT, slug)
+    if not os.path.isdir(task_folder):
+        return jsonify({"error": "Task not found"}), 404
+    urls_path = os.path.join(task_folder, "urls.txt")
+    try:
+        content = read_text(urls_path) or ""
+        return jsonify({"slug": slug, "content": content})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/tasks/<slug>/recent")
+def task_recent(slug):
+    ensure_data_dirs(ensure_downloads=False)
+    task_folder = os.path.join(TASKS_ROOT, slug)
+    if not os.path.isdir(task_folder):
+        return jsonify({"error": "Task not found"}), 404
+    log_path = os.path.join(task_folder, "logs.txt")
+    items = _recent_downloads_from_log(log_path, RECENT_DOWNLOADS_PER_TASK)
+    for item in items:
+        item["url"] = url_for("media_file", subpath=item["rel"])
+        item["is_image"] = item["ext"] in IMAGE_EXTS
+        item["is_video"] = item["ext"] in VIDEO_EXTS
+    return jsonify({"slug": slug, "items": items})
 
 
 # ---------------------------------------------------------------------
