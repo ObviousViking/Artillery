@@ -3,17 +3,20 @@
 
 <style>
   main.container {
-    max-width: 100% !important;
-    width: 100% !important;
+    max-width: none !important;
+    width: 100vw !important;
     padding-left: 0 !important;
     padding-right: 0 !important;
-    margin-left: 0 !important;
-    margin-right: 0 !important;
+    margin: 0 !important;
+  }
+
+
+  main.container.mb-5 {
     margin-bottom: 0 !important;
   }
 
 
-.tasks-shell {
+  .tasks-shell {
     display: grid;
     grid-template-columns: 240px 1fr;
     border: 1px solid var(--border-color);
