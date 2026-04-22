@@ -287,7 +287,12 @@ code {
     color: #0c4a6e !important;
 }
 
-/* Navbar in light mode */
+/* Navbar */
+.navbar-artillery {
+    background-color: var(--bg-secondary) !important;
+    border-bottom: 1px solid var(--border-color);
+}
+
 :root[data-theme="light"] .navbar-artillery {
     background-color: #f8f9fa !important;
     border-bottom-color: #e5e7eb !important;
