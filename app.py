@@ -1118,6 +1118,21 @@ def task_urls(slug):
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/tasks/<slug>/recent")
+def task_recent(slug):
+    ensure_data_dirs(ensure_downloads=False)
+    task_folder = os.path.join(TASKS_ROOT, slug)
+    if not os.path.isdir(task_folder):
+        return jsonify({"error": "Task not found"}), 404
+    log_path = os.path.join(task_folder, "logs.txt")
+    items = _recent_downloads_from_log(log_path, RECENT_DOWNLOADS_PER_TASK)
+    for item in items:
+        item["url"] = url_for("media_file", subpath=item["rel"])
+        item["is_image"] = item["ext"] in IMAGE_EXTS
+        item["is_video"] = item["ext"] in VIDEO_EXTS
+    return jsonify({"slug": slug, "items": items})
+
+
 # ---------------------------------------------------------------------
 # Download task logs
 # ---------------------------------------------------------------------

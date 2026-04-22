@@ -247,6 +247,48 @@ main.container { margin-bottom: 0 !important; }
     text-align: center;
 }
 
+/* ── Recent downloads grid ───────────────────────────────────────────── */
+.r-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 0.6rem;
+}
+.r-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 7px;
+    padding: 0.4rem;
+    overflow: hidden;
+    min-width: 0;
+}
+.r-item img {
+    width: 100%;
+    height: 88px;
+    object-fit: cover;
+    border-radius: 5px;
+    display: block;
+}
+.r-item-label {
+    font-size: 0.63rem;
+    color: var(--text-muted);
+    word-break: break-all;
+    text-align: center;
+    line-height: 1.3;
+    max-height: 2.6em;
+    overflow: hidden;
+    width: 100%;
+}
+.r-item-video {
+    height: 88px;
+    justify-content: center;
+    font-size: 1.6rem;
+    opacity: 0.45;
+}
+
 /* ── Mobile: stack vertically ────────────────────────────────────────── */
 @media (max-width: 767px) {
     .t-shell {
@@ -393,7 +435,7 @@ main.container { margin-bottom: 0 !important; }
           <li><button class="t-tab on" data-tab="details">Details</button></li>
           <li><button class="t-tab"    data-tab="edit">Edit</button></li>
           <li><button class="t-tab"    data-tab="logs">Logs</button></li>
-
+          <li><button class="t-tab"    data-tab="recent">Recent</button></li>
         </ul>
       </div>
 
@@ -406,6 +448,17 @@ main.container { margin-bottom: 0 !important; }
           <div class="mt-2">
             <small class="text-muted">Auto-refreshes every 1 s &middot; last 50 lines shown</small>
           </div>
+        </div>
+
+        <!-- Recent downloads -->
+        <div id="tRecent" style="display:none;">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <small class="text-muted">Most recent downloads from logs</small>
+            <button type="button" id="bRecentRefresh"
+              class="btn btn-sm btn-outline-secondary py-0 px-2"
+              style="font-size:0.72rem;">&#8635; Refresh</button>
+          </div>
+          <div id="recentGrid" class="r-grid"></div>
         </div>
 
         <!-- Details -->
@@ -519,14 +572,16 @@ main.container { margin-bottom: 0 !important; }
     var URL_EDIT_LIMIT = 100000; // refuse in-browser editing above this many lines
 
     /* ── State ────────────────────────────────────────────────────────── */
-    var selSlug      = null;
-    var selUrlCount  = 0;
-    var selUrlsApi   = null;
-    var activeTab    = 'details';
-    var logTimer     = null;
-    var autoScroll   = true;
-    var urlsLoaded   = false;
-    var urlsFetching = false;
+    var selSlug        = null;
+    var selUrlCount    = 0;
+    var selUrlsApi     = null;
+    var activeTab      = 'details';
+    var logTimer       = null;
+    var autoScroll     = true;
+    var urlsLoaded     = false;
+    var urlsFetching   = false;
+    var recentLoaded   = false;
+    var recentFetching = false;
 
     /* ── Shorthand ────────────────────────────────────────────────────── */
     function $(id) { return document.getElementById(id); }
@@ -535,8 +590,8 @@ main.container { margin-bottom: 0 !important; }
     var pEmpty = $('pEmpty'), pNew = $('pNew'), pTask = $('pTask');
     var btnNew = $('btnNew');
     var dDot = $('dDot'), dName = $('dName'), dStat = $('dStat');
-    var tLogs = $('tLogs'), tDetails = $('tDetails'), tEdit = $('tEdit');
-    var logBox = $('logBox');
+    var tLogs = $('tLogs'), tDetails = $('tDetails'), tEdit = $('tEdit'), tRecent = $('tRecent');
+    var logBox = $('logBox'), recentGrid = $('recentGrid'), bRecentRefresh = $('bRecentRefresh');
     var fRun = $('fRun'), fPause = $('fPause'), fDelete = $('fDelete'), fDeleteArchive = $('fDeleteArchive');
     var bRun = $('bRun'), bPause = $('bPause'), bDlLogs = $('bDlLogs'), bDelArchive = $('bDelArchive');
     var dSched = $('dSched'), dLastRun = $('dLastRun'), dUrlCount = $('dUrlCount');
@@ -574,11 +629,13 @@ main.container { margin-bottom: 0 !important; }
         tLogs.style.display    = t === 'logs'    ? '' : 'none';
         tDetails.style.display = t === 'details' ? '' : 'none';
         tEdit.style.display    = t === 'edit'    ? '' : 'none';
+        tRecent.style.display  = t === 'recent'  ? '' : 'none';
         document.querySelectorAll('.t-tab').forEach(function (b) {
             b.classList.toggle('on', b.dataset.tab === t);
         });
         if (t === 'logs' && selSlug) startLog('/tasks/' + selSlug + '/logs');
         else stopLog();
+        if (t === 'recent' && selSlug) loadRecent();
     }
 
     /* ── Task selection ───────────────────────────────────────────────── */
@@ -588,7 +645,7 @@ main.container { margin-bottom: 0 !important; }
         selSlug     = newSlug;
         selUrlCount = parseInt(btn.dataset.urlCount, 10) || 0;
         selUrlsApi  = btn.dataset.urlsApi;
-        if (changed) urlsLoaded = false;
+        if (changed) { urlsLoaded = false; recentLoaded = false; }
 
         /* Sidebar: highlight selected */
         document.querySelectorAll('.t-item').forEach(function (el) {
@@ -685,6 +742,48 @@ main.container { margin-bottom: 0 !important; }
                 urlsFetching           = false;
                 urlGateMsg.textContent = 'Failed: ' + err.message;
                 bLoadUrls.disabled     = false;
+            });
+    }
+
+    /* ── Recent downloads ────────────────────────────────────────────── */
+    function loadRecent(force) {
+        if (!selSlug || (recentLoaded && !force)) return;
+        if (recentFetching) return;
+        recentFetching = true;
+        recentGrid.innerHTML = '<p class="text-muted small mb-0">Loading&hellip;</p>';
+
+        fetch('/tasks/' + selSlug + '/recent')
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                recentFetching = false;
+                recentLoaded   = true;
+                if (d.error) {
+                    recentGrid.innerHTML = '<p class="text-danger small mb-0">' + d.error + '</p>';
+                    return;
+                }
+                if (!d.items || !d.items.length) {
+                    recentGrid.innerHTML = '<p class="text-muted small mb-0">No recent downloads found. Run the task to download some files.</p>';
+                    return;
+                }
+                var html = '';
+                d.items.forEach(function (item) {
+                    if (item.is_image) {
+                        html += '<div class="r-item">'
+                              + '<img src="' + item.url + '" loading="lazy" alt="">'
+                              + '<span class="r-item-label">' + item.filename + '</span>'
+                              + '</div>';
+                    } else {
+                        html += '<div class="r-item r-item-video">'
+                              + '<span>&#127916;</span>'
+                              + '<span class="r-item-label">' + item.filename + '</span>'
+                              + '</div>';
+                    }
+                });
+                recentGrid.innerHTML = html;
+            })
+            .catch(function (e) {
+                recentFetching = false;
+                recentGrid.innerHTML = '<p class="text-danger small mb-0">' + e.message + '</p>';
             });
     }
 
@@ -806,6 +905,7 @@ main.container { margin-bottom: 0 !important; }
         });
 
         bLoadUrls.addEventListener('click', doLoadUrls);
+        bRecentRefresh.addEventListener('click', function () { recentLoaded = false; loadRecent(true); });
 
         document.querySelectorAll('.gde').forEach(function (cb) {
             cb.addEventListener('change', function () { patchCmd(eCmd, eCmdH, this.dataset.flag, this.checked); });
