@@ -2,20 +2,31 @@
 {% block content %}
 
 <style>
-  /* ── Layout shell ─────────────────────────────────────────── */
+  main.container {
+    max-width: none !important;
+    width: 100vw !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    margin: 0 !important;
+  }
+
+  main.container.mb-5 {
+    margin-bottom: 0 !important;
+  }
+
   .tasks-shell {
     display: grid;
     grid-template-columns: 240px 1fr;
     border: 1px solid var(--border-color);
-    border-radius: 0.5rem;
+    border-radius: 0;
     overflow: hidden;
     background: var(--card-bg);
-    /* fill viewport below fixed navbar (56px) minus container padding */
-    height: calc(100vh - 80px);
-    min-height: 500px;
+    width: 100%;
+    min-height: calc(100vh - 56px);
+    height: calc(100vh - 56px);
+    margin: 0;
   }
 
-  /* ── Sidebar ──────────────────────────────────────────────── */
   .ts-sidebar {
     border-right: 1px solid var(--border-color);
     display: flex;
@@ -109,7 +120,6 @@
     text-overflow: ellipsis;
   }
 
-  /* ── Main pane ────────────────────────────────────────────── */
   .ts-main {
     display: flex;
     flex-direction: column;
@@ -151,7 +161,6 @@
     flex-wrap: wrap;
   }
 
-  /* ── Tabs ─────────────────────────────────────────────────── */
   .ts-tabs {
     display: flex;
     border-bottom: 1px solid var(--border-color);
@@ -177,7 +186,6 @@
     border-bottom-color: var(--bs-primary);
   }
 
-  /* ── Pane bodies ──────────────────────────────────────────── */
   .ts-pane {
     flex: 1;
     overflow-y: auto;
@@ -187,7 +195,6 @@
 
   .ts-pane.active { display: block; }
 
-  /* ── Empty / no-selection state ───────────────────────────── */
   .ts-empty {
     flex: 1;
     display: flex;
@@ -199,7 +206,6 @@
     gap: 0.5rem;
   }
 
-  /* ── Stat cards ───────────────────────────────────────────── */
   .ts-stats {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -228,7 +234,6 @@
     letter-spacing: 0.04em;
   }
 
-  /* ── Section label ────────────────────────────────────────── */
   .ts-section-lbl {
     font-size: 0.7rem;
     font-weight: 600;
@@ -241,7 +246,6 @@
     justify-content: space-between;
   }
 
-  /* ── Progress bar ─────────────────────────────────────────── */
   .ts-progress-wrap {
     margin-bottom: 1.25rem;
   }
@@ -264,7 +268,6 @@
 
   @keyframes ts-prog { from { width: 25%; } to { width: 70%; } }
 
-  /* ── URL summary block ────────────────────────────────────── */
   .ts-url-summary {
     background: var(--stat-bg);
     border: 1px solid var(--border-color);
@@ -291,7 +294,6 @@
     margin-top: 0.15rem;
   }
 
-  /* ── Command box ──────────────────────────────────────────── */
   .ts-cmd-box {
     background: var(--stat-bg);
     border: 1px solid var(--border-color);
@@ -304,7 +306,6 @@
     line-height: 1.5;
   }
 
-  /* ── Log box ──────────────────────────────────────────────── */
   .ts-log-box {
     background: var(--log-bg);
     border: 1px solid var(--border-color);
@@ -324,7 +325,6 @@
   .log-error   { color: #f87171; }
   .log-debug   { color: var(--text-muted); }
 
-  /* ── Edit form ────────────────────────────────────────────── */
   .ts-form-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -407,7 +407,6 @@
     padding-top: 0.25rem;
   }
 
-  /* ── URL edit section ─────────────────────────────────────── */
   .ts-url-edit {
     background: var(--stat-bg);
     border: 1px solid var(--border-color);
@@ -501,13 +500,11 @@
 
   .ts-replace-area { display: none; margin-bottom: 0.6rem; }
 
-  /* ── New task button ──────────────────────────────────────── */
   .ts-new-btn {
     font-size: 0.8rem;
     padding: 0.25rem 0.6rem;
   }
 
-  /* ── CSS vars (light / dark) ──────────────────────────────── */
   :root,
   [data-theme="dark"] {
     --sidebar-bg:   #1a1a1a;
@@ -535,7 +532,6 @@
     --card-bg:      #fff;
   }
 
-  /* pulse dot */
   .status-dot {
     display: inline-block;
     width: 7px;
@@ -547,14 +543,29 @@
 
   .status-dot.pulse { animation: ts-pulse 1.4s infinite; }
   @keyframes ts-pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  @media (max-width: 991.98px) {
+    .tasks-shell {
+      grid-template-columns: 1fr;
+      height: auto;
+      min-height: calc(100vh - 56px);
+    }
+
+    .ts-sidebar {
+      max-height: 40vh;
+      border-right: 0;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .ts-stats,
+    .ts-form-grid,
+    .ts-flags {
+      grid-template-columns: 1fr;
+    }
+  }
 </style>
 
-{# ──────────────────────────────────────────────────────────────── #}
-{# Shell                                                            #}
-{# ──────────────────────────────────────────────────────────────── #}
 <div class="tasks-shell">
-
-  {# ── Sidebar ── #}
   <div class="ts-sidebar">
     <div class="ts-sidebar-head">
       <span class="ts-sidebar-head-title">Tasks</span>
@@ -599,10 +610,7 @@
     </div>
   </div>
 
-  {# ── Main pane ── #}
   <div class="ts-main" id="tsMain">
-
-    {# Empty state (shown when nothing selected) #}
     <div class="ts-empty" id="tsEmptyState">
       <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2" opacity=".3">
         <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
@@ -610,17 +618,13 @@
       <span>Select a task to view details</span>
     </div>
 
-    {# Detail view (hidden until task selected) #}
     <div id="tsDetail" style="display:none; flex-direction:column; height:100%; overflow:hidden;">
-
       <div class="ts-main-header">
         <div class="ts-main-title">
           <h2 id="detailName">—</h2>
           <span class="badge" id="detailBadge">—</span>
         </div>
-        <div class="ts-header-actions" id="detailActions">
-          {# Buttons injected by JS using the selected task's slug #}
-        </div>
+        <div class="ts-header-actions" id="detailActions"></div>
       </div>
 
       <div class="ts-tabs">
@@ -629,7 +633,6 @@
         <div class="ts-tab" data-tab="edit">Edit task</div>
       </div>
 
-      {# ── Overview pane ── #}
       <div class="ts-pane active" id="pane-overview">
         <div class="ts-stats">
           <div class="ts-stat">
@@ -667,7 +670,6 @@
         <div class="ts-cmd-box" id="ov-cmd">—</div>
       </div>
 
-      {# ── Logs pane ── #}
       <div class="ts-pane" id="pane-logs">
         <div class="ts-section-lbl">
           <span>Output <span id="logTaskName" style="font-weight:400;text-transform:none;letter-spacing:0"></span></span>
@@ -681,7 +683,6 @@
         </div>
       </div>
 
-      {# ── Edit pane ── #}
       <div class="ts-pane" id="pane-edit">
         <form method="post" action="{{ url_for('tasks') }}" id="taskForm">
           <input type="hidden" id="editingFlag" name="editing_flag" value="1" />
@@ -702,7 +703,6 @@
             </div>
           </div>
 
-          {# URL management - avoids loading huge files into a textarea #}
           <div class="ts-url-edit">
             <div class="ts-url-edit-top">
               <div>
@@ -715,13 +715,11 @@
               </div>
             </div>
 
-            {# Append single URL #}
             <div class="ts-url-append">
               <input type="text" id="appendUrlInput" placeholder="https://example.com/new-url — append a single URL" />
               <button type="button" class="btn btn-sm btn-outline-secondary" style="font-size:0.72rem" onclick="tsAppendUrl()">+ Append</button>
             </div>
 
-            {# Hidden textarea only used for small URL lists OR replace mode #}
             <div class="ts-replace-area" id="replaceArea">
               <label class="ts-flabel">Paste new URLs (will replace entire urls.txt)</label>
               <textarea id="replaceTextarea" rows="5" style="width:100%;font-family:monospace;font-size:0.75rem;border-radius:0.3rem;border:1px solid var(--border-color);background:var(--input-bg);color:var(--text-primary);padding:0.4rem 0.6rem"></textarea>
@@ -731,11 +729,8 @@
               </div>
             </div>
 
-            {# Small list: shown inline. Large list: shows message only #}
             <div class="ts-url-list" id="editUrlList"></div>
             <div class="ts-url-overflow" id="editUrlOverflow" style="display:none"></div>
-
-            {# Hidden field carrying the (possibly modified) URL list back to server #}
             <input type="hidden" id="urlsHidden" name="urls" />
           </div>
 
@@ -766,14 +761,10 @@
           </div>
         </form>
       </div>
+    </div>
+  </div>
+</div>
 
-    </div>{# /tsDetail #}
-  </div>{# /ts-main #}
-</div>{# /tasks-shell #}
-
-{# ──────────────────────────────────────────────────────────────── #}
-{# New task modal                                                   #}
-{# ──────────────────────────────────────────────────────────────── #}
 <div class="modal fade" id="newTaskModal" tabindex="-1" aria-labelledby="newTaskModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
@@ -784,7 +775,6 @@
       <form method="post" action="{{ url_for('tasks') }}" id="newTaskForm">
         <div class="modal-body">
           <input type="hidden" name="editing_flag" value="0" />
-
           <div class="row g-3">
             <div class="col-md-6">
               <label class="form-label fw-semibold small" for="newName">Task name</label>
@@ -846,22 +836,14 @@
   </div>
 </div>
 
-{# ──────────────────────────────────────────────────────────────── #}
-{# JavaScript                                                       #}
-{# ──────────────────────────────────────────────────────────────── #}
 <script>
 (function () {
-  /* ── State ─────────────────────────────────────────────────── */
   let selectedSlug = null;
   let logPollInterval = null;
   let logAutoScroll = true;
   let taskPollInterval = null;
-  // In-memory url list for the currently edited task
-  // null = large file (don't load into memory)
   let editUrlList = null;
-  const URL_INLINE_LIMIT = 200; // lines — above this we show summary only
-
-  /* ── DOM refs ───────────────────────────────────────────────── */
+  const URL_INLINE_LIMIT = 200;
   const tsDetail      = document.getElementById('tsDetail');
   const tsEmptyState  = document.getElementById('tsEmptyState');
   const detailName    = document.getElementById('detailName');
@@ -869,7 +851,6 @@
   const detailActions = document.getElementById('detailActions');
   const logContainer  = document.getElementById('logContainer');
 
-  /* ── Helpers ────────────────────────────────────────────────── */
   function badgeClass(status) {
     switch (status) {
       case 'running':  return 'bg-primary';
@@ -887,20 +868,19 @@
 
   function countLines(str) {
     if (!str) return 0;
-    return str.split('\n').filter(l => l.trim() !== '').length;
+    return str.split('\\n').filter(l => l.trim() !== '').length;
   }
 
   function parseLogColors(text) {
     text = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const map = {warning:'log-warning', error:'log-error', success:'log-success', info:'log-info', debug:'log-debug'};
     for (const [k, cls] of Object.entries(map)) {
-      text = text.replace(new RegExp(`\\[(${k})\\]`, 'gi'),
+      text = text.replace(new RegExp(`\\\\[(${k})\\\\]`, 'gi'),
         (_, m) => `<span class="${cls}">[${m}]</span>`);
     }
     return text;
   }
 
-  /* ── Select task ────────────────────────────────────────────── */
   function selectTask(el) {
     document.querySelectorAll('.ts-item').forEach(i => i.classList.remove('active'));
     el.classList.add('active');
@@ -914,17 +894,12 @@
     const lastRun  = el.dataset.lastrun || '';
 
     selectedSlug = slug;
-
-    // Show detail panel
     tsEmptyState.style.display = 'none';
     tsDetail.style.display = 'flex';
-
-    // Header
     detailName.textContent = name;
     detailBadge.className = 'badge ' + badgeClass(status);
     detailBadge.textContent = status;
 
-    // Action buttons (forms pointing at the correct slug)
     detailActions.innerHTML = `
       <form method="post" action="/tasks/${slug}/action" class="m-0">
         <input type="hidden" name="action" value="run">
@@ -942,27 +917,22 @@
         <button type="submit" class="btn btn-sm btn-outline-danger">&#10005; Delete</button>
       </form>`;
 
-    // Overview pane
     document.getElementById('ov-lastrun').textContent = formatLastRun(lastRun);
     document.getElementById('ov-sched').textContent   = schedule || 'Manual';
     document.getElementById('ov-status').textContent  = status;
     document.getElementById('ov-cmd').textContent     = command;
 
-    // URL count
     const lineCount = countLines(urls);
     document.getElementById('ov-urlcount').textContent = lineCount.toLocaleString() + ' URL' + (lineCount !== 1 ? 's' : '');
     document.getElementById('ov-urlfile').textContent  = 'urls.txt';
 
-    // Running progress section
     document.getElementById('ovProgressSection').style.display = status === 'running' ? 'block' : 'none';
 
-    // Download links
     const dlUrl = `/tasks/${slug}/logs/download`;
     document.getElementById('logsDownloadBtn').href = dlUrl;
     document.getElementById('logTaskName').textContent = '— ' + name;
-    document.getElementById('ovDownloadUrls').href = '#'; // no url-download route yet, placeholder
+    document.getElementById('ovDownloadUrls').href = '#';
 
-    // Populate edit form
     document.getElementById('editName').value     = name;
     document.getElementById('editSchedule').value = schedule;
     document.getElementById('editCommand').value  = command;
@@ -970,8 +940,7 @@
     document.getElementById('editDownloadUrls').href = '#';
     syncCheckboxesToCommand(command);
 
-    // URL handling in edit form
-    const urlLines = urls ? urls.split('\n').filter(l => l.trim()) : [];
+    const urlLines = urls ? urls.split('\\n').filter(l => l.trim()) : [];
     document.getElementById('editUrlCount').textContent = urlLines.length.toLocaleString() + ' URLs in urls.txt';
     document.getElementById('urlsHidden').value = urls;
 
@@ -995,13 +964,11 @@
       urlOverflowEl.style.display = 'none';
     }
 
-    // Start log polling
     stopLogPoll();
     fetchLogs(slug);
     if (status === 'running') startLogPoll(slug);
   }
 
-  /* ── URL list rendering ─────────────────────────────────────── */
   function renderUrlList() {
     const el = document.getElementById('editUrlList');
     if (!editUrlList) { el.innerHTML = ''; return; }
@@ -1016,7 +983,7 @@
   window.tsRemoveUrl = function(i) {
     if (!editUrlList) return;
     editUrlList.splice(i, 1);
-    document.getElementById('urlsHidden').value = editUrlList.join('\n');
+    document.getElementById('urlsHidden').value = editUrlList.join('\\n');
     document.getElementById('editUrlCount').textContent = editUrlList.length.toLocaleString() + ' URLs in urls.txt';
     renderUrlList();
   };
@@ -1027,13 +994,11 @@
     if (!val) return;
     if (editUrlList !== null) {
       editUrlList.push(val);
-      document.getElementById('urlsHidden').value = editUrlList.join('\n');
+      document.getElementById('urlsHidden').value = editUrlList.join('\\n');
       document.getElementById('editUrlCount').textContent = editUrlList.length.toLocaleString() + ' URLs in urls.txt';
       renderUrlList();
     } else {
-      // Large file — we can't hold it in memory; just note that append
-      // needs to go via the hidden field. Warn user.
-      alert('This task has a large URL file. Append is not supported in the browser for files above ' + URL_INLINE_LIMIT + ' URLs. Download urls.txt, edit it locally, then use "Replace file…" to re-upload.');
+      alert('This task has a large URL file. Append is not supported in the browser for files above ' + URL_INLINE_LIMIT + ' URLs. Download urls.txt, edit it locally, then use \"Replace file…\" to re-upload.');
     }
     input.value = '';
   };
@@ -1046,7 +1011,7 @@
   window.tsConfirmReplace = function() {
     const text = document.getElementById('replaceTextarea').value.trim();
     if (!text) return;
-    const lines = text.split('\n').filter(l => l.trim());
+    const lines = text.split('\\n').filter(l => l.trim());
     if (!confirm(`Replace all current URLs with ${lines.length.toLocaleString()} new URLs?`)) return;
     editUrlList = lines.length <= URL_INLINE_LIMIT ? [...lines] : null;
     document.getElementById('urlsHidden').value = text;
@@ -1062,7 +1027,6 @@
     document.getElementById('replaceTextarea').value = '';
   };
 
-  /* ── Tab switching ──────────────────────────────────────────── */
   document.querySelectorAll('.ts-tab').forEach(tab => {
     tab.addEventListener('click', function () {
       document.querySelectorAll('.ts-tab').forEach(t => t.classList.remove('active'));
@@ -1081,7 +1045,6 @@
     });
   });
 
-  /* ── Log fetching ───────────────────────────────────────────── */
   function fetchLogs(slug) {
     if (!slug) return;
     fetch(`/tasks/${slug}/logs?tail=50`)
@@ -1112,7 +1075,6 @@
     logAutoScroll = this.scrollTop + this.clientHeight >= this.scrollHeight - 10;
   });
 
-  /* ── Task list polling (/api/tasks every 5s) ────────────────── */
   function pollTasks() {
     fetch('/api/tasks')
       .then(r => r.ok ? r.json() : null)
@@ -1121,153 +1083,11 @@
         data.forEach(task => {
           const item = document.querySelector(`.ts-item[data-slug="${task.slug}"]`);
           if (!item) return;
-
-          // Update data attrs
           item.dataset.status  = task.status;
           item.dataset.lastrun = task.last_run || '';
-
-          // Badge in sidebar
-          const badge = item.querySelector('.ts-status-badge');
-          if (badge) {
-            badge.className = 'badge ts-status-badge ' + badgeClass(task.status);
-            badge.textContent = task.status;
-          }
-
-          // If this is the currently selected task, update the detail header too
-          if (task.slug === selectedSlug) {
-            detailBadge.className = 'badge ' + badgeClass(task.status);
-            detailBadge.textContent = task.status;
-            document.getElementById('ov-status').textContent  = task.status;
-            document.getElementById('ov-lastrun').textContent = formatLastRun(task.last_run);
-            document.getElementById('ovProgressSection').style.display =
-              task.status === 'running' ? 'block' : 'none';
-
-            // Start/stop log polling based on running state
-            if (task.status === 'running') {
-              startLogPoll(task.slug);
-            } else {
-              stopLogPoll();
-            }
-
-            // Refresh action buttons
-            const runBtn   = detailActions.querySelector('button[type="submit"]:first-of-type');
-            const pauseBtn = detailActions.querySelectorAll('button[type="submit"]')[1];
-            if (runBtn)   runBtn.disabled = task.status === 'running';
-            if (pauseBtn) {
-              pauseBtn.className = 'btn btn-sm ' + (task.status === 'paused' ? 'btn-outline-warning' : 'btn-outline-secondary');
-              pauseBtn.innerHTML = task.status === 'paused' ? '&#9654; Unpause' : '&#9646;&#9646; Pause';
-            }
-          }
         });
-      })
-      .catch(() => {});
+      });
   }
-
-  document.addEventListener('DOMContentLoaded', function () {
-    pollTasks();
-    taskPollInterval = setInterval(pollTasks, 5000);
-  });
-
-  /* ── Search ─────────────────────────────────────────────────── */
-  document.getElementById('tsSearchInput').addEventListener('input', function () {
-    const q = this.value.toLowerCase();
-    document.querySelectorAll('.ts-item').forEach(item => {
-      item.style.display = item.dataset.name.toLowerCase().includes(q) ? '' : 'none';
-    });
-  });
-
-  /* ── Sidebar item clicks ────────────────────────────────────── */
-  document.querySelectorAll('.ts-item').forEach(item => {
-    item.addEventListener('click', function () { selectTask(this); });
-  });
-
-  /* ── New task button → modal ────────────────────────────────── */
-  document.getElementById('btnNewTask').addEventListener('click', function () {
-    const modal = new bootstrap.Modal(document.getElementById('newTaskModal'));
-    modal.show();
-  });
-
-  /* ── Edit form: flag checkboxes ─────────────────────────────── */
-  function syncCheckboxesToCommand(cmd) {
-    document.querySelectorAll('.gd-option').forEach(cb => {
-      cb.checked = cmd.includes(cb.dataset.flag);
-    });
-  }
-
-  function toggleFlagInCommand(flag, checked) {
-    let cmd = document.getElementById('editCommand').value;
-    if (checked) {
-      cmd = cmd.includes('--input-file')
-        ? cmd.replace('--input-file', flag + ' --input-file')
-        : cmd.trimEnd() + ' ' + flag;
-    } else {
-      const esc = flag.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
-      cmd = cmd.replace(new RegExp('\\s*' + esc, 'g'), '');
-    }
-    cmd = cmd.replace(/\s+/g, ' ').trim();
-    document.getElementById('editCommand').value  = cmd;
-    document.getElementById('commandHidden').value = cmd;
-  }
-
-  document.querySelectorAll('.gd-option').forEach(cb => {
-    cb.addEventListener('change', function () {
-      toggleFlagInCommand(this.dataset.flag, this.checked);
-    });
-  });
-
-  document.getElementById('editCommand').addEventListener('input', function () {
-    document.getElementById('commandHidden').value = this.value;
-  });
-
-  /* ── Edit form: cancel ──────────────────────────────────────── */
-  window.tsCancelEdit = function () {
-    document.querySelector('.ts-tab[data-tab="overview"]').click();
-  };
-
-  /* ── Edit form: prepare submit (sync hidden fields) ─────────── */
-  window.tsPrepareSubmit = function () {
-    document.getElementById('commandHidden').value = document.getElementById('editCommand').value;
-    // urlsHidden is already kept in sync by the URL management functions
-  };
-
-  /* ── New task modal: flag checkboxes ────────────────────────── */
-  function buildNewCommand() {
-    const flags = [];
-    document.querySelectorAll('.new-gd-option:checked').forEach(cb => {
-      if (cb.dataset.flag) flags.push(cb.dataset.flag);
-    });
-    return 'gallery-dl' + (flags.length ? ' ' + flags.join(' ') : '') + ' --input-file urls.txt';
-  }
-
-  document.querySelectorAll('.new-gd-option').forEach(cb => {
-    cb.addEventListener('change', function () {
-      const cmd = buildNewCommand();
-      document.getElementById('newCommand').value       = cmd;
-      document.getElementById('newCommandHidden').value = cmd;
-    });
-  });
-
-  document.getElementById('newCommand').addEventListener('input', function () {
-    document.getElementById('newCommandHidden').value = this.value;
-  });
-
-  window.newPrepareSubmit = function () {
-    document.getElementById('newCommandHidden').value = document.getElementById('newCommand').value;
-  };
-
-  // Init new task command preview
-  document.addEventListener('DOMContentLoaded', function () {
-    const cmd = buildNewCommand();
-    document.getElementById('newCommand').value       = cmd;
-    document.getElementById('newCommandHidden').value = cmd;
-  });
-
-  /* ── Auto-select first task on load ────────────────────────── */
-  document.addEventListener('DOMContentLoaded', function () {
-    const first = document.querySelector('.ts-item');
-    if (first) selectTask(first);
-  });
-
 })();
 </script>
 
