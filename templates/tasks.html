@@ -1,5 +1,5 @@
-{% extends "base.html" %}
 {% block content %}
+
 
 <style>
   main.container {
@@ -10,9 +10,11 @@
     margin: 0 !important;
   }
 
+
   main.container.mb-5 {
     margin-bottom: 0 !important;
   }
+
 
   .tasks-shell {
     display: grid;
@@ -27,6 +29,7 @@
     margin: 0;
   }
 
+
   .ts-sidebar {
     border-right: 1px solid var(--border-color);
     display: flex;
@@ -34,6 +37,7 @@
     background: var(--sidebar-bg);
     overflow: hidden;
   }
+
 
   .ts-sidebar-head {
     padding: 0.75rem 1rem;
@@ -44,6 +48,7 @@
     flex-shrink: 0;
   }
 
+
   .ts-sidebar-head-title {
     font-size: 0.8rem;
     font-weight: 600;
@@ -53,11 +58,13 @@
     margin: 0;
   }
 
+
   .ts-search {
     padding: 0.5rem 0.75rem;
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
   }
+
 
   .ts-search input {
     width: 100%;
@@ -69,15 +76,18 @@
     color: var(--text-primary);
   }
 
+
   .ts-search input:focus {
     outline: none;
     border-color: var(--bs-primary);
   }
 
+
   .ts-list {
     flex: 1;
     overflow-y: auto;
   }
+
 
   .ts-item {
     padding: 0.65rem 1rem;
@@ -87,12 +97,15 @@
     border-left: 3px solid transparent;
   }
 
+
   .ts-item:hover { background: var(--hover-bg); }
+
 
   .ts-item.active {
     background: var(--active-bg);
     border-left-color: var(--bs-primary);
   }
+
 
   .ts-item-name {
     font-size: 0.8rem;
@@ -104,12 +117,14 @@
     margin-bottom: 0.3rem;
   }
 
+
   .ts-item-meta {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.25rem;
   }
+
 
   .ts-cron {
     font-family: monospace;
@@ -120,11 +135,13 @@
     text-overflow: ellipsis;
   }
 
+
   .ts-main {
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
+
 
   .ts-main-header {
     padding: 0.75rem 1.25rem;
@@ -137,12 +154,14 @@
     flex-wrap: wrap;
   }
 
+
   .ts-main-title {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     min-width: 0;
   }
+
 
   .ts-main-title h2 {
     font-size: 0.95rem;
@@ -154,6 +173,7 @@
     max-width: 260px;
   }
 
+
   .ts-header-actions {
     display: flex;
     gap: 0.4rem;
@@ -161,12 +181,14 @@
     flex-wrap: wrap;
   }
 
+
   .ts-tabs {
     display: flex;
     border-bottom: 1px solid var(--border-color);
     padding: 0 1.25rem;
     flex-shrink: 0;
   }
+
 
   .ts-tab {
     padding: 0.55rem 0;
@@ -181,10 +203,12 @@
     user-select: none;
   }
 
+
   .ts-tab.active {
     color: var(--text-primary);
     border-bottom-color: var(--bs-primary);
   }
+
 
   .ts-pane {
     flex: 1;
@@ -193,7 +217,9 @@
     display: none;
   }
 
+
   .ts-pane.active { display: block; }
+
 
   .ts-empty {
     flex: 1;
@@ -206,12 +232,14 @@
     gap: 0.5rem;
   }
 
+
   .ts-stats {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 0.6rem;
     margin-bottom: 1.25rem;
   }
+
 
   .ts-stat {
     background: var(--stat-bg);
@@ -220,6 +248,7 @@
     border: 1px solid var(--border-color);
   }
 
+
   .ts-stat-val {
     font-size: 1.1rem;
     font-weight: 600;
@@ -227,12 +256,14 @@
     margin-bottom: 0.1rem;
   }
 
+
   .ts-stat-lbl {
     font-size: 0.7rem;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
+
 
   .ts-section-lbl {
     font-size: 0.7rem;
@@ -246,9 +277,11 @@
     justify-content: space-between;
   }
 
+
   .ts-progress-wrap {
     margin-bottom: 1.25rem;
   }
+
 
   .ts-progress-track {
     height: 3px;
@@ -258,6 +291,7 @@
     margin-bottom: 0.35rem;
   }
 
+
   .ts-progress-fill {
     height: 100%;
     border-radius: 2px;
@@ -266,7 +300,9 @@
     animation: ts-prog 2.5s ease-in-out infinite alternate;
   }
 
+
   @keyframes ts-prog { from { width: 25%; } to { width: 70%; } }
+
 
   .ts-url-summary {
     background: var(--stat-bg);
@@ -281,11 +317,13 @@
     flex-wrap: wrap;
   }
 
+
   .ts-url-count {
     font-size: 0.85rem;
     font-weight: 500;
     color: var(--text-primary);
   }
+
 
   .ts-url-file {
     font-size: 0.72rem;
@@ -293,6 +331,7 @@
     color: var(--text-muted);
     margin-top: 0.15rem;
   }
+
 
   .ts-cmd-box {
     background: var(--stat-bg);
@@ -305,6 +344,7 @@
     word-break: break-all;
     line-height: 1.5;
   }
+
 
   .ts-log-box {
     background: var(--log-bg);
@@ -319,11 +359,13 @@
     color: var(--text-primary);
   }
 
+
   .log-info    { color: #60a5fa; }
   .log-success { color: #4ade80; }
   .log-warning { color: #fbbf24; }
   .log-error   { color: #f87171; }
   .log-debug   { color: var(--text-muted); }
+
 
   .ts-form-grid {
     display: grid;
@@ -332,8 +374,10 @@
     margin-bottom: 0.9rem;
   }
 
+
   .ts-field { margin-bottom: 0.9rem; }
   .ts-field:last-child { margin-bottom: 0; }
+
 
   .ts-flabel {
     font-size: 0.7rem;
@@ -344,6 +388,7 @@
     display: block;
     margin-bottom: 0.3rem;
   }
+
 
   .ts-field input[type="text"],
   .ts-field textarea {
@@ -358,14 +403,17 @@
     transition: border-color 0.1s;
   }
 
+
   .ts-field input[type="text"]:focus,
   .ts-field textarea:focus {
     outline: none;
     border-color: var(--bs-primary);
   }
 
+
   .ts-field textarea { resize: vertical; }
   .ts-hint { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.25rem; }
+
 
   .ts-flags {
     display: grid;
@@ -378,6 +426,7 @@
     margin-bottom: 0.9rem;
   }
 
+
   .ts-flag {
     display: flex;
     align-items: center;
@@ -387,18 +436,22 @@
     color: var(--text-primary);
   }
 
+
   .ts-flag code {
     font-size: 0.68rem;
     color: var(--text-muted);
   }
 
+
   .ts-flag input { cursor: pointer; }
+
 
   .ts-divider {
     height: 1px;
     background: var(--border-color);
     margin: 0.9rem 0;
   }
+
 
   .ts-form-actions {
     display: flex;
@@ -407,6 +460,7 @@
     padding-top: 0.25rem;
   }
 
+
   .ts-url-edit {
     background: var(--stat-bg);
     border: 1px solid var(--border-color);
@@ -414,6 +468,7 @@
     padding: 0.75rem 0.9rem;
     margin-bottom: 0.9rem;
   }
+
 
   .ts-url-edit-top {
     display: flex;
@@ -424,11 +479,13 @@
     flex-wrap: wrap;
   }
 
+
   .ts-url-edit-title {
     font-size: 0.8rem;
     font-weight: 500;
     color: var(--text-primary);
   }
+
 
   .ts-url-edit-note {
     font-size: 0.72rem;
@@ -436,11 +493,13 @@
     margin-top: 0.15rem;
   }
 
+
   .ts-url-append {
     display: flex;
     gap: 0.4rem;
     margin-bottom: 0.6rem;
   }
+
 
   .ts-url-append input {
     flex: 1;
@@ -454,6 +513,7 @@
     color: var(--text-primary);
   }
 
+
   .ts-url-list {
     font-family: monospace;
     font-size: 0.72rem;
@@ -462,12 +522,14 @@
     gap: 0.2rem;
   }
 
+
   .ts-url-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
   }
+
 
   .ts-url-row span {
     white-space: nowrap;
@@ -476,6 +538,7 @@
     color: var(--text-primary);
     flex: 1;
   }
+
 
   .ts-url-rm {
     background: none;
@@ -488,7 +551,9 @@
     border-radius: 0.2rem;
   }
 
+
   .ts-url-rm:hover { color: #f87171; }
+
 
   .ts-url-overflow {
     font-size: 0.72rem;
@@ -498,12 +563,15 @@
     line-height: 1.5;
   }
 
+
   .ts-replace-area { display: none; margin-bottom: 0.6rem; }
+
 
   .ts-new-btn {
     font-size: 0.8rem;
     padding: 0.25rem 0.6rem;
   }
+
 
   :root,
   [data-theme="dark"] {
@@ -519,6 +587,7 @@
     --card-bg:      #141414;
   }
 
+
   [data-theme="light"] {
     --sidebar-bg:   #f5f5f5;
     --active-bg:    #fff;
@@ -532,6 +601,7 @@
     --card-bg:      #fff;
   }
 
+
   .status-dot {
     display: inline-block;
     width: 7px;
@@ -541,8 +611,10 @@
     flex-shrink: 0;
   }
 
+
   .status-dot.pulse { animation: ts-pulse 1.4s infinite; }
   @keyframes ts-pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
 
   @media (max-width: 991.98px) {
     .tasks-shell {
@@ -551,11 +623,13 @@
       min-height: calc(100vh - 56px);
     }
 
+
     .ts-sidebar {
       max-height: 40vh;
       border-right: 0;
       border-bottom: 1px solid var(--border-color);
     }
+
 
     .ts-stats,
     .ts-form-grid,
@@ -565,6 +639,7 @@
   }
 </style>
 
+
 <div class="tasks-shell">
   <div class="ts-sidebar">
     <div class="ts-sidebar-head">
@@ -572,9 +647,11 @@
       <button class="btn btn-sm btn-outline-secondary ts-new-btn" id="btnNewTask">+ New</button>
     </div>
 
+
     <div class="ts-search">
       <input type="text" placeholder="Search tasks…" id="tsSearchInput" autocomplete="off" />
     </div>
+
 
     <div class="ts-list" id="tsTaskList">
       {% if tasks %}
@@ -610,6 +687,7 @@
     </div>
   </div>
 
+
   <div class="ts-main" id="tsMain">
     <div class="ts-empty" id="tsEmptyState">
       <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2" opacity=".3">
@@ -617,6 +695,7 @@
       </svg>
       <span>Select a task to view details</span>
     </div>
+
 
     <div id="tsDetail" style="display:none; flex-direction:column; height:100%; overflow:hidden;">
       <div class="ts-main-header">
@@ -627,11 +706,13 @@
         <div class="ts-header-actions" id="detailActions"></div>
       </div>
 
+
       <div class="ts-tabs">
         <div class="ts-tab active" data-tab="overview">Overview</div>
         <div class="ts-tab" data-tab="logs">Logs</div>
         <div class="ts-tab" data-tab="edit">Edit task</div>
       </div>
+
 
       <div class="ts-pane active" id="pane-overview">
         <div class="ts-stats">
@@ -649,11 +730,13 @@
           </div>
         </div>
 
+
         <div id="ovProgressSection" style="display:none" class="ts-progress-wrap">
           <div class="ts-section-lbl">Currently running</div>
           <div class="ts-progress-track"><div class="ts-progress-fill"></div></div>
           <div style="font-size:0.72rem; color:var(--text-muted); margin-top:0.25rem">gallery-dl is running — check Logs tab for live output</div>
         </div>
+
 
         <div class="ts-section-lbl">URLs file</div>
         <div class="ts-url-summary">
@@ -666,9 +749,11 @@
           </div>
         </div>
 
+
         <div class="ts-section-lbl">Command</div>
         <div class="ts-cmd-box" id="ov-cmd">—</div>
       </div>
+
 
       <div class="ts-pane" id="pane-logs">
         <div class="ts-section-lbl">
@@ -683,9 +768,11 @@
         </div>
       </div>
 
+
       <div class="ts-pane" id="pane-edit">
         <form method="post" action="{{ url_for('tasks') }}" id="taskForm">
           <input type="hidden" id="editingFlag" name="editing_flag" value="1" />
+
 
           <div class="ts-form-grid">
             <div class="ts-field">
@@ -703,6 +790,7 @@
             </div>
           </div>
 
+
           <div class="ts-url-edit">
             <div class="ts-url-edit-top">
               <div>
@@ -715,10 +803,12 @@
               </div>
             </div>
 
+
             <div class="ts-url-append">
               <input type="text" id="appendUrlInput" placeholder="https://example.com/new-url — append a single URL" />
               <button type="button" class="btn btn-sm btn-outline-secondary" style="font-size:0.72rem" onclick="tsAppendUrl()">+ Append</button>
             </div>
+
 
             <div class="ts-replace-area" id="replaceArea">
               <label class="ts-flabel">Paste new URLs (will replace entire urls.txt)</label>
@@ -729,12 +819,15 @@
               </div>
             </div>
 
+
             <div class="ts-url-list" id="editUrlList"></div>
             <div class="ts-url-overflow" id="editUrlOverflow" style="display:none"></div>
             <input type="hidden" id="urlsHidden" name="urls" />
           </div>
 
+
           <div class="ts-divider"></div>
+
 
           <div class="ts-flabel" style="margin-bottom:0.5rem">gallery-dl flags</div>
           <div class="ts-flags">
@@ -748,12 +841,14 @@
             <label class="ts-flag"><input class="gd-option" type="checkbox" data-flag="--zip" /> Store as ZIP <code>--zip</code></label>
           </div>
 
+
           <div class="ts-field">
             <label class="ts-flabel" for="editCommand">Raw command</label>
             <textarea id="editCommand" name="command_display" rows="2" style="font-family:monospace;font-size:0.75rem"></textarea>
             <div class="ts-hint">Backend injects <code>--config</code> and <code>--destination</code> automatically.</div>
             <input type="hidden" id="commandHidden" name="command" />
           </div>
+
 
           <div class="ts-form-actions">
             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="tsCancelEdit()">Cancel</button>
@@ -764,6 +859,7 @@
     </div>
   </div>
 </div>
+
 
 <div class="modal fade" id="newTaskModal" tabindex="-1" aria-labelledby="newTaskModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg">
@@ -788,6 +884,7 @@
             </div>
           </div>
 
+
           <div class="mt-3">
             <label class="form-label fw-semibold small" for="newUrls">URLs <span class="text-muted fw-normal">(one per line)</span></label>
             <textarea id="newUrls" name="urls" class="form-control form-control-sm" rows="5"
@@ -795,6 +892,7 @@
               style="font-family:monospace;font-size:0.8rem"></textarea>
             <div class="form-text">Stored as <code>urls.txt</code>. Large lists can be uploaded via the edit panel after creation.</div>
           </div>
+
 
           <div class="mt-3">
             <label class="form-label fw-semibold small">gallery-dl flags</label>
@@ -820,6 +918,7 @@
             </div>
           </div>
 
+
           <div class="mt-3">
             <label class="form-label fw-semibold small" for="newCommand">Command preview</label>
             <textarea id="newCommand" name="command_display" class="form-control form-control-sm" rows="2" style="font-family:monospace;font-size:0.78rem"></textarea>
@@ -836,6 +935,7 @@
   </div>
 </div>
 
+
 <script>
 (function () {
   let selectedSlug = null;
@@ -851,6 +951,7 @@
   const detailActions = document.getElementById('detailActions');
   const logContainer  = document.getElementById('logContainer');
 
+
   function badgeClass(status) {
     switch (status) {
       case 'running':  return 'bg-primary';
@@ -861,15 +962,18 @@
     }
   }
 
+
   function formatLastRun(lr) {
     if (!lr) return 'Never';
     return lr.slice(0, 19).replace('T', ' ') + ' UTC';
   }
 
+
   function countLines(str) {
     if (!str) return 0;
     return str.split('\\n').filter(l => l.trim() !== '').length;
   }
+
 
   function parseLogColors(text) {
     text = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -881,9 +985,11 @@
     return text;
   }
 
+
   function selectTask(el) {
     document.querySelectorAll('.ts-item').forEach(i => i.classList.remove('active'));
     el.classList.add('active');
+
 
     const slug     = el.dataset.slug;
     const name     = el.dataset.name;
@@ -893,12 +999,14 @@
     const status   = el.dataset.status || 'idle';
     const lastRun  = el.dataset.lastrun || '';
 
+
     selectedSlug = slug;
     tsEmptyState.style.display = 'none';
     tsDetail.style.display = 'flex';
     detailName.textContent = name;
     detailBadge.className = 'badge ' + badgeClass(status);
     detailBadge.textContent = status;
+
 
     detailActions.innerHTML = `
       <form method="post" action="/tasks/${slug}/action" class="m-0">
@@ -917,21 +1025,26 @@
         <button type="submit" class="btn btn-sm btn-outline-danger">&#10005; Delete</button>
       </form>`;
 
+
     document.getElementById('ov-lastrun').textContent = formatLastRun(lastRun);
     document.getElementById('ov-sched').textContent   = schedule || 'Manual';
     document.getElementById('ov-status').textContent  = status;
     document.getElementById('ov-cmd').textContent     = command;
 
+
     const lineCount = countLines(urls);
     document.getElementById('ov-urlcount').textContent = lineCount.toLocaleString() + ' URL' + (lineCount !== 1 ? 's' : '');
     document.getElementById('ov-urlfile').textContent  = 'urls.txt';
 
+
     document.getElementById('ovProgressSection').style.display = status === 'running' ? 'block' : 'none';
+
 
     const dlUrl = `/tasks/${slug}/logs/download`;
     document.getElementById('logsDownloadBtn').href = dlUrl;
     document.getElementById('logTaskName').textContent = '— ' + name;
     document.getElementById('ovDownloadUrls').href = '#';
+
 
     document.getElementById('editName').value     = name;
     document.getElementById('editSchedule').value = schedule;
@@ -940,12 +1053,15 @@
     document.getElementById('editDownloadUrls').href = '#';
     syncCheckboxesToCommand(command);
 
+
     const urlLines = urls ? urls.split('\\n').filter(l => l.trim()) : [];
     document.getElementById('editUrlCount').textContent = urlLines.length.toLocaleString() + ' URLs in urls.txt';
     document.getElementById('urlsHidden').value = urls;
 
+
     const urlListEl    = document.getElementById('editUrlList');
     const urlOverflowEl = document.getElementById('editUrlOverflow');
+
 
     if (urlLines.length > 0 && urlLines.length <= URL_INLINE_LIMIT) {
       editUrlList = [...urlLines];
@@ -964,10 +1080,12 @@
       urlOverflowEl.style.display = 'none';
     }
 
+
     stopLogPoll();
     fetchLogs(slug);
     if (status === 'running') startLogPoll(slug);
   }
+
 
   function renderUrlList() {
     const el = document.getElementById('editUrlList');
@@ -980,6 +1098,7 @@
     ).join('');
   }
 
+
   window.tsRemoveUrl = function(i) {
     if (!editUrlList) return;
     editUrlList.splice(i, 1);
@@ -987,6 +1106,7 @@
     document.getElementById('editUrlCount').textContent = editUrlList.length.toLocaleString() + ' URLs in urls.txt';
     renderUrlList();
   };
+
 
   window.tsAppendUrl = function() {
     const input = document.getElementById('appendUrlInput');
@@ -1003,10 +1123,12 @@
     input.value = '';
   };
 
+
   window.tsToggleReplace = function() {
     const area = document.getElementById('replaceArea');
     area.style.display = area.style.display === 'none' ? 'block' : 'none';
   };
+
 
   window.tsConfirmReplace = function() {
     const text = document.getElementById('replaceTextarea').value.trim();
@@ -1027,12 +1149,14 @@
     document.getElementById('replaceTextarea').value = '';
   };
 
+
   document.querySelectorAll('.ts-tab').forEach(tab => {
     tab.addEventListener('click', function () {
       document.querySelectorAll('.ts-tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.ts-pane').forEach(p => p.classList.remove('active'));
       this.classList.add('active');
       document.getElementById('pane-' + this.dataset.tab).classList.add('active');
+
 
       if (this.dataset.tab === 'logs' && selectedSlug) {
         fetchLogs(selectedSlug);
@@ -1044,6 +1168,7 @@
       }
     });
   });
+
 
   function fetchLogs(slug) {
     if (!slug) return;
@@ -1062,18 +1187,22 @@
       });
   }
 
+
   function startLogPoll(slug) {
     if (logPollInterval) return;
     logPollInterval = setInterval(() => fetchLogs(slug), 2000);
   }
 
+
   function stopLogPoll() {
     if (logPollInterval) { clearInterval(logPollInterval); logPollInterval = null; }
   }
 
+
   logContainer.addEventListener('scroll', function () {
     logAutoScroll = this.scrollTop + this.clientHeight >= this.scrollHeight - 10;
   });
+
 
   function pollTasks() {
     fetch('/api/tasks')
@@ -1090,5 +1219,6 @@
   }
 })();
 </script>
+
 
 {% endblock %}
