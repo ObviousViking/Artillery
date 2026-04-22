@@ -43,6 +43,38 @@ main.container { margin-bottom: 0 !important; }
 
 .t-list { flex: 1; overflow-y: auto; }
 
+/* New task button */
+#btnNew {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #22c55e;
+    color: #fff;
+    border: none;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    flex-shrink: 0;
+    transition: background 0.15s, transform 0.12s;
+}
+#btnNew:hover { background: #16a34a; transform: scale(1.1); }
+
+/* Task search */
+.t-search {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+.t-search .form-control {
+    font-size: 0.76rem;
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+
 /* Task list item */
 .t-item {
     display: block;
@@ -320,9 +352,11 @@ a.r-item:hover {
   <!-- ── Left sidebar ─────────────────────────────────────────────────── -->
   <aside class="t-sidebar">
     <div class="t-sidebar-hd">
-      <button type="button" id="btnNew"
-        class="btn btn-sm btn-outline-success py-0 px-2"
-        style="font-size:0.7rem;line-height:1.85;">+ New</button>
+      <button type="button" id="btnNew" title="New task">+</button>
+    </div>
+    <div class="t-search">
+      <input type="search" id="taskSearch" class="form-control"
+             placeholder="Filter tasks…" autocomplete="off" spellcheck="false"/>
     </div>
 
     <div class="t-list">
@@ -607,6 +641,7 @@ a.r-item:hover {
     var eUrlCntLbl = $('eUrlCntLbl'), urlGate = $('urlGate');
     var urlGateMsg = $('urlGateMsg'), bLoadUrls = $('bLoadUrls');
     var cCmd = $('cCmd'), cCmdH = $('cCmdH');
+    var taskSearch = $('taskSearch');
 
     /* ── Helpers ──────────────────────────────────────────────────────── */
     function dotCls(s) {
@@ -926,6 +961,13 @@ a.r-item:hover {
 
         logBox.addEventListener('scroll', function () {
             autoScroll = logBox.scrollTop + logBox.clientHeight >= logBox.scrollHeight - 10;
+        });
+
+        taskSearch.addEventListener('input', function () {
+            var q = this.value.trim().toLowerCase();
+            document.querySelectorAll('.t-item').forEach(function (btn) {
+                btn.style.display = (!q || btn.dataset.name.toLowerCase().includes(q)) ? '' : 'none';
+            });
         });
 
         buildCreateCmd();
