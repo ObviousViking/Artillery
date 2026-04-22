@@ -1217,6 +1217,21 @@
         });
       });
   }
+
+  document.querySelectorAll('.ts-item').forEach(item => {
+    item.addEventListener('click', () => selectTask(item));
+  });
+
+  document.getElementById('btnNewTask').addEventListener('click', () => {
+    new bootstrap.Modal(document.getElementById('newTaskModal')).show();
+  });
+
+  document.getElementById('tsSearchInput').addEventListener('input', function () {
+    const q = this.value.toLowerCase();
+    document.querySelectorAll('.ts-item').forEach(item => {
+      item.style.display = item.dataset.name.toLowerCase().includes(q) ? '' : 'none';
+    });
+  });
 })();
 </script>
 
