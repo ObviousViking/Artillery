@@ -54,7 +54,7 @@
     </div>
     <div class="d-flex align-items-center gap-3">
       <span class="text-muted small">Large</span>
-      <input id="media-wall-scale-range" class="form-range media-wall-scale-range" type="range" min="1" max="6" step="1" />
+      <input id="media-wall-scale-range" class="form-range media-wall-scale-range" type="range" min="1" max="16" step="1" />
       <span class="text-muted small">Compact</span>
     </div>
   </div>
@@ -185,18 +185,28 @@
 
   function getScaleValue() {
     const raw = scaleRange?.value || "4";
-    const value = Math.max(1, Math.min(6, parseInt(raw, 10) || 4));
+    const value = Math.max(1, Math.min(16, parseInt(raw, 10) || 4));
     return value;
   }
 
   function thumbHeightForScale(scale) {
     switch (scale) {
-      case 1: return 260;
-      case 2: return 200;
-      case 3: return 150;
-      case 4: return 110;
-      case 5: return 90;
-      case 6: return 75;
+      case 1:  return 260;
+      case 2:  return 200;
+      case 3:  return 150;
+      case 4:  return 110;
+      case 5:  return 90;
+      case 6:  return 75;
+      case 7:  return 64;
+      case 8:  return 56;
+      case 9:  return 50;
+      case 10: return 44;
+      case 11: return 40;
+      case 12: return 36;
+      case 13: return 32;
+      case 14: return 29;
+      case 15: return 26;
+      case 16: return 24;
       default: return 110;
     }
   }
@@ -367,7 +377,7 @@
   document.addEventListener("DOMContentLoaded", () => {
     if (scaleRange) {
       const savedScale = parseInt(localStorage.getItem(scaleStorageKey) || "4", 10);
-      const scale = Math.max(1, Math.min(6, savedScale || 4));
+      const scale = Math.max(1, Math.min(16, savedScale || 4));
       scaleRange.value = String(scale);
       applyScale(scale);
       scaleRange.addEventListener("input", () => {
