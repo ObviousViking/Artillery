@@ -1,19 +1,13 @@
 {% extends "base.html" %}
+{% block main_class %}p-0{% endblock %}
 {% block content %}
 
 <style>
 /* ── Shell: full-height layout ───────────────────────────────────────── */
-main.container { margin-bottom: 0 !important; }
-
 .t-shell {
     display: flex;
-    height: calc(100vh - 96px);
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
+    height: calc(100vh - 80px);
     overflow: hidden;
-    /* Break out of Bootstrap container's side padding */
-    margin-left: -0.75rem;
-    margin-right: -0.75rem;
 }
 
 /* ── Sidebar ─────────────────────────────────────────────────────────── */
@@ -45,13 +39,13 @@ main.container { margin-bottom: 0 !important; }
 
 /* New task button */
 #btnNew {
-    width: 28px;
-    height: 28px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     background: #22c55e;
     color: #fff;
     border: none;
-    font-size: 1.25rem;
+    font-size: 1rem;
     line-height: 1;
     cursor: pointer;
     display: flex;
@@ -182,7 +176,7 @@ main.container { margin-bottom: 0 !important; }
     user-select: none;
     color: var(--text-muted);
 }
-.p-icon { font-size: 2.8rem; opacity: 0.1; margin-bottom: 1rem; }
+.p-icon { font-size: 2.8rem; opacity: 0.6; margin-bottom: 1rem; }
 
 /* New task panel */
 #pNew {

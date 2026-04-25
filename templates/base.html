@@ -110,7 +110,7 @@
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="https://github.com/obviousviking/artillery" target="_blank" rel="noopener noreferrer">
-                            GitHub
+                            GitHub <span id="ghStars" style="font-size:0.78em;opacity:0.7;letter-spacing:0.02em;"></span>
                         </a>
                     </li>
                     <li class="nav-item">
@@ -134,7 +134,7 @@
     {% endif %}
     {% endwith %}
 
-    <main class="container mb-5">
+    <main class="{% block main_class %}container mb-5{% endblock %}">
         {% block content %}{% endblock %}
     </main>
 
@@ -188,6 +188,30 @@
                 }, 3000);
             });
         });
+    </script>
+
+    <!-- GitHub star count (cached 1 h in localStorage to stay well under API rate limit) -->
+    <script>
+    (function () {
+        var CACHE_KEY = 'artillery-gh-stars';
+        var TTL = 3600000;
+        function show(n) {
+            var el = document.getElementById('ghStars');
+            if (el && n) el.textContent = '★ ' + Number(n).toLocaleString();
+        }
+        try {
+            var hit = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+            if (hit && Date.now() - hit.ts < TTL) { show(hit.n); return; }
+        } catch (e) {}
+        fetch('https://api.github.com/repos/obviousviking/artillery')
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (d) {
+                if (!d || d.stargazers_count === undefined) return;
+                try { localStorage.setItem(CACHE_KEY, JSON.stringify({n: d.stargazers_count, ts: Date.now()})); } catch (e) {}
+                show(d.stargazers_count);
+            })
+            .catch(function () {});
+    })();
     </script>
 
     <!-- Swiper JS (before closing body) -->
