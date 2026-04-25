@@ -1,19 +1,13 @@
 {% extends "base.html" %}
+{% block main_class %}p-0{% endblock %}
 {% block content %}
 
 <style>
 /* ── Shell: full-height layout ───────────────────────────────────────── */
-main.container { margin-bottom: 0 !important; }
-
 .t-shell {
     display: flex;
-    height: calc(100vh - 96px);
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
+    height: calc(100vh - 80px);
     overflow: hidden;
-    /* Break out of Bootstrap container's side padding */
-    margin-left: -0.75rem;
-    margin-right: -0.75rem;
 }
 
 /* ── Sidebar ─────────────────────────────────────────────────────────── */

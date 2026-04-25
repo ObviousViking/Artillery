@@ -134,7 +134,7 @@
     {% endif %}
     {% endwith %}
 
-    <main class="container mb-5">
+    <main class="{% block main_class %}container mb-5{% endblock %}">
         {% block content %}{% endblock %}
     </main>
 
