@@ -113,24 +113,8 @@
     white-space: nowrap;
 }
 
-/* ── Status dot (detail header only) ────────────────────────────────── */
-.sdot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    display: inline-block;
-    transition: background 0.3s;
-}
-.sdot.running  { background: #3b82f6; animation: sdot-pulse 1.3s ease-in-out infinite; }
-.sdot.error    { background: #ef4444; }
-.sdot.complete { background: #22c55e; }
-.sdot.idle-ok  { background: #22c55e; }
-.sdot.paused   { background: #f59e0b; }
-.sdot.idle     { background: #6b7280; }
-@keyframes sdot-pulse { 0%,100%{opacity:1} 50%{opacity:.2} }
-
 /* ── Sidebar status badge ────────────────────────────────────────────── */
+@keyframes sdot-pulse { 0%,100%{opacity:1} 50%{opacity:.2} }
 .t-item-st {
     font-size: 0.65rem;
     font-weight: 700;
@@ -219,12 +203,6 @@
     white-space: nowrap;
     min-width: 0;
 }
-.t-det-stat {
-    font-size: 0.72rem;
-    color: var(--text-muted);
-    flex-shrink: 0;
-}
-
 /* Tabs */
 .t-tabs {
     display: flex;
@@ -466,9 +444,7 @@ a.r-item:hover {
       <!-- Header + tabs -->
       <div class="t-det-hd">
         <div class="t-det-title">
-          <span class="sdot" id="dDot"></span>
           <span class="t-det-name" id="dName">—</span>
-          <span class="t-det-stat" id="dStat">—</span>
         </div>
         <ul class="t-tabs">
           <li><button class="t-tab on" data-tab="details">Details</button></li>
@@ -628,7 +604,7 @@ a.r-item:hover {
     /* ── Refs ─────────────────────────────────────────────────────────── */
     var pEmpty = $('pEmpty'), pNew = $('pNew'), pTask = $('pTask');
     var btnNew = $('btnNew');
-    var dDot = $('dDot'), dName = $('dName'), dStat = $('dStat');
+    var dName = $('dName');
     var tLogs = $('tLogs'), tDetails = $('tDetails'), tEdit = $('tEdit'), tRecent = $('tRecent');
     var logBox = $('logBox'), recentGrid = $('recentGrid'), bRecentRefresh = $('bRecentRefresh');
     var fRun = $('fRun'), fPause = $('fPause'), fDelete = $('fDelete'), fDeleteArchive = $('fDeleteArchive');
@@ -644,10 +620,6 @@ a.r-item:hover {
     /* ── Helpers ──────────────────────────────────────────────────────── */
     function displaySt(status, lastRun) {
         return (status === 'idle' && lastRun) ? 'idle-ok' : status;
-    }
-
-    function dotCls(s) {
-        return 'sdot ' + ({'running':'running','error':'error','complete':'complete','idle-ok':'idle-ok','paused':'paused'}[s] || 'idle');
     }
 
     function fmtN(n) {
@@ -698,9 +670,7 @@ a.r-item:hover {
 
         /* Header */
         var st = btn.dataset.status || 'idle';
-        dDot.className    = dotCls(displaySt(st, btn.dataset.lastRun));
         dName.textContent = btn.dataset.name;
-        dStat.textContent = st;
 
         /* Details tab */
         dSched.textContent    = btn.dataset.schedule || '—';
@@ -914,8 +884,6 @@ a.r-item:hover {
                         btn.dataset.hasArchive = t.has_archive ? '1' : '0';
                     }
                     if (t.slug === selSlug) {
-                        dDot.className    = dotCls(displaySt(t.status, t.last_run || (btn && btn.dataset.lastRun)));
-                        dStat.textContent = t.status;
                         bRun.disabled     = (t.status === 'running');
                         setPauseBtn(t.status);
                         if (t.last_run) dLastRun.textContent = fmtDate(t.last_run);

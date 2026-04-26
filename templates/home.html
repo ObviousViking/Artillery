@@ -12,10 +12,13 @@
           <code>gallery-dl</code>. Create repeatable download tasks, schedule
           them with cron, and keep everything isolated per task folder.
         </p>
-
-        
-
-        
+        {% if media_wall_enabled %}
+        <div class="d-flex align-items-center gap-3 mt-1">
+          <span class="small text-muted" style="white-space:nowrap;">Media wall scale</span>
+          <input id="media-wall-scale-range" class="form-range" type="range" min="1" max="16" step="1" style="width:min(220px,40vw);" />
+          <span id="media-wall-scale-label" class="small text-muted" style="min-width:5.5rem;white-space:nowrap;">4 columns</span>
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -37,12 +40,6 @@
 
         <div id="media-wall-empty" class="text-muted mb-0" {% if has_media %}style="display:none"{% endif %}>
           No media cached yet. Run a task, then refresh the media wall.
-        </div>
-
-        <!-- Floating column control -->
-        <div class="mw-scale-ctrl" id="mwScaleCtrl" title="Adjust columns">
-          <span class="mw-scale-lbl" id="media-wall-scale-label">4 cols</span>
-          <input id="media-wall-scale-range" class="form-range media-wall-scale-range" type="range" min="1" max="16" step="1" />
         </div>
 
         <!-- Infinite scroll container -->
@@ -77,7 +74,6 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    position: relative;
   }
   #media-wall-container {
     flex: 1;
@@ -150,44 +146,6 @@
     margin-bottom: 0.75rem;
   }
 
-  /* Floating column control overlay */
-  .mw-scale-ctrl {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    z-index: 20;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: rgba(0, 0, 0, 0.52);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 100px;
-    padding: 5px 12px;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    cursor: default;
-    user-select: none;
-  }
-  .mw-scale-lbl {
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.85);
-    white-space: nowrap;
-    letter-spacing: 0.03em;
-  }
-  .media-wall-scale-range {
-    width: 0;
-    opacity: 0;
-    pointer-events: none;
-    transition: width 0.25s ease, opacity 0.2s ease;
-    margin: 0;
-  }
-  .mw-scale-ctrl:hover .media-wall-scale-range,
-  .mw-scale-ctrl:focus-within .media-wall-scale-range {
-    width: min(160px, 30vw);
-    opacity: 1;
-    pointer-events: auto;
-  }
 </style>
 
 <script>
