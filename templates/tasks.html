@@ -461,14 +461,8 @@ a.r-item:hover {
         <!-- Logs -->
         <div id="tLogs">
           <div id="logBox"><span class="text-muted">Loading&hellip;</span></div>
-          <div class="mt-2 d-flex align-items-center gap-3">
+          <div class="mt-2">
             <small class="text-muted">Auto-refreshes every 1 s &middot; last 50 lines shown</small>
-            <form id="fClearLogs" method="post" class="m-0">
-              <input type="hidden" name="action" value="clear_logs">
-              <button type="submit" class="btn btn-sm btn-outline-secondary py-0 px-2"
-                style="font-size:0.72rem;"
-                onclick="return confirm('Clear all logs for this task?')">Clear logs</button>
-            </form>
           </div>
         </div>
 
@@ -508,7 +502,12 @@ a.r-item:hover {
               <input type="hidden" name="action" value="pause">
               <button type="submit" id="bPause" class="btn btn-sm btn-secondary">&#9646;&#9646; Pause</button>
             </form>
-            <a id="bDlLogs" href="#" class="btn btn-sm btn-secondary">&#8659; Download Logs</a>
+            <a id="bDlLogs" href="#" class="btn btn-sm btn-secondary text-white">&#8659; Download Logs</a>
+            <form id="fClearLogs" method="post" class="m-0"
+              onsubmit="return confirm('Clear all logs for this task?')">
+              <input type="hidden" name="action" value="clear_logs">
+              <button type="submit" class="btn btn-sm btn-secondary">&#128465; Clear Logs</button>
+            </form>
             <form id="fDelete" method="post" class="m-0"
               onsubmit="return confirm('Delete this task? Its folder and logs will be removed.')">
               <input type="hidden" name="action" value="delete">
