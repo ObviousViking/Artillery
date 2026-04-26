@@ -539,11 +539,19 @@ def load_tasks():
         else:
             status = "idle"
 
+        next_run = None
+        if schedule and croniter.is_valid(schedule):
+            try:
+                next_run = croniter(schedule, dt.datetime.now()).get_next(dt.datetime).isoformat(timespec="seconds")
+            except Exception:
+                pass
+
         task = {
             "id": slug,
             "name": name,
             "slug": slug,
             "schedule": schedule,
+            "next_run": next_run,
             "status": status,
             "last_run": last_run,
             "task_path": task_path,
@@ -828,6 +836,7 @@ def api_tasks():
             "name": t.get("name"),
             "slug": t.get("slug"),
             "schedule": t.get("schedule"),
+            "next_run": t.get("next_run"),
             "status": t.get("status"),
             "last_run": t.get("last_run"),
             "has_archive": t.get("has_archive", False),
@@ -885,6 +894,8 @@ def run_task_background(task_folder: str):
     ensure_data_dirs(ensure_downloads=True)
 
     lock_path     = os.path.join(task_folder, "lock")
+    pid_path      = os.path.join(task_folder, "pid")
+    stopped_path  = os.path.join(task_folder, "stopped")
     logs_path     = os.path.join(task_folder, "logs.txt")
     last_run_path = os.path.join(task_folder, "last_run.txt")
     command_path  = os.path.join(task_folder, "command.txt")
@@ -936,7 +947,7 @@ def run_task_background(task_folder: str):
             logf.write(f"$ {' '.join(cmd_parts)}\n\n")
             logf.flush()
 
-            result = subprocess.run(
+            proc = subprocess.Popen(
                 cmd_parts,
                 cwd=task_folder,
                 stdout=logf,
@@ -944,14 +955,28 @@ def run_task_background(task_folder: str):
                 text=True,
                 env=env,
             )
+            try:
+                Path(pid_path).write_text(str(proc.pid))
+            except Exception:
+                pass
+            returncode = proc.wait()
 
         write_text(last_run_path, now)
 
+        was_stopped = os.path.exists(stopped_path)
+        try:
+            if was_stopped:
+                os.remove(stopped_path)
+        except Exception:
+            pass
+
         with open(logs_path, "a", encoding="utf-8") as logf:
-            if result.returncode == 0:
+            if returncode == 0:
                 logf.write("\nTask finished successfully.\n")
+            elif was_stopped:
+                logf.write("\nTask stopped.\n")
             else:
-                logf.write(f"\nTask exited with code {result.returncode}.\n")
+                logf.write(f"\nTask exited with code {returncode}.\n")
                 Path(error_path).touch()
 
     except Exception as exc:
@@ -962,12 +987,16 @@ def run_task_background(task_folder: str):
         except Exception:
             pass
     finally:
-        if os.path.exists(lock_path):
-            os.remove(lock_path)
+        for p in (lock_path, pid_path):
+            try:
+                if os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
 
         try:
             slug = os.path.basename(task_folder.rstrip("/"))
-            _TASK_CACHE.pop(slug, None)  # force re-read on next poll so error status is visible immediately
+            _TASK_CACHE.pop(slug, None)
             touch_mediawall_notify()
             print(f"task {slug} finished", flush=True)
         except Exception:
@@ -1021,6 +1050,33 @@ def task_action(slug):
         else:
             Path(paused_path).touch()
             flash("Task paused.", "success")
+        return redirect(url_for("tasks"))
+
+    if action == "stop":
+        pid_path = os.path.join(task_folder, "pid")
+        pid_text = read_text(pid_path)
+        if not pid_text:
+            flash("Task does not appear to be running.", "info")
+            return redirect(url_for("tasks"))
+        try:
+            Path(os.path.join(task_folder, "stopped")).touch()
+            os.kill(int(pid_text), signal.SIGTERM)
+            flash("Stop signal sent.", "success")
+        except ProcessLookupError:
+            flash("Process already finished.", "info")
+        except ValueError:
+            flash("Invalid PID file.", "error")
+        except Exception as exc:
+            flash(f"Failed to stop task: {exc}", "error")
+        return redirect(url_for("tasks"))
+
+    if action == "clear_logs":
+        logs_path = os.path.join(task_folder, "logs.txt")
+        try:
+            write_text(logs_path, "")
+            flash("Logs cleared.", "success")
+        except Exception as exc:
+            flash(f"Failed to clear logs: {exc}", "error")
         return redirect(url_for("tasks"))
 
     if action == "delete_archive":

@@ -352,7 +352,8 @@ a.r-item:hover {
           data-logs-dl-url="{{ url_for('download_task_logs', slug=task.slug) }}"
           data-logs-api="/tasks/{{ task.slug|e }}/logs"
           data-urls-api="/tasks/{{ task.slug|e }}/urls"
-          data-has-archive="{{ '1' if task.has_archive else '0' }}">
+          data-has-archive="{{ '1' if task.has_archive else '0' }}"
+          data-next-run="{{ (task.next_run or '')|e }}">
           <div class="t-item-row">
             <span class="t-item-name">{{ task.name }}</span>
             <span class="t-item-st {{ display_st }}" data-sstatus>{{ st }}</span>
@@ -460,8 +461,14 @@ a.r-item:hover {
         <!-- Logs -->
         <div id="tLogs">
           <div id="logBox"><span class="text-muted">Loading&hellip;</span></div>
-          <div class="mt-2">
+          <div class="mt-2 d-flex align-items-center gap-3">
             <small class="text-muted">Auto-refreshes every 1 s &middot; last 50 lines shown</small>
+            <form id="fClearLogs" method="post" class="m-0">
+              <input type="hidden" name="action" value="clear_logs">
+              <button type="submit" class="btn btn-sm btn-outline-secondary py-0 px-2"
+                style="font-size:0.72rem;"
+                onclick="return confirm('Clear all logs for this task?')">Clear logs</button>
+            </form>
           </div>
         </div>
 
@@ -481,6 +488,8 @@ a.r-item:hover {
           <dl class="row small mb-4" style="max-width:440px;">
             <dt class="col-4 fw-normal text-muted">Schedule</dt>
             <dd class="col-8" id="dSched">—</dd>
+            <dt class="col-4 fw-normal text-muted">Next run</dt>
+            <dd class="col-8" id="dNextRun">—</dd>
             <dt class="col-4 fw-normal text-muted">Last run</dt>
             <dd class="col-8" id="dLastRun">Never</dd>
             <dt class="col-4 fw-normal text-muted">URLs</dt>
@@ -490,6 +499,10 @@ a.r-item:hover {
             <form id="fRun" method="post" class="m-0">
               <input type="hidden" name="action" value="run">
               <button type="submit" id="bRun" class="btn btn-sm btn-outline-success">&#9654; Run</button>
+            </form>
+            <form id="fStop" method="post" class="m-0" style="display:none;">
+              <input type="hidden" name="action" value="stop">
+              <button type="submit" class="btn btn-sm btn-outline-danger">&#9632; Stop</button>
             </form>
             <form id="fPause" method="post" class="m-0">
               <input type="hidden" name="action" value="pause">
@@ -608,8 +621,9 @@ a.r-item:hover {
     var tLogs = $('tLogs'), tDetails = $('tDetails'), tEdit = $('tEdit'), tRecent = $('tRecent');
     var logBox = $('logBox'), recentGrid = $('recentGrid'), bRecentRefresh = $('bRecentRefresh');
     var fRun = $('fRun'), fPause = $('fPause'), fDelete = $('fDelete'), fDeleteArchive = $('fDeleteArchive');
+    var fStop = $('fStop'), fClearLogs = $('fClearLogs');
     var bRun = $('bRun'), bPause = $('bPause'), bDlLogs = $('bDlLogs'), bDelArchive = $('bDelArchive');
-    var dSched = $('dSched'), dLastRun = $('dLastRun'), dUrlCount = $('dUrlCount');
+    var dSched = $('dSched'), dNextRun = $('dNextRun'), dLastRun = $('dLastRun'), dUrlCount = $('dUrlCount');
     var eName = $('eName'), eUrls = $('eUrls'), eSched = $('eSched');
     var eCmd = $('eCmd'), eCmdH = $('eCmdH'), eKeepUrls = $('eKeepUrls');
     var eUrlCntLbl = $('eUrlCntLbl'), urlGate = $('urlGate');
@@ -620,6 +634,17 @@ a.r-item:hover {
     /* ── Helpers ──────────────────────────────────────────────────────── */
     function displaySt(status, lastRun) {
         return (status === 'idle' && lastRun) ? 'idle-ok' : status;
+    }
+
+    function fmtNextRun(iso) {
+        if (!iso) return '—';
+        var diff = new Date(iso) - Date.now();
+        if (diff <= 0) return 'soon';
+        var m = Math.round(diff / 60000);
+        if (m < 1) return 'soon';
+        if (m < 60) return 'in ' + m + 'm';
+        var h = Math.floor(m / 60), r = m % 60;
+        return 'in ' + h + 'h' + (r ? ' ' + r + 'm' : '');
     }
 
     function fmtN(n) {
@@ -679,11 +704,14 @@ a.r-item:hover {
 
         /* Action form targets */
         var au = btn.dataset.actionUrl;
-        fRun.action = fPause.action = fDelete.action = fDeleteArchive.action = au;
+        fRun.action = fPause.action = fStop.action = fDelete.action = fDeleteArchive.action = fClearLogs.action = au;
         bDlLogs.href   = btn.dataset.logsDlUrl;
         bDelArchive.style.display = (btn.dataset.hasArchive === '1') ? '' : 'none';
-        bRun.disabled  = (st === 'running');
+        var isRunning = (st === 'running');
+        fRun.style.display  = isRunning ? 'none' : '';
+        fStop.style.display = isRunning ? '' : 'none';
         setPauseBtn(st);
+        dNextRun.textContent = fmtNextRun(btn.dataset.nextRun);
 
         /* Edit form */
         eName.value          = btn.dataset.name;
@@ -875,6 +903,7 @@ a.r-item:hover {
                     var btn = document.querySelector('.t-item[data-slug="' + t.slug + '"]');
                     if (btn) {
                         if (t.last_run) btn.dataset.lastRun = t.last_run;
+                        btn.dataset.nextRun = t.next_run || '';
                         var lbl = btn.querySelector('[data-sstatus]');
                         if (lbl) {
                             lbl.className   = 't-item-st ' + displaySt(t.status, btn.dataset.lastRun);
@@ -884,9 +913,12 @@ a.r-item:hover {
                         btn.dataset.hasArchive = t.has_archive ? '1' : '0';
                     }
                     if (t.slug === selSlug) {
-                        bRun.disabled     = (t.status === 'running');
+                        var isRunning = (t.status === 'running');
+                        fRun.style.display  = isRunning ? 'none' : '';
+                        fStop.style.display = isRunning ? '' : 'none';
                         setPauseBtn(t.status);
                         if (t.last_run) dLastRun.textContent = fmtDate(t.last_run);
+                        dNextRun.textContent = fmtNextRun(t.next_run);
                         bDelArchive.style.display = t.has_archive ? '' : 'none';
                     }
                 });
