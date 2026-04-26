@@ -43,16 +43,17 @@ def main():
         if os.path.exists(paused_path):
             continue
 
-        lock_path = os.path.join(task_folder, "lock")
-        if os.path.exists(lock_path):
-            continue
-
         if not should_run_now(cron_expr, now):
             continue
 
-        print(f"[scheduler] {now.isoformat()} - running task '{slug}' with cron '{cron_expr}'")
+        lock_path = os.path.join(task_folder, "lock")
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+        except FileExistsError:
+            continue
 
-        open(lock_path, "w").close()
+        print(f"[scheduler] {now.isoformat()} - running task '{slug}' with cron '{cron_expr}'")
         run_task_background(task_folder)
 
 

@@ -125,6 +125,7 @@
 .sdot.running  { background: #3b82f6; animation: sdot-pulse 1.3s ease-in-out infinite; }
 .sdot.error    { background: #ef4444; }
 .sdot.complete { background: #22c55e; }
+.sdot.idle-ok  { background: #22c55e; }
 .sdot.paused   { background: #f59e0b; }
 .sdot.idle     { background: #6b7280; }
 @keyframes sdot-pulse { 0%,100%{opacity:1} 50%{opacity:.2} }
@@ -144,6 +145,7 @@
 .t-item-st.running  { color: #2563eb; background: rgba(59,130,246,0.16); animation: sdot-pulse 1.3s ease-in-out infinite; }
 .t-item-st.error    { color: #dc2626; background: rgba(239,68,68,0.16); }
 .t-item-st.complete { color: #16a34a; background: rgba(34,197,94,0.16); }
+.t-item-st.idle-ok  { color: #16a34a; background: rgba(34,197,94,0.16); }
 .t-item-st.paused   { color: #b45309; background: rgba(245,158,11,0.16); }
 .t-item-st.idle     { color: #6b7280; background: rgba(107,114,128,0.14); }
 
@@ -151,6 +153,7 @@
 [data-theme="dark"] .t-item-st.running  { color: #60a5fa; }
 [data-theme="dark"] .t-item-st.error    { color: #f87171; }
 [data-theme="dark"] .t-item-st.complete { color: #4ade80; }
+[data-theme="dark"] .t-item-st.idle-ok  { color: #4ade80; }
 [data-theme="dark"] .t-item-st.paused   { color: #fbbf24; }
 [data-theme="dark"] .t-item-st.idle     { color: #9ca3af; }
 
@@ -358,6 +361,7 @@ a.r-item:hover {
         {% for task in tasks %}
         {% set st = task.status %}
         {% set uc = task.url_count %}
+        {% set display_st = 'idle-ok' if st == 'idle' and task.last_run else st %}
         <button type="button" class="t-item"
           data-slug="{{ task.slug|e }}"
           data-name="{{ task.name|e }}"
@@ -373,7 +377,7 @@ a.r-item:hover {
           data-has-archive="{{ '1' if task.has_archive else '0' }}">
           <div class="t-item-row">
             <span class="t-item-name">{{ task.name }}</span>
-            <span class="t-item-st {{ st }}" data-sstatus>{{ st }}</span>
+            <span class="t-item-st {{ display_st }}" data-sstatus>{{ st }}</span>
           </div>
           <div class="t-item-meta">
             {%- if uc -%}
@@ -638,8 +642,12 @@ a.r-item:hover {
     var taskSearch = $('taskSearch');
 
     /* ── Helpers ──────────────────────────────────────────────────────── */
+    function displaySt(status, lastRun) {
+        return (status === 'idle' && lastRun) ? 'idle-ok' : status;
+    }
+
     function dotCls(s) {
-        return 'sdot ' + ({running:'running',error:'error',complete:'complete',paused:'paused'}[s] || 'idle');
+        return 'sdot ' + ({'running':'running','error':'error','complete':'complete','idle-ok':'idle-ok','paused':'paused'}[s] || 'idle');
     }
 
     function fmtN(n) {
@@ -690,7 +698,7 @@ a.r-item:hover {
 
         /* Header */
         var st = btn.dataset.status || 'idle';
-        dDot.className    = dotCls(st);
+        dDot.className    = dotCls(displaySt(st, btn.dataset.lastRun));
         dName.textContent = btn.dataset.name;
         dStat.textContent = st;
 
@@ -896,17 +904,17 @@ a.r-item:hover {
                 tasks.forEach(function (t) {
                     var btn = document.querySelector('.t-item[data-slug="' + t.slug + '"]');
                     if (btn) {
+                        if (t.last_run) btn.dataset.lastRun = t.last_run;
                         var lbl = btn.querySelector('[data-sstatus]');
                         if (lbl) {
-                            lbl.className   = 't-item-st ' + t.status;
+                            lbl.className   = 't-item-st ' + displaySt(t.status, btn.dataset.lastRun);
                             lbl.textContent = t.status;
                         }
                         btn.dataset.status = t.status;
-                        if (t.last_run) btn.dataset.lastRun = t.last_run;
                         btn.dataset.hasArchive = t.has_archive ? '1' : '0';
                     }
                     if (t.slug === selSlug) {
-                        dDot.className    = dotCls(t.status);
+                        dDot.className    = dotCls(displaySt(t.status, t.last_run || (btn && btn.dataset.lastRun)));
                         dStat.textContent = t.status;
                         bRun.disabled     = (t.status === 'running');
                         setPauseBtn(t.status);

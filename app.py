@@ -1,6 +1,5 @@
 import os
 import json
-import uuid  # unused for now
 import datetime as dt
 import re
 import urllib.request
@@ -14,14 +13,15 @@ import signal
 import faulthandler
 import hashlib
 import random
+from pathlib import Path
 from typing import Optional, List, Tuple
 from croniter import croniter
 
 from flask import (
     Flask, render_template, request,
-    redirect, url_for, flash, send_from_directory, Response
+    redirect, url_for, flash, send_from_directory, Response,
+    send_file, jsonify,
 )
-from flask import send_file, jsonify, url_for
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
@@ -74,8 +74,6 @@ MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 MEDIA_WALL_DIR = os.path.join(CONFIG_ROOT, "media_wall")
 MEDIA_WALL_SCAN_CRON_FILE = os.path.join(CONFIG_ROOT, "mediawall_scan_cron.txt")
 MEDIA_WALL_ENABLED_FILE = os.path.join(CONFIG_ROOT, "mediawall_enabled.txt")
-
-from werkzeug.exceptions import NotFound
 
 MEDIA_WALL_REFRESH_LOCK = threading.Lock()
 
@@ -575,12 +573,14 @@ def healthz():
 def mediawall_toggle():
     """Toggle media wall enabled/disabled."""
     global MEDIA_WALL_ENABLED
-    MEDIA_WALL_ENABLED = not MEDIA_WALL_ENABLED
-    _set_media_wall_enabled(MEDIA_WALL_ENABLED)
-    if MEDIA_WALL_ENABLED:
+    with MEDIA_WALL_REFRESH_LOCK:
+        MEDIA_WALL_ENABLED = not MEDIA_WALL_ENABLED
+        new_value = MEDIA_WALL_ENABLED
+    _set_media_wall_enabled(new_value)
+    if new_value:
         _start_media_wall_scan_thread()
-    status = "enabled" if MEDIA_WALL_ENABLED else "disabled"
-    os.environ["MEDIA_WALL_ENABLED"] = "1" if MEDIA_WALL_ENABLED else "0"
+    status = "enabled" if new_value else "disabled"
+    os.environ["MEDIA_WALL_ENABLED"] = "1" if new_value else "0"
     flash(f"Media wall {status}", "success")
     return redirect(url_for("config_page"))
 
@@ -952,13 +952,13 @@ def run_task_background(task_folder: str):
                 logf.write("\nTask finished successfully.\n")
             else:
                 logf.write(f"\nTask exited with code {result.returncode}.\n")
-                open(error_path, "w").close()
+                Path(error_path).touch()
 
     except Exception as exc:
         with open(logs_path, "a", encoding="utf-8") as logf:
             logf.write(f"\nERROR while running task: {exc}\n")
         try:
-            open(error_path, "w").close()
+            Path(error_path).touch()
         except Exception:
             pass
     finally:
@@ -999,12 +999,13 @@ def task_action(slug):
             return redirect(url_for("tasks"))
 
         lock_path = os.path.join(task_folder, "lock")
-        if os.path.exists(lock_path):
+        ensure_data_dirs(ensure_downloads=True)
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+        except FileExistsError:
             flash("Task is already running.", "error")
             return redirect(url_for("tasks"))
-
-        ensure_data_dirs(ensure_downloads=True)
-        open(lock_path, "w").close()
 
         t = threading.Thread(target=run_task_background, args=(task_folder,), daemon=True)
         t.start()
@@ -1018,7 +1019,7 @@ def task_action(slug):
             os.remove(paused_path)
             flash("Task unpaused.", "success")
         else:
-            open(paused_path, "w").close()
+            Path(paused_path).touch()
             flash("Task paused.", "success")
         return redirect(url_for("tasks"))
 
@@ -1054,41 +1055,12 @@ def task_logs(slug):
         return jsonify({"error": "Task not found"}), 404
     
     logs_path = os.path.join(task_folder, "logs.txt")
-    
-    def tail_lines(path: str, lines: int = 50) -> str:
-        try:
-            with open(path, 'rb') as f:
-                f.seek(0, os.SEEK_END)
-                file_size = f.tell()
-                block_size = 1024
-                chunks = []
-                lines_found = 0
-                pos = file_size
-
-                while pos > 0 and lines_found <= lines:
-                    read_size = block_size if pos >= block_size else pos
-                    pos -= read_size
-                    f.seek(pos)
-                    chunk = f.read(read_size)
-                    chunks.append(chunk)
-                    lines_found = b"\n".join(chunks).count(b"\n")
-
-                data = b"".join(reversed(chunks))
-                text = data.decode('utf-8', errors='replace')
-                return '\n'.join(text.splitlines()[-lines:])
-        except Exception:
-            # Fallback to reading whole file if anything goes wrong
-            try:
-                with open(path, 'r', encoding='utf-8', errors='replace') as f:
-                    return '\n'.join(f.read().splitlines()[-lines:])
-            except Exception:
-                return ''
 
     try:
         if os.path.exists(logs_path):
             tail = request.args.get('tail', type=int)
             if tail and tail > 0:
-                content = tail_lines(logs_path, tail)
+                content = '\n'.join(_tail_lines(logs_path, tail))
             else:
                 with open(logs_path, "r", encoding="utf-8", errors="replace") as f:
                     content = f.read()
@@ -1149,11 +1121,7 @@ def download_task_logs(slug):
         return jsonify({"error": "No logs yet for this task"}), 404
 
     try:
-        # Prefer modern Flask's download_name, fallback to attachment_filename
-        try:
-            return send_file(logs_path, as_attachment=True, download_name=f"{slug}-logs.txt")
-        except TypeError:
-            return send_file(logs_path, as_attachment=True, attachment_filename=f"{slug}-logs.txt")
+        return send_file(logs_path, as_attachment=True, download_name=f"{slug}-logs.txt")
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
