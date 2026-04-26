@@ -498,17 +498,17 @@ a.r-item:hover {
           <div class="d-flex gap-2 flex-wrap">
             <form id="fRun" method="post" class="m-0">
               <input type="hidden" name="action" value="run">
-              <button type="submit" id="bRun" class="btn btn-sm btn-outline-success">&#9654; Run</button>
+              <button type="submit" id="bRun" class="btn btn-sm btn-success">&#9654; Run</button>
             </form>
             <form id="fStop" method="post" class="m-0" style="display:none;">
               <input type="hidden" name="action" value="stop">
-              <button type="submit" class="btn btn-sm btn-outline-danger">&#9632; Stop</button>
+              <button type="submit" class="btn btn-sm btn-danger">&#9632; Stop</button>
             </form>
             <form id="fPause" method="post" class="m-0">
               <input type="hidden" name="action" value="pause">
-              <button type="submit" id="bPause" class="btn btn-sm btn-outline-secondary">&#9646;&#9646; Pause</button>
+              <button type="submit" id="bPause" class="btn btn-sm btn-secondary">&#9646;&#9646; Pause</button>
             </form>
-            <a id="bDlLogs" href="#" class="btn btn-sm btn-outline-secondary">&#8659; Download Logs</a>
+            <a id="bDlLogs" href="#" class="btn btn-sm btn-secondary">&#8659; Download Logs</a>
             <form id="fDelete" method="post" class="m-0"
               onsubmit="return confirm('Delete this task? Its folder and logs will be removed.')">
               <input type="hidden" name="action" value="delete">
@@ -517,7 +517,7 @@ a.r-item:hover {
             <form id="fDeleteArchive" method="post" class="m-0"
               onsubmit="return confirm('Delete archive.sqlite? gallery-dl will re-download previously seen items on next run.')">
               <input type="hidden" name="action" value="delete_archive">
-              <button type="submit" id="bDelArchive" class="btn btn-sm btn-outline-warning" style="display:none;">&#128465; Delete Archive</button>
+              <button type="submit" id="bDelArchive" class="btn btn-sm btn-warning" style="display:none;">&#128465; Delete Archive</button>
             </form>
           </div>
         </div>
@@ -732,10 +732,10 @@ a.r-item:hover {
     function setPauseBtn(st) {
         if (st === 'paused') {
             bPause.innerHTML = '&#9654; Unpause';
-            bPause.className = 'btn btn-sm btn-outline-warning';
+            bPause.className = 'btn btn-sm btn-warning';
         } else {
             bPause.innerHTML = '&#9646;&#9646; Pause';
-            bPause.className = 'btn btn-sm btn-outline-secondary';
+            bPause.className = 'btn btn-sm btn-secondary';
         }
     }
 
