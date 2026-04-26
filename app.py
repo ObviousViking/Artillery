@@ -1,5 +1,6 @@
 import os
 import json
+import mimetypes
 import datetime as dt
 import re
 import urllib.request
@@ -16,6 +17,9 @@ import random
 from pathlib import Path
 from typing import Optional, List, Tuple
 from croniter import croniter
+
+# Ensure webp is served as image/webp on systems with incomplete MIME databases
+mimetypes.add_type('image/webp', '.webp')
 
 from flask import (
     Flask, render_template, request,
