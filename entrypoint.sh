@@ -67,6 +67,10 @@ log "Starting cron..."
 touch /var/log/cron.log
 cron
 
+# Set umask so files are group-writable (664 files, 775 dirs)
+umask 002
+
+
 log "Starting web app as $APP_USER_SPEC..."
 # Exec gunicorn as the chosen user so it writes files with correct ownership
 exec gosu "$APP_USER_SPEC" "$@"
