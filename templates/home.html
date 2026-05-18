@@ -12,10 +12,13 @@
           <code>gallery-dl</code>. Create repeatable download tasks, schedule
           them with cron, and keep everything isolated per task folder.
         </p>
-
-        
-
-        
+        {% if media_wall_enabled %}
+        <div class="d-flex align-items-center gap-3 mt-1">
+          <span class="small text-muted" style="white-space:nowrap;">Media wall scale</span>
+          <input id="media-wall-scale-range" class="form-range" type="range" min="1" max="16" step="1" style="width:min(220px,40vw);" />
+          <span id="media-wall-scale-label" class="small text-muted" style="min-width:5.5rem;white-space:nowrap;">4 columns</span>
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -46,19 +49,6 @@
     </div>
   </div>
 </div>
-
-<footer class="media-wall-footer">
-  <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-    <div>
-      <div class="fw-semibold">Media wall scale</div>
-    </div>
-    <div class="d-flex align-items-center gap-3">
-      <span class="text-muted small">Large</span>
-      <input id="media-wall-scale-range" class="form-range media-wall-scale-range" type="range" min="1" max="16" step="1" />
-      <span class="text-muted small">Compact</span>
-    </div>
-  </div>
-</footer>
 
 <style>
   /* Full-height page layout */
@@ -156,16 +146,6 @@
     margin-bottom: 0.75rem;
   }
 
-  .media-wall-footer {
-    flex-shrink: 0;
-    background-color: var(--bg-secondary);
-    border-top: 1px solid var(--border-color);
-    padding: 0.85rem 1rem;
-  }
-
-  .media-wall-scale-range {
-    width: min(320px, 70vw);
-  }
 </style>
 
 <script>
