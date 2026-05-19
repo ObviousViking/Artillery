@@ -82,8 +82,9 @@
 <style>
 .r-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-    gap: 0.6rem;
+    /* Fit up to 4 columns comfortably, but shrink to fit viewport */
+    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+    gap: 0.5rem;
 }
 .r-item {
     display: flex;
@@ -105,7 +106,7 @@ a.r-item:hover {
 }
 .r-item img {
     width: 100%;
-    height: 100px;
+    height: 80px;
     object-fit: cover;
     border-radius: 5px;
     display: block;
@@ -131,8 +132,8 @@ a.r-item:hover {
 /* Log box: match the site-wide `#logBox` styling so theme (light/dark) follows */
 #oneTimeLogBox {
     font-family: monospace;
-    font-size: 0.8rem;
-    line-height: 1.55;
+    font-size: 0.78rem;
+    line-height: 1.45;
     overflow-y: auto;
     padding: 12px 14px;
     border-radius: 6px;
@@ -140,6 +141,8 @@ a.r-item:hover {
     background: var(--bg-secondary);
     color: var(--text-secondary);
     word-break: break-all;
+    /* Make the log height responsive so the whole page fits on screen */
+    max-height: calc(100vh - 260px);
 }
 #oneTimeLogBox pre { margin: 0; white-space: pre-wrap; color: var(--text-secondary); }
 .r-item-video {

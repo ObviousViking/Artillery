@@ -104,7 +104,7 @@ ONE_TIME_LOG_FILE = os.path.join(CONFIG_ROOT, "one_time_download.log")
 ONE_TIME_PID_FILE = os.path.join(CONFIG_ROOT, "one_time_download.pid")
 ONE_TIME_STOP_FILE = os.path.join(CONFIG_ROOT, "one_time_download.stop")
 ONE_TIME_LOG_TAIL_LINES = int(os.environ.get("ONE_TIME_LOG_TAIL_LINES", "50"))
-ONE_TIME_RECENT_DOWNLOADS = int(os.environ.get("ONE_TIME_RECENT_DOWNLOADS", "20"))
+ONE_TIME_RECENT_DOWNLOADS = int(os.environ.get("ONE_TIME_RECENT_DOWNLOADS", "16"))
 
 # Media wall notify file for SSE
 MEDIAWALL_NOTIFY_FILE = os.path.join(os.environ.get('CONFIG_DIR', '/config'), 'mediawall.notify')
@@ -998,9 +998,17 @@ def one_time_download_logs():
 def one_time_recent():
     ensure_data_dirs(ensure_downloads=False)
     items = _recent_downloads_from_log(ONE_TIME_LOG_FILE, ONE_TIME_RECENT_DOWNLOADS)
+    out = []
     for item in items:
-        item["url"] = url_for("media_file", subpath=item["rel"])
-    return jsonify({"items": items})
+        item_url = url_for("media_file", subpath=item["rel"])
+        out.append({
+            "rel": item["rel"],
+            "url": item_url,
+            "filename": item.get("filename") or os.path.basename(item["rel"]),
+            "is_image": item.get("ext") in IMAGE_EXTS,
+            "is_video": item.get("ext") in VIDEO_EXTS,
+        })
+    return jsonify({"items": out})
 
 @app.route("/one-time/status")
 def one_time_status():
