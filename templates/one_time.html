@@ -18,8 +18,8 @@
                             <label class="col-form-label" for="oneTimeUrl">URL:</label>
                         </div>
                         <div class="col">
-                            <div class="input-group" style="max-width:680px;">
-                                <input id="oneTimeUrl" name="url" class="form-control Quick-url" type="url"
+                            <div class="input-group one-time-input-group" style="max-width:680px;">
+                                <input id="oneTimeUrl" name="url" class="form-control one-time-url" type="url"
                                     placeholder="https://example.com/..." value="{{ entered_url|e }}" required />
                                 <button type="submit" class="btn btn-danger">Fire</button>
                             </div>
@@ -153,13 +153,16 @@ a.r-item:hover {
 }
 
 /* Limit URL input width on large screens, but allow full width on small screens */
-.Quick-url {
+.one-time-url {
     max-width: 680px;
     width: 100%;
 }
 
+/* Small gap between input and submit button inside the quick-download input-group */
+.one-time-input-group { gap: 0.4rem; }
+
 @media (max-width: 767px) {
-    .Quick-url { max-width: 100%; }
+    .one-time-url { max-width: 100%; }
 }
 </style>
 <script>
@@ -200,7 +203,7 @@ a.r-item:hover {
     }
 
     function fetchLog() {
-        fetch('/Quick/logs?tail=50')
+        fetch('/one-time/logs?tail=50')
             .then(function(r) { return r.json(); })
             .then(function(d) {
                 if (d.error) {
@@ -217,7 +220,7 @@ a.r-item:hover {
     }
 
     function fetchRecent(force) {
-        fetch('/Quick/recent')
+        fetch('/one-time/recent')
             .then(function(r) { return r.json(); })
             .then(function(d) {
                 if (d.items) renderRecent(d.items);
