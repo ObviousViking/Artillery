@@ -659,6 +659,15 @@ a.r-item:hover {
 
     function fmtDate(s) { return s ? s.slice(0, 19).replace('T', ' ') : 'Never'; }
 
+    function getSelectedTaskFromQuery() {
+        try {
+            var params = new URLSearchParams(window.location.search);
+            return params.get('selected');
+        } catch (e) {
+            return null;
+        }
+    }
+
     /* ── Panels ───────────────────────────────────────────────────────── */
     function showPanel(p) {
         pEmpty.style.display = p === 'empty' ? '' : 'none';
@@ -999,6 +1008,11 @@ a.r-item:hover {
 
         buildCreateCmd();
         updateLogStatusText();
+        var selectedTask = getSelectedTaskFromQuery();
+        if (selectedTask) {
+            var selectedBtn = document.querySelector('.t-item[data-slug="' + selectedTask + '"]');
+            if (selectedBtn) selectTask(selectedBtn);
+        }
         pollStatus();
         setInterval(pollStatus, 5000);
     });

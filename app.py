@@ -820,7 +820,7 @@ def tasks():
             write_text(logs_path, "")
 
         flash("Task created (or updated).", "success")
-        return redirect(url_for("tasks"))
+        return redirect(url_for("tasks", selected=slug))
 
     ensure_data_dirs(ensure_downloads=False)
     tasks_list = load_tasks()
@@ -1029,7 +1029,7 @@ def task_action(slug):
         paused_path = os.path.join(task_folder, "paused")
         if os.path.exists(paused_path):
             flash("Task is paused. Unpause it before running.", "error")
-            return redirect(url_for("tasks"))
+            return redirect(url_for("tasks", selected=slug))
 
         lock_path = os.path.join(task_folder, "lock")
         ensure_data_dirs(ensure_downloads=True)
@@ -1038,13 +1038,13 @@ def task_action(slug):
             os.close(fd)
         except FileExistsError:
             flash("Task is already running.", "error")
-            return redirect(url_for("tasks"))
+            return redirect(url_for("tasks", selected=slug))
 
         t = threading.Thread(target=run_task_background, args=(task_folder,), daemon=True)
         t.start()
 
         flash("Task started in background. Check logs.txt for progress.", "success")
-        return redirect(url_for("tasks"))
+        return redirect(url_for("tasks", selected=slug))
 
     if action == "pause":
         paused_path = os.path.join(task_folder, "paused")
@@ -1054,14 +1054,14 @@ def task_action(slug):
         else:
             Path(paused_path).touch()
             flash("Task paused.", "success")
-        return redirect(url_for("tasks"))
+        return redirect(url_for("tasks", selected=slug))
 
     if action == "stop":
         pid_path = os.path.join(task_folder, "pid")
         pid_text = read_text(pid_path)
         if not pid_text:
             flash("Task does not appear to be running.", "info")
-            return redirect(url_for("tasks"))
+            return redirect(url_for("tasks", selected=slug))
         try:
             Path(os.path.join(task_folder, "stopped")).touch()
             os.kill(int(pid_text), signal.SIGTERM)
@@ -1072,7 +1072,7 @@ def task_action(slug):
             flash("Invalid PID file.", "error")
         except Exception as exc:
             flash(f"Failed to stop task: {exc}", "error")
-        return redirect(url_for("tasks"))
+        return redirect(url_for("tasks", selected=slug))
 
     if action == "clear_logs":
         logs_path = os.path.join(task_folder, "logs.txt")
@@ -1081,7 +1081,7 @@ def task_action(slug):
             flash("Logs cleared.", "success")
         except Exception as exc:
             flash(f"Failed to clear logs: {exc}", "error")
-        return redirect(url_for("tasks"))
+        return redirect(url_for("tasks", selected=slug))
 
     if action == "delete_archive":
         archive_path = os.path.join(task_folder, "archive.sqlite")
@@ -1091,16 +1091,13 @@ def task_action(slug):
                 flash("Archive deleted. gallery-dl will re-download previously seen items on next run.", "success")
             except Exception as exc:
                 flash(f"Failed to delete archive: {exc}", "error")
+            return redirect(url_for("tasks", selected=slug))
         else:
             flash("No archive file found for this task.", "info")
-        return redirect(url_for("tasks"))
+            return redirect(url_for("tasks", selected=slug))
 
     flash("Unknown action.", "error")
-    return redirect(url_for("tasks"))
-
-# ---------------------------------------------------------------------
-# Task logs endpoint
-# ---------------------------------------------------------------------
+    return redirect(url_for("tasks", selected=slug))
 
 @app.route("/tasks/<slug>/logs")
 def task_logs(slug):
