@@ -890,9 +890,54 @@ def config_page():
         media_wall_scan_cron=scan_cron,
     )
 
+@app.route("/one-time", methods=["GET", "POST"])
+def one_time_download():
+    ensure_data_dirs(ensure_downloads=True)
+
+    entered_url = ""
+    if request.method == "POST":
+        entered_url = request.form.get("url", "").strip()
+        if not entered_url:
+            flash("Please enter a URL.", "error")
+        elif shutil.which("gallery-dl") is None:
+            flash("gallery-dl is not available on the PATH.", "error")
+        else:
+            thread = threading.Thread(target=run_one_time_download, args=(entered_url,), daemon=True)
+            thread.start()
+            flash("One-time download started in the background. Check the downloads folder for results.", "success")
+            return redirect(url_for("one_time_download"))
+
+    return render_template(
+        "one_time.html",
+        config_path=CONFIG_FILE,
+        download_root=DOWNLOADS_ROOT,
+        entered_url=entered_url,
+    )
+
 # ---------------------------------------------------------------------
 # Task actions
 # ---------------------------------------------------------------------
+
+def run_one_time_download(url: str):
+    ensure_data_dirs(ensure_downloads=True)
+    env = os.environ.copy()
+    env["GALLERY_DL_CONFIG"] = CONFIG_FILE
+    env["PATH"] = env.get("PATH", "") + os.pathsep + "/usr/local/bin"
+
+    cmd_parts = [
+        "gallery-dl",
+        "--config",
+        CONFIG_FILE,
+        "--destination",
+        DOWNLOADS_ROOT,
+        url,
+    ]
+
+    try:
+        subprocess.Popen(cmd_parts, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, env=env, text=True)
+    except Exception as exc:
+        app.logger.error("One-time download failed for %s: %s", url, exc)
+
 
 def run_task_background(task_folder: str):
     ensure_data_dirs(ensure_downloads=True)

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block main_class %}container-fluid px-4 pb-4{% endblock %}
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow-sm border-secondary">
+            <div class="card-body">
+                <h2 class="card-title mb-3">One Time Download</h2>
+
+                <p class="text-muted small mb-3">
+                    Enter a single URL to download immediately using the global gallery-dl config and
+                    the default downloads destination.
+                </p>
+
+                <form method="post" action="{{ url_for('one_time_download') }}">
+                    <div class="mb-3">
+                        <label class="form-label" for="oneTimeUrl">URL</label>
+                        <input id="oneTimeUrl" name="url" class="form-control" type="url"
+                            placeholder="https://example.com/..." value="{{ entered_url|e }}" required />
+                    </div>
+
+                    <button type="submit" class="btn btn-danger">Go</button>
+                </form>
+
+                <div class="mt-4 text-muted small">
+                    <p class="mb-1">Using config: <code>{{ config_path }}</code></p>
+                    <p class="mb-0">Destination: <code>{{ download_root }}</code></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
