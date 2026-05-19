@@ -100,6 +100,11 @@ MEDIA_WALL_POLL_INTERVAL = int(os.environ.get("MEDIA_WALL_POLL_INTERVAL", "60"))
 MEDIA_WALL_LOG_TAIL_LINES = int(os.environ.get("MEDIA_WALL_LOG_TAIL_LINES", "2000"))
 RECENT_DOWNLOADS_PER_TASK = int(os.environ.get("RECENT_DOWNLOADS_PER_TASK", "20"))
 RECENT_LOG_TAIL_LINES = int(os.environ.get("RECENT_LOG_TAIL_LINES", "200"))
+ONE_TIME_LOG_FILE = os.path.join(CONFIG_ROOT, "one_time_download.log")
+ONE_TIME_PID_FILE = os.path.join(CONFIG_ROOT, "one_time_download.pid")
+ONE_TIME_STOP_FILE = os.path.join(CONFIG_ROOT, "one_time_download.stop")
+ONE_TIME_LOG_TAIL_LINES = int(os.environ.get("ONE_TIME_LOG_TAIL_LINES", "50"))
+ONE_TIME_RECENT_DOWNLOADS = int(os.environ.get("ONE_TIME_RECENT_DOWNLOADS", "20"))
 
 # Media wall notify file for SSE
 MEDIAWALL_NOTIFY_FILE = os.path.join(os.environ.get('CONFIG_DIR', '/config'), 'mediawall.notify')
@@ -177,6 +182,37 @@ def write_text(path: str, content: str):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
+
+
+def _is_process_running(pid: int) -> bool:
+    try:
+        if pid <= 0:
+            return False
+        os.kill(pid, 0)
+        return True
+    except Exception:
+        return False
+
+
+def _get_one_time_status() -> dict:
+    running = False
+    pid = None
+    if os.path.exists(ONE_TIME_PID_FILE):
+        pid_text = read_text(ONE_TIME_PID_FILE)
+        if pid_text:
+            try:
+                pid = int(pid_text.strip())
+            except ValueError:
+                pid = None
+        if pid and _is_process_running(pid):
+            running = True
+        else:
+            try:
+                os.remove(ONE_TIME_PID_FILE)
+            except Exception:
+                pass
+    return {"running": running, "pid": pid}
+
 
 def _get_media_wall_enabled() -> bool:
     raw = read_text(MEDIA_WALL_ENABLED_FILE)
@@ -893,26 +929,104 @@ def config_page():
 @app.route("/one-time", methods=["GET", "POST"])
 def one_time_download():
     ensure_data_dirs(ensure_downloads=True)
-
     entered_url = ""
+    status = _get_one_time_status()
+
     if request.method == "POST":
         entered_url = request.form.get("url", "").strip()
+        if status["running"]:
+            flash("A one-time download is already running.", "error")
+            return redirect(url_for("one_time_download"))
         if not entered_url:
             flash("Please enter a URL.", "error")
-        elif shutil.which("gallery-dl") is None:
-            flash("gallery-dl is not available on the PATH.", "error")
-        else:
-            thread = threading.Thread(target=run_one_time_download, args=(entered_url,), daemon=True)
-            thread.start()
-            flash("One-time download started in the background. Check the downloads folder for results.", "success")
             return redirect(url_for("one_time_download"))
+        if shutil.which("gallery-dl") is None:
+            flash("gallery-dl is not available on the PATH.", "error")
+            return redirect(url_for("one_time_download"))
+
+        try:
+            if os.path.exists(ONE_TIME_STOP_FILE):
+                os.remove(ONE_TIME_STOP_FILE)
+        except Exception:
+            pass
+
+        thread = threading.Thread(target=run_one_time_download, args=(entered_url,), daemon=True)
+        thread.start()
+        flash("One-time download started in the background.", "success")
+        return redirect(url_for("one_time_download"))
 
     return render_template(
         "one_time.html",
         config_path=CONFIG_FILE,
         download_root=DOWNLOADS_ROOT,
         entered_url=entered_url,
+        running=status["running"],
     )
+
+@app.route("/one-time/logs")
+def one_time_logs():
+    ensure_data_dirs(ensure_downloads=False)
+    tail = request.args.get("tail", type=int)
+    content = ""
+    try:
+        if os.path.exists(ONE_TIME_LOG_FILE):
+            if tail and tail > 0:
+                content = "\n".join(_tail_lines(ONE_TIME_LOG_FILE, tail))
+            else:
+                content = read_text(ONE_TIME_LOG_FILE) or ""
+        else:
+            content = "No logs yet."
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    return jsonify({
+        "running": _get_one_time_status()["running"],
+        "content": content,
+    })
+
+@app.route("/one-time/recent")
+def one_time_recent():
+    ensure_data_dirs(ensure_downloads=False)
+    items = _recent_downloads_from_log(ONE_TIME_LOG_FILE, ONE_TIME_RECENT_DOWNLOADS)
+    for item in items:
+        item["url"] = url_for("media_file", subpath=item["rel"])
+    return jsonify({"items": items})
+
+@app.route("/one-time/status")
+def one_time_status():
+    status = _get_one_time_status()
+    return jsonify({"running": status["running"]})
+
+@app.route("/one-time/clear-logs", methods=["POST"])
+def one_time_clear_logs():
+    try:
+        write_text(ONE_TIME_LOG_FILE, "")
+        flash("One-time download log cleared.", "success")
+    except Exception as exc:
+        flash(f"Failed to clear one-time log: {exc}", "error")
+    return redirect(url_for("one_time_download"))
+
+@app.route("/one-time/stop", methods=["POST"])
+def one_time_stop():
+    status = _get_one_time_status()
+    if not status["running"]:
+        flash("No one-time download is currently running.", "info")
+        return redirect(url_for("one_time_download"))
+
+    pid_text = read_text(ONE_TIME_PID_FILE)
+    if pid_text:
+        try:
+            pid = int(pid_text.strip())
+            Path(ONE_TIME_STOP_FILE).touch()
+            os.kill(pid, signal.SIGTERM)
+            flash("Stop signal sent to one-time download.", "success")
+        except ProcessLookupError:
+            flash("One-time download process is not running.", "info")
+        except Exception as exc:
+            flash(f"Failed to stop one-time download: {exc}", "error")
+    else:
+        flash("Could not read one-time download PID.", "error")
+    return redirect(url_for("one_time_download"))
 
 # ---------------------------------------------------------------------
 # Task actions
@@ -920,6 +1034,12 @@ def one_time_download():
 
 def run_one_time_download(url: str):
     ensure_data_dirs(ensure_downloads=True)
+    try:
+        if os.path.exists(ONE_TIME_STOP_FILE):
+            os.remove(ONE_TIME_STOP_FILE)
+    except Exception:
+        pass
+
     env = os.environ.copy()
     env["GALLERY_DL_CONFIG"] = CONFIG_FILE
     env["PATH"] = env.get("PATH", "") + os.pathsep + "/usr/local/bin"
@@ -933,10 +1053,57 @@ def run_one_time_download(url: str):
         url,
     ]
 
+    now = dt.datetime.utcnow().isoformat() + "Z"
     try:
-        subprocess.Popen(cmd_parts, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, env=env, text=True)
+        with open(ONE_TIME_LOG_FILE, "a", encoding="utf-8") as logf:
+            logf.write(f"\n\n==== One-time download started at {now} ====\n")
+            logf.write(f"URL: {url}\n")
+            logf.write(f"Command: {' '.join(shlex.quote(p) for p in cmd_parts)}\n\n")
+            logf.flush()
+
+            proc = subprocess.Popen(
+                cmd_parts,
+                stdout=logf,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env,
+            )
+            try:
+                Path(ONE_TIME_PID_FILE).write_text(str(proc.pid))
+            except Exception:
+                pass
+
+            while proc.poll() is None:
+                if os.path.exists(ONE_TIME_STOP_FILE):
+                    try:
+                        proc.terminate()
+                        logf.write("\nStop requested. Terminating one-time download...\n")
+                        logf.flush()
+                    except Exception:
+                        pass
+                time.sleep(0.25)
+
+            returncode = proc.returncode
+
+        with open(ONE_TIME_LOG_FILE, "a", encoding="utf-8") as logf:
+            if returncode == 0:
+                logf.write("\nOne-time download finished successfully.\n")
+            else:
+                logf.write(f"\nOne-time download exited with code {returncode}.\n")
     except Exception as exc:
-        app.logger.error("One-time download failed for %s: %s", url, exc)
+        with open(ONE_TIME_LOG_FILE, "a", encoding="utf-8") as logf:
+            logf.write(f"\nERROR while running one-time download: {exc}\n")
+    finally:
+        try:
+            if os.path.exists(ONE_TIME_PID_FILE):
+                os.remove(ONE_TIME_PID_FILE)
+        except Exception:
+            pass
+        try:
+            if os.path.exists(ONE_TIME_STOP_FILE):
+                os.remove(ONE_TIME_STOP_FILE)
+        except Exception:
+            pass
 
 
 def run_task_background(task_folder: str):

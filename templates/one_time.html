@@ -30,4 +30,132 @@
         </div>
     </div>
 </div>
+
+<div class="row g-4 mt-3">
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-secondary">
+            <div class="card-body">
+                <div class="d-flex align-items-start justify-content-between mb-3 gap-3">
+                    <div>
+                        <h3 class="card-title mb-1">One-time download log</h3>
+                        <p class="text-muted small mb-0">Shared log for all one-time downloads</p>
+                    </div>
+                    <div class="btn-group">
+                        <form method="post" action="{{ url_for('one_time_clear_logs') }}" class="m-0">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary">Clear log</button>
+                        </form>
+                        <form method="post" action="{{ url_for('one_time_stop') }}" class="m-0">
+                            <button type="submit" id="bOneTimeStop" class="btn btn-sm btn-outline-warning" {{ 'disabled' if not running else '' }}>Stop download</button>
+                        </form>
+                    </div>
+                </div>
+                <p class="text-muted small mb-3">Current status: <strong id="oneTimeStatus">{{ 'Running' if running else 'Idle' }}</strong></p>
+                <div id="oneTimeLogBox" class="border rounded bg-black text-white p-3" style="min-height:280px;overflow:auto;white-space:pre-wrap;font-family:Menlo,Monaco,monospace;font-size:0.85rem;">
+                    <span class="text-muted">Loading…</span>
+                </div>
+                <div class="mt-2"><small class="text-muted" id="oneTimeLogHelp">Auto-refreshes every 1 s · last 50 lines shown</small></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-secondary h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center justify-content-between mb-3 gap-3">
+                    <div>
+                        <h3 class="card-title mb-1">Recent downloads</h3>
+                        <p class="text-muted small mb-0">Auto-refreshes every second</p>
+                    </div>
+                    <button type="button" id="bOneTimeRecentRefresh" class="btn btn-sm btn-outline-secondary">Refresh</button>
+                </div>
+                <div id="oneTimeRecentGrid" class="r-grid"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var logBox = document.getElementById('oneTimeLogBox');
+    var statusLabel = document.getElementById('oneTimeStatus');
+    var stopButton = document.getElementById('bOneTimeStop');
+    var recentGrid = document.getElementById('oneTimeRecentGrid');
+    var recentRefresh = document.getElementById('bOneTimeRecentRefresh');
+    var autoScroll = true;
+    var refreshTimer = null;
+
+    function setStatus(running) {
+        statusLabel.textContent = running ? 'Running' : 'Idle';
+        if (stopButton) stopButton.disabled = !running;
+    }
+
+    function renderRecent(items) {
+        if (!items || !items.length) {
+            recentGrid.innerHTML = '<p class="text-muted small mb-0">No recent downloads yet.</p>';
+            return;
+        }
+        var html = '';
+        items.forEach(function(item) {
+            if (item.is_image) {
+                html += '<a class="r-item" href="' + item.url + '" target="_blank" rel="noopener noreferrer">'
+                      + '<img src="' + item.url + '" loading="lazy" alt="">'
+                      + '<span class="r-item-label">' + item.filename + '</span>'
+                      + '</a>';
+            } else {
+                html += '<a class="r-item r-item-video" href="' + item.url + '" target="_blank" rel="noopener noreferrer">'
+                      + '<span>&#127916;</span>'
+                      + '<span class="r-item-label">' + item.filename + '</span>'
+                      + '</a>';
+            }
+        });
+        recentGrid.innerHTML = html;
+    }
+
+    function fetchLog() {
+        fetch('/one-time/logs?tail=50')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (d.error) {
+                    logBox.innerHTML = '<span class="text-danger">' + d.error + '</span>';
+                } else {
+                    logBox.innerHTML = '<pre>' + d.content.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+                    if (autoScroll) logBox.scrollTop = logBox.scrollHeight;
+                    setStatus(d.running);
+                }
+            })
+            .catch(function(e) {
+                logBox.innerHTML = '<span class="text-danger">' + e.message + '</span>';
+            });
+    }
+
+    function fetchRecent(force) {
+        fetch('/one-time/recent')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (d.items) renderRecent(d.items);
+            })
+            .catch(function() {
+                recentGrid.innerHTML = '<p class="text-danger small mb-0">Failed to load recent downloads.</p>';
+            });
+    }
+
+    function refreshAll() {
+        fetchLog();
+        fetchRecent();
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        refreshAll();
+        refreshTimer = setInterval(refreshAll, 1000);
+        recentRefresh.addEventListener('click', function() { fetchRecent(true); });
+        logBox.addEventListener('scroll', function() {
+            autoScroll = logBox.scrollTop + logBox.clientHeight >= logBox.scrollHeight - 10;
+        });
+    });
+})();
+</script>
+{% endblock %}
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
