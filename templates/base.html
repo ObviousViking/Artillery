@@ -100,17 +100,18 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'config_page' %}active{% endif %}"
-                            href="{{ url_for('config_page') }}">
-                            Config
-                        </a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'one_time_download' %}active{% endif %}"
                             href="{{ url_for('one_time_download') }}">
                             One Time Download
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'config_page' %}active{% endif %}"
+                            href="{{ url_for('config_page') }}">
+                            Config
+                        </a>
+                    </li>
+                    
                     <li class="nav-item">
                         <a class="nav-link" href="https://github.com/obviousviking/artillery" target="_blank" rel="noopener noreferrer">
                             GitHub <span id="ghStars" style="font-size:0.78em;opacity:0.7;letter-spacing:0.02em;"></span>
