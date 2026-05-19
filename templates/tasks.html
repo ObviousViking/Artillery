@@ -604,6 +604,8 @@ a.r-item:hover {
     var selUrlsApi     = null;
     var activeTab      = 'details';
     var logTimer       = null;
+    var logApi         = null;
+    var logPolling     = true;
     var autoScroll     = true;
     var urlsLoaded     = false;
     var urlsFetching   = false;
@@ -618,7 +620,7 @@ a.r-item:hover {
     var btnNew = $('btnNew');
     var dName = $('dName');
     var tLogs = $('tLogs'), tDetails = $('tDetails'), tEdit = $('tEdit'), tRecent = $('tRecent');
-    var logBox = $('logBox'), recentGrid = $('recentGrid'), bRecentRefresh = $('bRecentRefresh');
+    var logBox = $('logBox'), recentGrid = $('recentGrid'), bRecentRefresh = $('bRecentRefresh'), bLogToggle = $('bLogToggle');
     var fRun = $('fRun'), fPause = $('fPause'), fDelete = $('fDelete'), fDeleteArchive = $('fDeleteArchive');
     var fStop = $('fStop'), fClearLogs = $('fClearLogs');
     var bRun = $('bRun'), bPause = $('bPause'), bDlLogs = $('bDlLogs'), bDelArchive = $('bDelArchive');
@@ -673,8 +675,11 @@ a.r-item:hover {
         document.querySelectorAll('.t-tab').forEach(function (b) {
             b.classList.toggle('on', b.dataset.tab === t);
         });
-        if (t === 'logs' && selSlug) startLog('/tasks/' + selSlug + '/logs');
-        else stopLog();
+        if (t === 'logs' && selSlug) {
+            var api = '/tasks/' + selSlug + '/logs';
+            if (logPolling) startLog(api);
+            else fetchLog(api);
+        } else stopLog();
         if (t === 'recent' && selSlug) loadRecent();
     }
 
@@ -840,6 +845,18 @@ a.r-item:hover {
         return text;
     }
 
+    function updateLogStatusText() {
+        $('logStatusText').textContent = logPolling
+            ? 'Auto-refreshes every 1 s · last 50 lines shown'
+            : 'Refresh paused · last 50 lines shown';
+    }
+
+    function setLogPolling(enabled) {
+        logPolling = enabled;
+        bLogToggle.textContent = enabled ? 'Pause refresh' : 'Resume refresh';
+        updateLogStatusText();
+    }
+
     function fetchLog(api) {
         fetch(api + '?tail=50')
             .then(function (r) { return r.json(); })
@@ -856,6 +873,7 @@ a.r-item:hover {
 
     function startLog(api) {
         stopLog();
+        logApi = api;
         fetchLog(api);
         logTimer = setInterval(function () { fetchLog(api); }, 1000);
     }
@@ -949,6 +967,13 @@ a.r-item:hover {
 
         bLoadUrls.addEventListener('click', doLoadUrls);
         bRecentRefresh.addEventListener('click', function () { recentLoaded = false; loadRecent(true); });
+        bLogToggle.addEventListener('click', function () {
+            setLogPolling(!logPolling);
+            if (activeTab === 'logs' && selSlug) {
+                if (logPolling) startLog('/tasks/' + selSlug + '/logs');
+                else stopLog();
+            }
+        });
 
         document.querySelectorAll('.gde').forEach(function (cb) {
             cb.addEventListener('change', function () { patchCmd(eCmd, eCmdH, this.dataset.flag, this.checked); });
@@ -972,6 +997,7 @@ a.r-item:hover {
         });
 
         buildCreateCmd();
+        updateLogStatusText();
         pollStatus();
         setInterval(pollStatus, 5000);
     });
