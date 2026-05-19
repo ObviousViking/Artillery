@@ -18,7 +18,7 @@
                             <label class="col-form-label" for="oneTimeUrl">URL:</label>
                         </div>
                         <div class="col">
-                            <input id="oneTimeUrl" name="url" class="form-control" type="url"
+                            <input id="oneTimeUrl" name="url" class="form-control one-time-url" type="url"
                                 placeholder="https://example.com/..." value="{{ entered_url|e }}" required />
                         </div>
                         <div class="col-auto">
@@ -27,9 +27,9 @@
                     </div>
                 </form>
 
-                <div class="mt-4 text-muted small">
-                    <p class="mb-1">Using config: <code>{{ config_path }}</code></p>
-                    <p class="mb-0">Destination: <code>{{ download_root }}</code></p>
+                <div class="mt-4 text-muted small d-flex align-items-center gap-3 flex-wrap">
+                    <div class="mb-0">Using config: <code>{{ config_path }}</code></div>
+                    <div class="mb-0">Destination: <code>{{ download_root }}</code></div>
                 </div>
             </div>
         </div>
@@ -59,13 +59,13 @@
                         <h3 class="card-title mb-1">One-time download log</h3>
                         <p class="text-muted small mb-0">Shared log for all one-time downloads</p>
                     </div>
-                    <div class="btn-group">
-                        <a href="{{ url_for('one_time_download_logs') }}" class="btn btn-sm btn-outline-secondary">Download log</a>
+                    <div class="d-flex align-items-center gap-2">
+                        <a href="{{ url_for('one_time_download_logs') }}" class="btn btn-sm btn-outline-secondary rounded">Download log</a>
                         <form method="post" action="{{ url_for('one_time_clear_logs') }}" class="m-0">
-                            <button type="submit" class="btn btn-sm btn-outline-secondary">Clear log</button>
+                            <button type="submit" class="btn btn-sm btn-outline-secondary rounded">Clear log</button>
                         </form>
                         <form method="post" action="{{ url_for('one_time_stop') }}" class="m-0">
-                            <button type="submit" id="bOneTimeStop" class="btn btn-sm btn-outline-warning" {{ 'disabled' if not running else '' }}>Stop download</button>
+                            <button type="submit" id="bOneTimeStop" class="btn btn-sm btn-outline-warning rounded" {{ 'disabled' if not running else '' }}>Stop download</button>
                         </form>
                     </div>
                 </div>
@@ -150,6 +150,16 @@ a.r-item:hover {
     justify-content: center;
     font-size: 1.6rem;
     opacity: 0.45;
+}
+
+/* Limit URL input width on large screens, but allow full width on small screens */
+.one-time-url {
+    max-width: 680px;
+    width: 100%;
+}
+
+@media (max-width: 767px) {
+    .one-time-url { max-width: 100%; }
 }
 </style>
 <script>
