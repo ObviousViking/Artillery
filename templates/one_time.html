@@ -82,8 +82,8 @@
 <style>
 .r-grid {
     display: grid;
-    /* Fit up to 4 columns comfortably, but shrink to fit viewport */
-    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+    /* Fixed grid: 80px columns that don't stretch */
+    grid-template-columns: repeat(auto-fill, 80px);
     gap: 0.5rem;
 }
 .r-item {
