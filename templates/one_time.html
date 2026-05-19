@@ -13,13 +13,18 @@
                 </p>
 
                 <form method="post" action="{{ url_for('one_time_download') }}">
-                    <div class="mb-3">
-                        <label class="form-label" for="oneTimeUrl">URL</label>
-                        <input id="oneTimeUrl" name="url" class="form-control" type="url"
-                            placeholder="https://example.com/..." value="{{ entered_url|e }}" required />
+                    <div class="row g-2 align-items-center">
+                        <div class="col-auto">
+                            <label class="col-form-label" for="oneTimeUrl">URL:</label>
+                        </div>
+                        <div class="col">
+                            <input id="oneTimeUrl" name="url" class="form-control" type="url"
+                                placeholder="https://example.com/..." value="{{ entered_url|e }}" required />
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-danger">Fire</button>
+                        </div>
                     </div>
-
-                    <button type="submit" class="btn btn-danger">Go</button>
                 </form>
 
                 <div class="mt-4 text-muted small">
@@ -65,7 +70,7 @@
                     </div>
                 </div>
                 <p class="text-muted small mb-3">Current status: <strong id="oneTimeStatus">{{ 'Running' if running else 'Idle' }}</strong></p>
-                <div id="oneTimeLogBox" class="border rounded bg-black text-white p-3" style="max-height:420px;overflow:auto;white-space:pre-wrap;font-family:Menlo,Monaco,monospace;font-size:0.85rem;">
+                <div id="oneTimeLogBox" class="border rounded p-3" style="max-height:420px;overflow:auto;white-space:pre-wrap;">
                     <span class="text-muted">Loading…</span>
                 </div>
                 <div class="mt-2"><small class="text-muted" id="oneTimeLogHelp">Auto-refreshes every 1 s · last 50 lines shown</small></div>
@@ -101,7 +106,7 @@ a.r-item:hover {
 .r-item img {
     width: 100%;
     height: 100px;
-    object-fit: contain;
+    object-fit: cover;
     border-radius: 5px;
     display: block;
     background: var(--bg-tertiary);
@@ -116,6 +121,27 @@ a.r-item:hover {
     overflow: hidden;
     width: 100%;
 }
+.r-item-video {
+    height: 100px;
+    justify-content: center;
+    font-size: 1.6rem;
+    opacity: 0.45;
+}
+
+/* Log box: match the site-wide `#logBox` styling so theme (light/dark) follows */
+#oneTimeLogBox {
+    font-family: monospace;
+    font-size: 0.8rem;
+    line-height: 1.55;
+    overflow-y: auto;
+    padding: 12px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border-input);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    word-break: break-all;
+}
+#oneTimeLogBox pre { margin: 0; white-space: pre-wrap; color: var(--text-secondary); }
 .r-item-video {
     height: 100px;
     justify-content: center;
