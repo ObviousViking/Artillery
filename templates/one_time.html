@@ -17,12 +17,12 @@
                         <div class="col-auto">
                             <label class="col-form-label" for="oneTimeUrl">URL:</label>
                         </div>
-                        <div class="col">
-                            <input id="oneTimeUrl" name="url" class="form-control one-time-url" type="url"
-                                placeholder="https://example.com/..." value="{{ entered_url|e }}" required />
-                        </div>
                         <div class="col-auto">
-                            <button type="submit" class="btn btn-danger">Fire</button>
+                            <div class="input-group" style="max-width:680px;">
+                                <input id="oneTimeUrl" name="url" class="form-control one-time-url" type="url"
+                                    placeholder="https://example.com/..." value="{{ entered_url|e }}" required />
+                                <button type="submit" class="btn btn-danger">Fire</button>
+                            </div>
                         </div>
                     </div>
                 </form>
