@@ -5,7 +5,7 @@
     <div class="col-12">
         <div class="card shadow-sm border-secondary">
             <div class="card-body">
-                <h2 class="card-title mb-3">One Time Download</h2>
+                <h2 class="card-title mb-3">Quick Download</h2>
 
                 <p class="text-muted small mb-3">
                     Enter a single URL to download immediately using the global gallery-dl config and
@@ -19,7 +19,7 @@
                         </div>
                         <div class="col">
                             <div class="input-group" style="max-width:680px;">
-                                <input id="oneTimeUrl" name="url" class="form-control one-time-url" type="url"
+                                <input id="oneTimeUrl" name="url" class="form-control Quick-url" type="url"
                                     placeholder="https://example.com/..." value="{{ entered_url|e }}" required />
                                 <button type="submit" class="btn btn-danger">Fire</button>
                             </div>
@@ -56,8 +56,8 @@
             <div class="card-body">
                 <div class="d-flex align-items-start justify-content-between mb-3 gap-3">
                     <div>
-                        <h3 class="card-title mb-1">One-time download log</h3>
-                        <p class="text-muted small mb-0">Shared log for all one-time downloads</p>
+                        <h3 class="card-title mb-1">Quick download log</h3>
+                        <p class="text-muted small mb-0">Shared log for all quick downloads</p>
                     </div>
                     <div class="d-flex align-items-center gap-2">
                         <a href="{{ url_for('one_time_download_logs') }}" class="btn btn-sm btn-outline-secondary rounded">Download log</a>
@@ -153,13 +153,13 @@ a.r-item:hover {
 }
 
 /* Limit URL input width on large screens, but allow full width on small screens */
-.one-time-url {
+.Quick-url {
     max-width: 680px;
     width: 100%;
 }
 
 @media (max-width: 767px) {
-    .one-time-url { max-width: 100%; }
+    .Quick-url { max-width: 100%; }
 }
 </style>
 <script>
@@ -200,7 +200,7 @@ a.r-item:hover {
     }
 
     function fetchLog() {
-        fetch('/one-time/logs?tail=50')
+        fetch('/Quick/logs?tail=50')
             .then(function(r) { return r.json(); })
             .then(function(d) {
                 if (d.error) {
@@ -217,7 +217,7 @@ a.r-item:hover {
     }
 
     function fetchRecent(force) {
-        fetch('/one-time/recent')
+        fetch('/Quick/recent')
             .then(function(r) { return r.json(); })
             .then(function(d) {
                 if (d.items) renderRecent(d.items);
