@@ -984,6 +984,16 @@ def one_time_logs():
         "content": content,
     })
 
+@app.route("/one-time/logs/download")
+def one_time_download_logs():
+    ensure_data_dirs(ensure_downloads=False)
+    if not os.path.exists(ONE_TIME_LOG_FILE):
+        return jsonify({"error": "No one-time download log exists."}), 404
+    try:
+        return send_file(ONE_TIME_LOG_FILE, as_attachment=True, download_name="one_time_download.log")
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
 @app.route("/one-time/recent")
 def one_time_recent():
     ensure_data_dirs(ensure_downloads=False)
