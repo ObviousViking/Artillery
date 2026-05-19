@@ -461,8 +461,9 @@ a.r-item:hover {
         <!-- Logs -->
         <div id="tLogs">
           <div id="logBox"><span class="text-muted">Loading&hellip;</span></div>
-          <div class="mt-2">
-            <small class="text-muted">Auto-refreshes every 1 s &middot; last 50 lines shown</small>
+          <div class="d-flex align-items-center justify-content-between mt-2">
+            <small class="text-muted" id="logStatusText">Auto-refreshes every 1 s &middot; last 50 lines shown</small>
+            <button type="button" id="bLogToggle" class="btn btn-sm btn-outline-secondary py-0 px-2">Pause refresh</button>
           </div>
         </div>
 
