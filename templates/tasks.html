@@ -353,6 +353,7 @@ a.r-item:hover {
           data-logs-api="/tasks/{{ task.slug|e }}/logs"
           data-urls-api="/tasks/{{ task.slug|e }}/urls"
           data-has-archive="{{ '1' if task.has_archive else '0' }}"
+          data-has-cookies="{{ '1' if task.has_cookies else '0' }}"
           data-next-run="{{ (task.next_run or '')|e }}">
           <div class="t-item-row">
             <span class="t-item-name">{{ task.name }}</span>
@@ -389,7 +390,7 @@ a.r-item:hover {
     <!-- New task form -->
     <div id="pNew" style="display:none;">
       <h5 class="mb-4" style="font-weight:700;">New Task</h5>
-      <form method="post" action="{{ url_for('tasks') }}" id="fCreate">
+      <form method="post" action="{{ url_for('tasks') }}" id="fCreate" enctype="multipart/form-data">
         <input type="hidden" name="editing_flag" value="0"/>
         <div class="row g-4">
           <div class="col-md-5">
@@ -403,10 +404,15 @@ a.r-item:hover {
               <textarea id="cUrls" name="urls" class="form-control form-control-sm" rows="8"
                 placeholder="https://example.com/profile&#10;https://example.com/gallery" required></textarea>
             </div>
-            <div class="mb-0">
+            <div class="mb-3">
               <label class="form-label" for="cSched">Cron schedule <span class="text-muted fw-normal">(optional)</span></label>
               <input type="text" id="cSched" name="schedule" class="form-control form-control-sm" placeholder="*/5 * * * *"/>
               <div class="form-text"><code>*/5 * * * *</code> = every 5 min</div>
+            </div>
+            <div class="mb-0">
+              <label class="form-label">Cookies <span class="text-muted fw-normal">(optional)</span></label>
+              <input type="file" name="cookies_file" class="form-control form-control-sm" accept=".txt"/>
+              <div class="form-text">Upload <code>cookies.txt</code> — passed to gallery-dl via <code>--cookies</code> automatically.</div>
             </div>
           </div>
           <div class="col-md-7">
@@ -519,12 +525,17 @@ a.r-item:hover {
               <input type="hidden" name="action" value="delete_archive">
               <button type="submit" id="bDelArchive" class="btn btn-sm btn-warning" style="display:none;">&#128465; Delete Archive</button>
             </form>
+            <form id="fDeleteCookies" method="post" class="m-0"
+              onsubmit="return confirm('Delete cookies.txt for this task?')">
+              <input type="hidden" name="action" value="delete_cookies">
+              <button type="submit" id="bDelCookies" class="btn btn-sm btn-warning" style="display:none;">&#128465; Delete Cookies</button>
+            </form>
           </div>
         </div>
 
         <!-- Edit -->
         <div id="tEdit" style="display:none;">
-          <form method="post" action="{{ url_for('tasks') }}" id="fEdit">
+          <form method="post" action="{{ url_for('tasks') }}" id="fEdit" enctype="multipart/form-data">
             <input type="hidden" name="editing_flag" value="1"/>
             <!-- Tells backend not to overwrite urls.txt unless the user explicitly loaded and edited them -->
             <input type="hidden" id="eKeepUrls" name="keep_existing_urls" value="1"/>
@@ -550,9 +561,15 @@ a.r-item:hover {
                     rows="8" style="display:none;"></textarea>
                 </div>
 
-                <div class="mb-0">
+                <div class="mb-3">
                   <label class="form-label" for="eSched">Cron schedule <span class="text-muted fw-normal">(optional)</span></label>
                   <input type="text" id="eSched" name="schedule" class="form-control form-control-sm"/>
+                </div>
+                <div class="mb-0">
+                  <label class="form-label">Cookies <span class="text-muted fw-normal">(optional)</span></label>
+                  <div id="eCookieStatus" class="mb-1" style="font-size:0.8rem;"></div>
+                  <input type="file" id="eCookiesFile" name="cookies_file" class="form-control form-control-sm" accept=".txt"/>
+                  <div class="form-text">Upload to replace existing <code>cookies.txt</code>. gallery-dl uses it via <code>--cookies</code> automatically.</div>
                 </div>
               </div>
 
@@ -623,8 +640,9 @@ a.r-item:hover {
     var tLogs = $('tLogs'), tDetails = $('tDetails'), tEdit = $('tEdit'), tRecent = $('tRecent');
     var logBox = $('logBox'), recentGrid = $('recentGrid'), bRecentRefresh = $('bRecentRefresh'), bLogToggle = $('bLogToggle');
     var fRun = $('fRun'), fPause = $('fPause'), fDelete = $('fDelete'), fDeleteArchive = $('fDeleteArchive');
-    var fStop = $('fStop'), fClearLogs = $('fClearLogs');
+    var fDeleteCookies = $('fDeleteCookies'), fStop = $('fStop'), fClearLogs = $('fClearLogs');
     var bRun = $('bRun'), bPause = $('bPause'), bDlLogs = $('bDlLogs'), bDelArchive = $('bDelArchive');
+    var bDelCookies = $('bDelCookies'), eCookieStatus = $('eCookieStatus');
     var dSched = $('dSched'), dNextRun = $('dNextRun'), dLastRun = $('dLastRun'), dUrlCount = $('dUrlCount');
     var eName = $('eName'), eUrls = $('eUrls'), eSched = $('eSched');
     var eCmd = $('eCmd'), eCmdH = $('eCmdH'), eKeepUrls = $('eKeepUrls');
@@ -718,9 +736,14 @@ a.r-item:hover {
 
         /* Action form targets */
         var au = btn.dataset.actionUrl;
-        fRun.action = fPause.action = fStop.action = fDelete.action = fDeleteArchive.action = fClearLogs.action = au;
+        fRun.action = fPause.action = fStop.action = fDelete.action = fDeleteArchive.action = fClearLogs.action = fDeleteCookies.action = au;
         bDlLogs.href   = btn.dataset.logsDlUrl;
         bDelArchive.style.display = (btn.dataset.hasArchive === '1') ? '' : 'none';
+        var hasCookies = btn.dataset.hasCookies === '1';
+        bDelCookies.style.display = hasCookies ? '' : 'none';
+        eCookieStatus.innerHTML = hasCookies
+            ? '<span style="color:var(--bs-success);">&#10003; cookies.txt present</span>'
+            : '<span class="text-muted">No cookies file</span>';
         var isRunning = (st === 'running');
         fRun.style.display  = isRunning ? 'none' : '';
         fStop.style.display = isRunning ? '' : 'none';
@@ -938,6 +961,7 @@ a.r-item:hover {
                         }
                         btn.dataset.status = t.status;
                         btn.dataset.hasArchive = t.has_archive ? '1' : '0';
+                        btn.dataset.hasCookies = t.has_cookies ? '1' : '0';
                     }
                     if (t.slug === selSlug) {
                         var isRunning = (t.status === 'running');
@@ -947,6 +971,10 @@ a.r-item:hover {
                         if (t.last_run) dLastRun.textContent = fmtDate(t.last_run);
                         dNextRun.textContent = fmtNextRun(t.next_run);
                         bDelArchive.style.display = t.has_archive ? '' : 'none';
+                        bDelCookies.style.display = t.has_cookies ? '' : 'none';
+                        eCookieStatus.innerHTML = t.has_cookies
+                            ? '<span style="color:var(--bs-success);">&#10003; cookies.txt present</span>'
+                            : '<span class="text-muted">No cookies file</span>';
                     }
                 });
             })
