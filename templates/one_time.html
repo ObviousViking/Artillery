@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+{% block main_class %}container-fluid px-4 pb-4{% endblock %}
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow-sm border-secondary">
+            <div class="card-body">
+                <h2 class="card-title mb-3">Quick Download</h2>
+
+                <p class="text-muted small mb-3">
+                    Enter a single URL to download immediately using the global gallery-dl config and
+                    the default downloads destination.
+                </p>
+
+                <form method="post" action="{{ url_for('one_time_download') }}">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-auto">
+                            <label class="col-form-label" for="oneTimeUrl">URL:</label>
+                        </div>
+                        <div class="col">
+                            <div class="input-group one-time-input-group" style="max-width:680px;">
+                                <input id="oneTimeUrl" name="url" class="form-control one-time-url" type="url"
+                                    placeholder="https://example.com/..." value="{{ entered_url|e }}" required />
+                                <button type="submit" class="btn btn-danger">Fire</button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+
+                <div class="mt-4 text-muted small d-flex align-items-center gap-3 flex-wrap">
+                    <div class="mb-0">Using config: <code>{{ config_path }}</code></div>
+                    <div class="mb-0">Destination: <code>{{ download_root }}</code></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mt-3">
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-secondary h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center justify-content-between mb-3 gap-3">
+                    <div>
+                        <h3 class="card-title mb-1">Recent downloads</h3>
+                        <p class="text-muted small mb-0">Auto-refreshes every second</p>
+                    </div>
+                    <button type="button" id="bOneTimeRecentRefresh" class="btn btn-sm btn-outline-secondary">Refresh</button>
+                </div>
+                <div id="oneTimeRecentGrid" class="r-grid"></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-secondary">
+            <div class="card-body">
+                <div class="d-flex align-items-start justify-content-between mb-3 gap-3">
+                    <div>
+                        <h3 class="card-title mb-1">Quick download log</h3>
+                        <p class="text-muted small mb-0">Shared log for all quick downloads</p>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <a href="{{ url_for('one_time_download_logs') }}" class="btn btn-sm btn-outline-secondary rounded">Download log</a>
+                        <form method="post" action="{{ url_for('one_time_clear_logs') }}" class="m-0">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary rounded">Clear log</button>
+                        </form>
+                        <form method="post" action="{{ url_for('one_time_stop') }}" class="m-0">
+                            <button type="submit" id="bOneTimeStop" class="btn btn-sm btn-outline-warning rounded" {{ 'disabled' if not running else '' }}>Stop download</button>
+                        </form>
+                    </div>
+                </div>
+                <p class="text-muted small mb-3">Current status: <strong id="oneTimeStatus">{{ 'Running' if running else 'Idle' }}</strong></p>
+                <div id="oneTimeLogBox" class="border rounded p-3" style="max-height:420px;overflow:auto;white-space:pre-wrap;">
+                    <span class="text-muted">Loading…</span>
+                </div>
+                <div class="mt-2"><small class="text-muted" id="oneTimeLogHelp">Auto-refreshes every 1 s · last 50 lines shown</small></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.r-grid {
+    display: grid;
+    /* Fixed grid: 80px columns that don't stretch */
+    grid-template-columns: repeat(auto-fill, 80px);
+    gap: 0.5rem;
+}
+.r-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 7px;
+    padding: 0.4rem;
+    overflow: hidden;
+    min-width: 0;
+    text-decoration: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+a.r-item:hover {
+    border-color: var(--focus-color);
+    box-shadow: 0 0 0 2px var(--focus-shadow);
+}
+.r-item img {
+    width: 100%;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 5px;
+    display: block;
+    background: var(--bg-tertiary);
+}
+.r-item-label {
+    font-size: 0.63rem;
+    color: var(--text-muted);
+    word-break: break-all;
+    text-align: center;
+    line-height: 1.3;
+    max-height: 2.6em;
+    overflow: hidden;
+    width: 100%;
+}
+.r-item-video {
+    height: 100px;
+    justify-content: center;
+    font-size: 1.6rem;
+    opacity: 0.45;
+}
+
+/* Log box: match the site-wide `#logBox` styling so theme (light/dark) follows */
+#oneTimeLogBox {
+    font-family: monospace;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    overflow-y: auto;
+    padding: 12px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border-input);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    word-break: break-all;
+    /* Make the log height responsive so the whole page fits on screen */
+    max-height: calc(100vh - 260px);
+}
+#oneTimeLogBox pre { margin: 0; white-space: pre-wrap; color: var(--text-secondary); }
+.r-item-video {
+    height: 100px;
+    justify-content: center;
+    font-size: 1.6rem;
+    opacity: 0.45;
+}
+
+/* Limit URL input width on large screens, but allow full width on small screens */
+.one-time-url {
+    max-width: 680px;
+    width: 100%;
+}
+
+/* Small gap between input and submit button inside the quick-download input-group */
+.one-time-input-group { gap: 0.4rem; }
+
+@media (max-width: 767px) {
+    .one-time-url { max-width: 100%; }
+}
+</style>
+<script>
+(function() {
+    var logBox = document.getElementById('oneTimeLogBox');
+    var statusLabel = document.getElementById('oneTimeStatus');
+    var stopButton = document.getElementById('bOneTimeStop');
+    var recentGrid = document.getElementById('oneTimeRecentGrid');
+    var recentRefresh = document.getElementById('bOneTimeRecentRefresh');
+    var autoScroll = true;
+    var refreshTimer = null;
+
+    function setStatus(running) {
+        statusLabel.textContent = running ? 'Running' : 'Idle';
+        if (stopButton) stopButton.disabled = !running;
+    }
+
+    function renderRecent(items) {
+        if (!items || !items.length) {
+            recentGrid.innerHTML = '<p class="text-muted small mb-0">No recent downloads yet.</p>';
+            return;
+        }
+        var html = '';
+        items.forEach(function(item) {
+            if (item.is_image) {
+                html += '<a class="r-item" href="' + item.url + '" target="_blank" rel="noopener noreferrer">'
+                      + '<img src="' + item.url + '" loading="lazy" alt="">'
+                      + '<span class="r-item-label">' + item.filename + '</span>'
+                      + '</a>';
+            } else {
+                html += '<a class="r-item r-item-video" href="' + item.url + '" target="_blank" rel="noopener noreferrer">'
+                      + '<span>&#127916;</span>'
+                      + '<span class="r-item-label">' + item.filename + '</span>'
+                      + '</a>';
+            }
+        });
+        recentGrid.innerHTML = html;
+    }
+
+    function fetchLog() {
+        fetch('/one-time/logs?tail=50')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (d.error) {
+                    logBox.innerHTML = '<span class="text-danger">' + d.error + '</span>';
+                } else {
+                    logBox.innerHTML = '<pre>' + d.content.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+                    if (autoScroll) logBox.scrollTop = logBox.scrollHeight;
+                    setStatus(d.running);
+                }
+            })
+            .catch(function(e) {
+                logBox.innerHTML = '<span class="text-danger">' + e.message + '</span>';
+            });
+    }
+
+    function fetchRecent(force) {
+        fetch('/one-time/recent')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (d.items) renderRecent(d.items);
+            })
+            .catch(function() {
+                recentGrid.innerHTML = '<p class="text-danger small mb-0">Failed to load recent downloads.</p>';
+            });
+    }
+
+    function refreshAll() {
+        fetchLog();
+        fetchRecent();
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        refreshAll();
+        refreshTimer = setInterval(refreshAll, 1000);
+        recentRefresh.addEventListener('click', function() { fetchRecent(true); });
+        logBox.addEventListener('scroll', function() {
+            autoScroll = logBox.scrollTop + logBox.clientHeight >= logBox.scrollHeight - 10;
+        });
+    });
+})();
+</script>
+{% endblock %}

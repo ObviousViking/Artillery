@@ -330,6 +330,40 @@ code {
     border-color: var(--border-color);
 }
 
+/* Nav link dividers (use pseudo-element so HTML doesn't change). Hidden on small screens. */
+.navbar-artillery .nav-link + .nav-link::before {
+    content: "|";
+    margin: 0 0.5rem;
+    color: var(--text-muted);
+    opacity: 0.85;
+    font-weight: 600;
+}
+@media (max-width: 767px) {
+    .navbar-artillery .nav-link + .nav-link::before { content: ""; }
+}
+
+/* Improve navbar toggler visibility in light theme and generally add definition */
+.navbar-artillery .navbar-toggler {
+    border: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    padding: 0.25rem 0.5rem;
+}
+.navbar-artillery .navbar-toggler:focus { box-shadow: 0 0 0 0.15rem var(--focus-shadow); }
+
+:root[data-theme="light"] .navbar-artillery .navbar-toggler {
+    background: var(--btn-hover-bg);
+    border-color: var(--border-color);
+}
+
+:root[data-theme="light"] .navbar-artillery .navbar-toggler-icon {
+    filter: none;
+}
+
+/* Ensure the toggler icon lines are clearly visible (black) in light theme */
+:root[data-theme="light"] .navbar-artillery .navbar-toggler-icon {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='%23000' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+}
+
 /* Theme toggle slider */
 .theme-toggle-wrapper {
     display: inline-flex;
