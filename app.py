@@ -855,9 +855,12 @@ def tasks():
         write_text(os.path.join(task_folder, "command.txt"), command)
 
         cookies_file = request.files.get("cookies_file")
+        cookies_path = os.path.join(task_folder, "cookies.txt")
         if cookies_file and cookies_file.filename:
-            cookies_path = os.path.join(task_folder, "cookies.txt")
             cookies_file.save(cookies_path)
+
+        if "--cookies" in command and not os.path.exists(cookies_path):
+            flash("Warning: command uses --cookies but no cookies.txt file exists for this task. Upload one via the edit form.", "warning")
 
         logs_path = os.path.join(task_folder, "logs.txt")
         if not os.path.exists(logs_path):
@@ -1177,13 +1180,6 @@ def run_task_background(task_folder: str):
         if os.path.exists(lock_path):
             os.remove(lock_path)
         return
-
-    cookies_file_path = os.path.join(task_folder, "cookies.txt")
-    if os.path.exists(cookies_file_path):
-        has_cookies_flag = any(p == "--cookies" or p.startswith("--cookies=") for p in cmd_parts)
-        if not has_cookies_flag and cmd_parts:
-            cmd_parts.insert(1, "--cookies")
-            cmd_parts.insert(2, "cookies.txt")
 
     env = os.environ.copy()
     env["GALLERY_DL_CONFIG"] = CONFIG_FILE

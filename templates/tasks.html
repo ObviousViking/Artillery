@@ -430,6 +430,7 @@ a.r-item:hover {
                   <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc6" data-flag="--download-archive archive.sqlite"><label class="form-check-label small" for="cc6">Use archive DB</label></div>
                   <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc7" data-flag="--no-skip"><label class="form-check-label small" for="cc7">Don't skip existing</label></div>
                   <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc8" data-flag="-v"><label class="form-check-label small" for="cc8">Verbose</label></div>
+                  <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc9" data-flag="--cookies cookies.txt"><label class="form-check-label small" for="cc9">Use cookies</label></div>
                 </div>
               </div>
             </div>
@@ -588,6 +589,7 @@ a.r-item:hover {
                       <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec6" data-flag="--download-archive archive.sqlite"><label class="form-check-label small" for="ec6">Use archive DB</label></div>
                       <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec7" data-flag="--no-skip"><label class="form-check-label small" for="ec7">Don't skip existing</label></div>
                       <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec8" data-flag="-v"><label class="form-check-label small" for="ec8">Verbose</label></div>
+                      <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec9" data-flag="--cookies cookies.txt"><label class="form-check-label small" for="ec9">Use cookies</label></div>
                     </div>
                   </div>
                 </div>
@@ -620,6 +622,7 @@ a.r-item:hover {
     var selSlug        = null;
     var selUrlCount    = 0;
     var selUrlsApi     = null;
+    var selHasCookies  = false;
     var activeTab      = 'details';
     var logTimer       = null;
     var logApi         = null;
@@ -739,9 +742,9 @@ a.r-item:hover {
         fRun.action = fPause.action = fStop.action = fDelete.action = fDeleteArchive.action = fClearLogs.action = fDeleteCookies.action = au;
         bDlLogs.href   = btn.dataset.logsDlUrl;
         bDelArchive.style.display = (btn.dataset.hasArchive === '1') ? '' : 'none';
-        var hasCookies = btn.dataset.hasCookies === '1';
-        bDelCookies.style.display = hasCookies ? '' : 'none';
-        eCookieStatus.innerHTML = hasCookies
+        selHasCookies = btn.dataset.hasCookies === '1';
+        bDelCookies.style.display = selHasCookies ? '' : 'none';
+        eCookieStatus.innerHTML = selHasCookies
             ? '<span style="color:var(--bs-success);">&#10003; cookies.txt present</span>'
             : '<span class="text-muted">No cookies file</span>';
         var isRunning = (st === 'running');
@@ -971,6 +974,7 @@ a.r-item:hover {
                         if (t.last_run) dLastRun.textContent = fmtDate(t.last_run);
                         dNextRun.textContent = fmtNextRun(t.next_run);
                         bDelArchive.style.display = t.has_archive ? '' : 'none';
+                        selHasCookies = !!t.has_cookies;
                         bDelCookies.style.display = t.has_cookies ? '' : 'none';
                         eCookieStatus.innerHTML = t.has_cookies
                             ? '<span style="color:var(--bs-success);">&#10003; cookies.txt present</span>'
@@ -1032,6 +1036,41 @@ a.r-item:hover {
             document.querySelectorAll('.t-item').forEach(function (btn) {
                 btn.style.display = (!q || btn.dataset.name.toLowerCase().includes(q)) ? '' : 'none';
             });
+        });
+
+        /* ── Cookies validation on submit ─────────────────────────────── */
+        var cCookiesErrEl = document.createElement('div');
+        cCookiesErrEl.className = 'text-danger small mt-1';
+        cCookiesErrEl.style.display = 'none';
+        $('cc9').closest('.form-check').after(cCookiesErrEl);
+
+        $('fCreate').addEventListener('submit', function (e) {
+            var useCookies = $('cc9').checked;
+            var hasFile = !!($('fCreate').querySelector('[name="cookies_file"]').value);
+            if (useCookies && !hasFile) {
+                e.preventDefault();
+                cCookiesErrEl.textContent = 'Select a cookies.txt file to upload, or uncheck Use cookies.';
+                cCookiesErrEl.style.display = '';
+            } else {
+                cCookiesErrEl.style.display = 'none';
+            }
+        });
+
+        var eCookiesErrEl = document.createElement('div');
+        eCookiesErrEl.className = 'text-danger small mt-1';
+        eCookiesErrEl.style.display = 'none';
+        $('ec9').closest('.form-check').after(eCookiesErrEl);
+
+        $('fEdit').addEventListener('submit', function (e) {
+            var useCookies = $('ec9').checked;
+            var hasFile = !!($('fEdit').querySelector('[name="cookies_file"]').value);
+            if (useCookies && !hasFile && !selHasCookies) {
+                e.preventDefault();
+                eCookiesErrEl.textContent = 'Select a cookies.txt file to upload, or uncheck Use cookies.';
+                eCookiesErrEl.style.display = '';
+            } else {
+                eCookiesErrEl.style.display = 'none';
+            }
         });
 
         buildCreateCmd();
