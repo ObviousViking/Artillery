@@ -250,6 +250,7 @@ def _task_mtimes(task_path: str) -> dict:
         "paused": _mt(os.path.join(task_path, "paused")),
         "error": _mt(os.path.join(task_path, "error")),
         "archive": _mt(os.path.join(task_path, "archive.sqlite")),
+        "cookies": _mt(os.path.join(task_path, "cookies.txt")),
     }
 
 def _cache_name_for_relpath(relpath: str) -> str:
@@ -565,6 +566,7 @@ def load_tasks():
         last_run = read_text(os.path.join(task_path, "last_run.txt"))
         url_count   = _count_file_lines(os.path.join(task_path, "urls.txt"))
         has_archive = os.path.exists(os.path.join(task_path, "archive.sqlite"))
+        has_cookies = os.path.exists(os.path.join(task_path, "cookies.txt"))
 
         lock_path   = os.path.join(task_path, "lock")
         paused_path = os.path.join(task_path, "paused")
@@ -599,6 +601,7 @@ def load_tasks():
             "command": command,
             "url_count": url_count,
             "has_archive": has_archive,
+            "has_cookies": has_cookies,
         }
         _TASK_CACHE[slug] = {"_mtimes": mtimes, "task": task}
         tasks.append(task)
@@ -851,6 +854,14 @@ def tasks():
 
         write_text(os.path.join(task_folder, "command.txt"), command)
 
+        cookies_file = request.files.get("cookies_file")
+        cookies_path = os.path.join(task_folder, "cookies.txt")
+        if cookies_file and cookies_file.filename:
+            cookies_file.save(cookies_path)
+
+        if "--cookies" in command and not os.path.exists(cookies_path):
+            flash("Warning: command uses --cookies but no cookies.txt file exists for this task. Upload one via the edit form.", "warning")
+
         logs_path = os.path.join(task_folder, "logs.txt")
         if not os.path.exists(logs_path):
             write_text(logs_path, "")
@@ -880,6 +891,7 @@ def api_tasks():
             "status": t.get("status"),
             "last_run": t.get("last_run"),
             "has_archive": t.get("has_archive", False),
+            "has_cookies": t.get("has_cookies", False),
         })
 
     return jsonify(out)
@@ -1325,6 +1337,18 @@ def task_action(slug):
         else:
             flash("No archive file found for this task.", "info")
             return redirect(url_for("tasks", selected=slug))
+
+    if action == "delete_cookies":
+        cookies_path = os.path.join(task_folder, "cookies.txt")
+        if os.path.exists(cookies_path):
+            try:
+                os.remove(cookies_path)
+                flash("Cookies deleted.", "success")
+            except Exception as exc:
+                flash(f"Failed to delete cookies: {exc}", "error")
+        else:
+            flash("No cookies file found for this task.", "info")
+        return redirect(url_for("tasks", selected=slug))
 
     flash("Unknown action.", "error")
     return redirect(url_for("tasks", selected=slug))
