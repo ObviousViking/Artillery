@@ -1259,6 +1259,26 @@ def task_action(slug):
         flash("Task not found.", "error")
         return redirect(url_for("tasks"))
 
+    if action == "duplicate":
+        src_name = read_text(os.path.join(task_folder, "name.txt")).strip() or slug
+        base_name = f"{src_name} copy"
+        new_name = base_name
+        counter = 2
+        while os.path.isdir(os.path.join(TASKS_ROOT, slugify(new_name))):
+            new_name = f"{base_name} {counter}"
+            counter += 1
+        new_slug = slugify(new_name)
+        new_folder = os.path.join(TASKS_ROOT, new_slug)
+        os.makedirs(new_folder)
+        for fname in ("urls.txt", "command.txt", "cron.txt", "cookies.txt"):
+            src = os.path.join(task_folder, fname)
+            if os.path.exists(src):
+                shutil.copy2(src, os.path.join(new_folder, fname))
+        write_text(os.path.join(new_folder, "name.txt"), new_name)
+        write_text(os.path.join(new_folder, "logs.txt"), "")
+        flash(f"Task duplicated as '{new_name}'.", "success")
+        return redirect(url_for("tasks", selected=new_slug))
+
     if action == "delete":
         try:
             shutil.rmtree(task_folder)

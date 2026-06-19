@@ -516,6 +516,10 @@ a.r-item:hover {
               <input type="hidden" name="action" value="clear_logs">
               <button type="submit" class="btn btn-sm btn-secondary">&#128465; Clear Logs</button>
             </form>
+            <form id="fDuplicate" method="post" class="m-0">
+              <input type="hidden" name="action" value="duplicate">
+              <button type="submit" class="btn btn-sm btn-secondary">&#10697; Duplicate</button>
+            </form>
             <form id="fDelete" method="post" class="m-0"
               onsubmit="return confirm('Delete this task? Its folder and logs will be removed.')">
               <input type="hidden" name="action" value="delete">
@@ -739,7 +743,7 @@ a.r-item:hover {
 
         /* Action form targets */
         var au = btn.dataset.actionUrl;
-        fRun.action = fPause.action = fStop.action = fDelete.action = fDeleteArchive.action = fClearLogs.action = fDeleteCookies.action = au;
+        fRun.action = fPause.action = fStop.action = fDuplicate.action = fDelete.action = fDeleteArchive.action = fClearLogs.action = fDeleteCookies.action = au;
         bDlLogs.href   = btn.dataset.logsDlUrl;
         bDelArchive.style.display = (btn.dataset.hasArchive === '1') ? '' : 'none';
         selHasCookies = btn.dataset.hasCookies === '1';
