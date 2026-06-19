@@ -812,6 +812,17 @@ def tasks():
 
         slug = slugify(name)
         task_folder = os.path.join(TASKS_ROOT, slug)
+
+        editing_flag = request.form.get("editing_flag") == "1"
+        original_slug = request.form.get("original_slug", "").strip()
+        if editing_flag and original_slug and original_slug != slug:
+            old_folder = os.path.join(TASKS_ROOT, original_slug)
+            if os.path.isdir(old_folder):
+                if os.path.isdir(task_folder):
+                    flash(f"A task named '{name}' already exists.", "error")
+                    return redirect(url_for("tasks", selected=original_slug))
+                os.rename(old_folder, task_folder)
+
         os.makedirs(task_folder, exist_ok=True)
 
         write_text(os.path.join(task_folder, "name.txt"), name)

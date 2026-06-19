@@ -542,6 +542,7 @@ a.r-item:hover {
         <div id="tEdit" style="display:none;">
           <form method="post" action="{{ url_for('tasks') }}" id="fEdit" enctype="multipart/form-data">
             <input type="hidden" name="editing_flag" value="1"/>
+            <input type="hidden" id="eOrigSlug" name="original_slug" value=""/>
             <!-- Tells backend not to overwrite urls.txt unless the user explicitly loaded and edited them -->
             <input type="hidden" id="eKeepUrls" name="keep_existing_urls" value="1"/>
             <div class="row g-4">
@@ -758,6 +759,7 @@ a.r-item:hover {
         dNextRun.textContent = fmtNextRun(btn.dataset.nextRun);
 
         /* Edit form */
+        eOrigSlug.value      = btn.dataset.slug;
         eName.value          = btn.dataset.name;
         eSched.value         = btn.dataset.schedule || '';
         eCmd.value           = btn.dataset.command;
