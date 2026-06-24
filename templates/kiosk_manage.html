@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container-fluid px-4 pb-5">
+    <div class="d-flex align-items-center gap-3 mt-4 mb-3">
+        <a href="{{ url_for('kiosks_list') }}" class="btn btn-sm btn-outline-secondary">&larr; Kiosks</a>
+        <h2 class="mb-0">{{ settings.name or kslug }}</h2>
+        <a href="{{ url_for('kiosk_display', kslug=kslug) }}" class="btn btn-sm btn-success ms-auto" target="_blank">Open Fullscreen</a>
+    </div>
+
+    <div class="row g-4">
+        <!-- Settings -->
+        <div class="col-md-4">
+            <div class="card shadow-sm border-secondary">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">Settings</h5>
+                    <form method="post">
+                        <input type="hidden" name="action" value="settings">
+                        <div class="mb-3">
+                            <label class="form-label small">Name</label>
+                            <input type="text" name="name" class="form-control form-control-sm"
+                                value="{{ settings.name or kslug }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small">Interval (seconds)</label>
+                            <input type="number" name="interval" class="form-control form-control-sm"
+                                value="{{ settings.interval or 10 }}" min="1" max="3600">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small">Order</label>
+                            <select name="order" class="form-select form-select-sm">
+                                <option value="random" {% if settings.order != 'sequential' %}selected{% endif %}>Random</option>
+                                <option value="sequential" {% if settings.order == 'sequential' %}selected{% endif %}>Sequential</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-outline-light">Save</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Current kiosk images -->
+        <div class="col-md-8">
+            <div class="card shadow-sm border-secondary mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">Kiosk Images <span class="badge bg-secondary">{{ kiosk_images|length }}</span></h5>
+                    {% if kiosk_images %}
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for fn in kiosk_images %}
+                        <div class="position-relative" style="width:120px;">
+                            <img src="{{ url_for('kiosk_media', kslug=kslug, filename=fn) }}"
+                                style="width:120px;height:90px;object-fit:cover;border-radius:5px;display:block;background:var(--bg-tertiary);">
+                            <form method="post" style="position:absolute;top:3px;right:3px;">
+                                <input type="hidden" name="action" value="remove_image">
+                                <input type="hidden" name="filename" value="{{ fn }}">
+                                <button type="submit" class="btn btn-sm btn-danger"
+                                    style="padding:0.1rem 0.35rem;font-size:0.7rem;line-height:1.3;"
+                                    title="Remove">&times;</button>
+                            </form>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted small">No images yet. Add some from the media wall below.</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Add from media wall -->
+            <div class="card shadow-sm border-secondary">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">Add from Media Wall</h5>
+                    {% if wall_images %}
+                    <form method="post" id="addForm">
+                        <input type="hidden" name="action" value="add_images">
+                        <div class="mb-2 d-flex gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="wallSelectAll">Select All</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="wallDeselectAll">None</button>
+                            <button type="submit" class="btn btn-sm btn-outline-light ms-auto">Add Selected</button>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2">
+                            {% for img in wall_images %}
+                            <label class="position-relative" style="width:120px;cursor:pointer;" title="{{ img.name }}">
+                                <input type="checkbox" name="filenames" value="{{ img.name }}"
+                                    class="wall-cb" style="position:absolute;top:4px;left:4px;z-index:1;"
+                                    {% if img.in_kiosk %}disabled{% endif %}>
+                                <img src="{{ url_for('wall_file', filename=img.name) }}"
+                                    style="width:120px;height:90px;object-fit:cover;border-radius:5px;display:block;background:var(--bg-tertiary);{% if img.in_kiosk %}opacity:0.4;{% endif %}">
+                                {% if img.in_kiosk %}<span style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:0.65rem;color:#fff;text-shadow:0 1px 3px #000;">in kiosk</span>{% endif %}
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </form>
+                    {% else %}
+                    <p class="text-muted small">Media wall cache is empty. Trigger a refresh from the home page first.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('wallSelectAll') && document.getElementById('wallSelectAll').addEventListener('click', function() {
+    document.querySelectorAll('.wall-cb:not(:disabled)').forEach(function(cb) { cb.checked = true; });
+});
+document.getElementById('wallDeselectAll') && document.getElementById('wallDeselectAll').addEventListener('click', function() {
+    document.querySelectorAll('.wall-cb').forEach(function(cb) { cb.checked = false; });
+});
+</script>
+{% endblock %}

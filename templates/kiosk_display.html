@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ settings.name or kslug }} — Kiosk</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+    background: #000;
+    width: 100%; height: 100%;
+    overflow: hidden;
+    cursor: none;
+}
+#stage {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+}
+.k-slide {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0;
+    transition: opacity 0.9s ease;
+}
+.k-slide.visible { opacity: 1; }
+.k-slide img {
+    max-width: 100%; max-height: 100%;
+    object-fit: contain;
+    display: block;
+}
+#controls {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    padding: 1rem 1.5rem;
+    background: linear-gradient(transparent, rgba(0,0,0,0.7));
+    display: flex; align-items: center; gap: 1rem;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    color: #fff;
+    font-family: system-ui, sans-serif;
+}
+#controls.visible { opacity: 1; }
+.k-name { font-size: 0.85rem; opacity: 0.7; }
+.k-btn {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    color: #fff; border-radius: 5px;
+    padding: 0.3rem 0.8rem; font-size: 0.8rem;
+    cursor: pointer;
+}
+.k-btn:hover { background: rgba(255,255,255,0.25); }
+.k-progress {
+    flex: 1;
+    height: 2px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.k-progress-bar {
+    height: 100%;
+    background: #f97316;
+    width: 0%;
+    transition: width linear;
+}
+#noImages {
+    color: #fff;
+    font-family: system-ui, sans-serif;
+    text-align: center;
+    opacity: 0.6;
+}
+</style>
+</head>
+<body>
+
+<div id="stage">
+    <div id="noImages" style="display:none;">
+        <p style="font-size:1.2rem;margin-bottom:0.5rem;">No images in this kiosk.</p>
+        <p style="font-size:0.85rem;">Add images from the <a href="{{ url_for('kiosk_manage', kslug=kslug) }}" style="color:#f97316;">management page</a>.</p>
+    </div>
+</div>
+
+<div id="controls">
+    <span class="k-name" id="kName">{{ settings.name or kslug }}</span>
+    <button class="k-btn" id="btnPrev">&#8592;</button>
+    <button class="k-btn" id="btnNext">&#8594;</button>
+    <div class="k-progress"><div class="k-progress-bar" id="kBar"></div></div>
+    <button class="k-btn" id="btnPause">&#9646;&#9646; Pause</button>
+    <button class="k-btn" id="btnFs">&#x26F6; Fullscreen</button>
+    <a class="k-btn" href="{{ url_for('kiosk_manage', kslug=kslug) }}" style="text-decoration:none;">&#8943; Manage</a>
+</div>
+
+<script>
+(function() {
+    var API = '{{ url_for("kiosk_images_api", kslug=kslug) }}';
+    var stage = document.getElementById('stage');
+    var controls = document.getElementById('controls');
+    var kBar = document.getElementById('kBar');
+    var btnPrev = document.getElementById('btnPrev');
+    var btnNext = document.getElementById('btnNext');
+    var btnPause = document.getElementById('btnPause');
+    var btnFs = document.getElementById('btnFs');
+    var noImages = document.getElementById('noImages');
+
+    var images = [];
+    var idx = 0;
+    var interval = 10;
+    var order = 'random';
+    var paused = false;
+    var slides = [];
+    var curSlide = null;
+    var timer = null;
+    var barTimer = null;
+    var controlsTimer = null;
+
+    // Auto-fullscreen on load
+    function goFullscreen() {
+        var el = document.documentElement;
+        if (el.requestFullscreen) el.requestFullscreen();
+        else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+        else if (el.mozRequestFullScreen) el.mozRequestFullScreen();
+    }
+    document.addEventListener('click', function fsOnce() {
+        goFullscreen();
+        document.removeEventListener('click', fsOnce);
+    }, { once: true });
+    // Try immediately (may be blocked without gesture)
+    try { goFullscreen(); } catch(e) {}
+
+    btnFs.addEventListener('click', function() {
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+        } else {
+            goFullscreen();
+        }
+    });
+
+    // Show/hide controls on mouse move
+    document.addEventListener('mousemove', function() {
+        document.body.style.cursor = 'default';
+        controls.classList.add('visible');
+        clearTimeout(controlsTimer);
+        controlsTimer = setTimeout(function() {
+            controls.classList.remove('visible');
+            document.body.style.cursor = 'none';
+        }, 3000);
+    });
+
+    function makeSlide(img) {
+        var div = document.createElement('div');
+        div.className = 'k-slide';
+        var el = document.createElement('img');
+        el.src = img.url;
+        el.alt = img.name;
+        div.appendChild(el);
+        stage.appendChild(div);
+        return div;
+    }
+
+    function preload(imgUrl) {
+        var i = new Image();
+        i.src = imgUrl;
+    }
+
+    function showSlide(i) {
+        if (!images.length) return;
+        i = ((i % images.length) + images.length) % images.length;
+        idx = i;
+        if (curSlide) curSlide.classList.remove('visible');
+        while (slides.length < images.length) {
+            slides.push(null);
+        }
+        if (!slides[i]) {
+            slides[i] = makeSlide(images[i]);
+        }
+        curSlide = slides[i];
+        curSlide.classList.add('visible');
+        var next = (i + 1) % images.length;
+        if (!slides[next]) slides[next] = makeSlide(images[next]);
+        // Preload next image too
+        if (images[next]) preload(images[next].url);
+        startBar();
+    }
+
+    function nextIdx() {
+        if (order === 'random') {
+            if (images.length <= 1) return 0;
+            var n;
+            do { n = Math.floor(Math.random() * images.length); } while (n === idx);
+            return n;
+        }
+        return (idx + 1) % images.length;
+    }
+
+    function advance() {
+        showSlide(nextIdx());
+    }
+
+    function startTimer() {
+        clearTimeout(timer);
+        if (!paused) {
+            timer = setTimeout(function() { advance(); startTimer(); }, interval * 1000);
+        }
+    }
+
+    function startBar() {
+        clearInterval(barTimer);
+        kBar.style.transition = 'none';
+        kBar.style.width = '0%';
+        if (paused) return;
+        requestAnimationFrame(function() {
+            requestAnimationFrame(function() {
+                kBar.style.transition = 'width ' + interval + 's linear';
+                kBar.style.width = '100%';
+            });
+        });
+    }
+
+    btnPrev.addEventListener('click', function() {
+        clearTimeout(timer);
+        showSlide(idx - 1);
+        if (!paused) startTimer();
+    });
+    btnNext.addEventListener('click', function() {
+        clearTimeout(timer);
+        advance();
+        if (!paused) startTimer();
+    });
+    btnPause.addEventListener('click', function() {
+        paused = !paused;
+        btnPause.textContent = paused ? '▶ Play' : '⏸ Pause';
+        if (paused) {
+            clearTimeout(timer);
+            clearInterval(barTimer);
+            kBar.style.transition = 'none';
+            kBar.style.width = '0%';
+        } else {
+            startTimer();
+            startBar();
+        }
+    });
+
+    // Keyboard navigation
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'ArrowRight' || e.key === ' ') { btnNext.click(); }
+        else if (e.key === 'ArrowLeft') { btnPrev.click(); }
+        else if (e.key === 'p' || e.key === 'P') { btnPause.click(); }
+        else if (e.key === 'f' || e.key === 'F') { btnFs.click(); }
+    });
+
+    fetch(API)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            interval = d.interval || 10;
+            order = d.order || 'random';
+            images = d.images || [];
+            if (!images.length) {
+                noImages.style.display = '';
+                return;
+            }
+            if (order === 'random') {
+                images.sort(function() { return Math.random() - 0.5; });
+            }
+            showSlide(0);
+            startTimer();
+        })
+        .catch(function() {
+            noImages.style.display = '';
+            noImages.querySelector('p').textContent = 'Failed to load kiosk images.';
+        });
+})();
+</script>
+</body>
+</html>

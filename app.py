@@ -1,5 +1,7 @@
 import os
+import io
 import json
+import zipfile
 import mimetypes
 import datetime as dt
 import re
@@ -54,7 +56,7 @@ faulthandler.enable()
 try:
     faulthandler.register(signal.SIGUSR1, all_threads=True)
 except Exception:
-    pass
+    app.logger.debug("SIGUSR1 not available on this platform — faulthandler signal handler skipped")
 
 if HANG_DUMP_SECONDS > 0:
     faulthandler.dump_traceback_later(HANG_DUMP_SECONDS, repeat=True)
@@ -67,7 +69,8 @@ TASKS_ROOT = os.environ.get("TASKS_DIR") or "/tasks"
 CONFIG_ROOT = os.environ.get("CONFIG_DIR") or "/config"
 DOWNLOADS_ROOT = os.environ.get("DOWNLOADS_DIR") or "/downloads"
 
-CONFIG_FILE = os.path.join(CONFIG_ROOT, "gallery-dl.conf")
+CONFIG_FILE  = os.path.join(CONFIG_ROOT, "gallery-dl.conf")
+KIOSKS_ROOT  = os.path.join(CONFIG_ROOT, "kiosks")
 
 DEFAULT_CONFIG_URL = os.environ.get(
     "GALLERYDL_DEFAULT_CONFIG_URL",
@@ -97,6 +100,7 @@ def _rotate_logs(task_folder: str) -> None:
     try:
         os.rename(logs_path, archived)
     except Exception:
+        app.logger.warning("Could not rotate log for %s", task_folder, exc_info=True)
         return
     pat = re.compile(r'^logs-\d{4}-\d{2}-\d{2}T\d{6}\.txt$')
     archives = sorted(f for f in os.listdir(task_folder) if pat.match(f))
@@ -104,7 +108,7 @@ def _rotate_logs(task_folder: str) -> None:
         try:
             os.remove(os.path.join(task_folder, old))
         except Exception:
-            pass
+            app.logger.warning("Could not remove old log archive %s", old, exc_info=True)
 
 def _write_last_error(task_folder: str, message: str) -> None:
     try:
@@ -112,7 +116,7 @@ def _write_last_error(task_folder: str, message: str) -> None:
             message.strip(), encoding="utf-8"
         )
     except Exception:
-        pass
+        app.logger.warning("Could not write last_error.txt for %s", task_folder, exc_info=True)
 
 def _clear_last_error(task_folder: str) -> None:
     p = os.path.join(task_folder, "last_error.txt")
@@ -120,7 +124,7 @@ def _clear_last_error(task_folder: str) -> None:
         if os.path.exists(p):
             os.remove(p)
     except Exception:
-        pass
+        app.logger.warning("Could not clear last_error.txt for %s", task_folder, exc_info=True)
 
 def _record_run(task_folder: str, success: bool, duration: float, stopped: bool) -> None:
     history_path = os.path.join(task_folder, "run_history.jsonl")
@@ -131,15 +135,16 @@ def _record_run(task_folder: str, success: bool, duration: float, stopped: bool)
         "stopped": stopped,
     })
     try:
-        with open(history_path, "a", encoding="utf-8") as f:
-            f.write(entry + "\n")
-        with open(history_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-        if len(lines) > 100:
-            with open(history_path, "w", encoding="utf-8") as f:
-                f.writelines(lines[-100:])
+        with _HISTORY_LOCK:
+            with open(history_path, "a", encoding="utf-8") as f:
+                f.write(entry + "\n")
+            with open(history_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            if len(lines) > 100:
+                with open(history_path, "w", encoding="utf-8") as f:
+                    f.writelines(lines[-100:])
     except Exception:
-        pass
+        app.logger.exception("Could not write run history for %s", task_folder)
 
 # ---------------------------------------------------------------------
 # Media wall (DB + cache folder)
@@ -150,6 +155,7 @@ MEDIA_WALL_SCAN_CRON_FILE = os.path.join(CONFIG_ROOT, "mediawall_scan_cron.txt")
 MEDIA_WALL_ENABLED_FILE = os.path.join(CONFIG_ROOT, "mediawall_enabled.txt")
 
 MEDIA_WALL_REFRESH_LOCK = threading.Lock()
+_HISTORY_LOCK          = threading.Lock()  # serialises concurrent run_history.jsonl writes
 
 # Disable aggressive caching of send_from_directory responses
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
@@ -185,7 +191,7 @@ def touch_mediawall_notify():
         with open(MEDIAWALL_NOTIFY_FILE, 'a'):
             os.utime(MEDIAWALL_NOTIFY_FILE, None)
     except Exception:
-        pass
+        app.logger.debug("Could not touch mediawall notify file", exc_info=True)
 
 # ---------------------------------------------------------------------
 # Optional request timing
@@ -280,7 +286,7 @@ def _get_one_time_status() -> dict:
             try:
                 os.remove(ONE_TIME_PID_FILE)
             except Exception:
-                pass
+                app.logger.debug("Could not remove stale one-time PID file")
     return {"running": running, "pid": pid}
 
 
@@ -366,7 +372,7 @@ def _unschedule_task(slug: str) -> None:
     try:
         _bg_scheduler.remove_job(f"task_{slug}")
     except Exception:
-        pass
+        app.logger.debug("Scheduler job task_%s not found (already removed or never added)", slug)
 
 def _load_all_schedules() -> None:
     if not os.path.isdir(TASKS_ROOT):
@@ -536,7 +542,7 @@ def _clean_dir(path: str):
         try:
             os.remove(os.path.join(path, fn))
         except Exception:
-            pass
+            app.logger.warning("Could not remove media wall cache file %s", fn, exc_info=True)
 
 def _refresh_media_wall_cache_from_downloads() -> dict:
     ensure_data_dirs(ensure_downloads=True)
@@ -614,11 +620,12 @@ def _refresh_media_wall_cache_from_downloads() -> dict:
                 copied += 1
             except Exception:
                 failed += 1
+                app.logger.warning("Could not copy media wall file %s", rel, exc_info=True)
                 try:
                     if os.path.exists(tmp):
                         os.remove(tmp)
                 except Exception:
-                    pass
+                    app.logger.debug("Could not remove tmp file %s", tmp)
 
         app.logger.info("mediawall: refresh completed (picked=%s, copied=%s, failed=%s)", len(picked), copied, failed)
         return {"picked": len(picked), "copied": copied, "failed": failed}
@@ -737,7 +744,7 @@ def load_tasks():
             try:
                 next_run = croniter(schedule, dt.datetime.now()).get_next(dt.datetime).isoformat(timespec="seconds")
             except Exception:
-                pass
+                app.logger.warning("Could not calculate next_run for cron '%s'", schedule, exc_info=True)
 
         last_error = ""
         if status == "error":
@@ -771,6 +778,43 @@ def load_tasks():
 
 # ---------------------------------------------------------------------
 # Health check
+# ---------------------------------------------------------------------
+
+# ── Kiosk helpers ────────────────────────────────────────────────────────────
+
+def _kiosk_settings(kslug: str) -> dict:
+    raw = read_text(os.path.join(KIOSKS_ROOT, kslug, "settings.json"))
+    try:
+        return json.loads(raw) if raw else {}
+    except Exception:
+        app.logger.warning("Could not parse kiosk settings for %s", kslug)
+        return {}
+
+def _save_kiosk_settings(kslug: str, settings: dict) -> None:
+    p = os.path.join(KIOSKS_ROOT, kslug, "settings.json")
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    write_text(p, json.dumps(settings, indent=2))
+
+def _list_kiosks() -> list:
+    result = []
+    if not os.path.isdir(KIOSKS_ROOT):
+        return result
+    for kslug in sorted(os.listdir(KIOSKS_ROOT)):
+        kdir = os.path.join(KIOSKS_ROOT, kslug)
+        if not os.path.isdir(kdir):
+            continue
+        settings = _kiosk_settings(kslug)
+        idir = os.path.join(kdir, "images")
+        count = sum(1 for f in os.listdir(idir) if os.path.isfile(os.path.join(idir, f))) if os.path.isdir(idir) else 0
+        result.append({
+            "slug": kslug,
+            "name": settings.get("name", kslug),
+            "interval": settings.get("interval", 10),
+            "order": settings.get("order", "random"),
+            "image_count": count,
+        })
+    return result
+
 # ---------------------------------------------------------------------
 
 @app.route("/healthz")
@@ -855,7 +899,7 @@ def mediawall_list_cache():
                         file_url = '/wall/' + fname
                     items.append({'name': fname, 'url': file_url, 'mtime': mtime})
     except Exception:
-        pass
+        app.logger.exception("Error listing media wall cache directory")
     return jsonify({'items': items})
 
 @app.route("/mediawall/events")
@@ -1008,6 +1052,10 @@ def tasks():
             write_text(os.path.join(task_folder, "urls.txt"), urls_text.strip() + "\n")
 
         if schedule:
+            if not croniter.is_valid(schedule):
+                flash(f"Invalid cron expression '{schedule}' — task saved without a schedule.", "warning")
+                schedule = ""
+        if schedule:
             write_text(os.path.join(task_folder, "cron.txt"), schedule)
         else:
             cron_path = os.path.join(task_folder, "cron.txt")
@@ -1038,8 +1086,8 @@ def tasks():
                     parts.insert(insert_index + 1, DOWNLOADS_ROOT)
 
                 command = " ".join(shlex.quote(p) for p in parts)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            app.logger.warning("Could not parse task command '%s': %s", command, exc)
 
         write_text(os.path.join(task_folder, "command.txt"), command)
 
@@ -1140,7 +1188,136 @@ def config_page():
         config_path=CONFIG_FILE,
         media_wall_enabled=MEDIA_WALL_ENABLED,
         media_wall_scan_cron=scan_cron,
+        tasks=load_tasks(),
     )
+
+# ---------------------------------------------------------------------
+# Backup / Restore
+# ---------------------------------------------------------------------
+
+@app.route("/config/backup", methods=["POST"])
+def config_backup():
+    ensure_data_dirs(ensure_downloads=False)
+    selected_slugs = request.form.getlist("slugs")
+    include_config = request.form.get("include_config") == "1"
+
+    SKIP_FILES = {"lock", "pid", "stopped"}
+    stamp = dt.datetime.utcnow().strftime("%Y-%m-%dT%H-%M-%S")
+    zip_name = f"artillery-backup-{stamp}.zip"
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for slug in selected_slugs:
+            if not is_valid_slug(slug):
+                continue
+            task_dir = os.path.join(TASKS_ROOT, slug)
+            if not os.path.isdir(task_dir):
+                continue
+            for fn in os.listdir(task_dir):
+                if fn in SKIP_FILES:
+                    continue
+                fp = os.path.join(task_dir, fn)
+                if os.path.isfile(fp):
+                    zf.write(fp, f"tasks/{slug}/{fn}")
+
+        if include_config and os.path.isfile(CONFIG_FILE):
+            zf.write(CONFIG_FILE, f"config/{os.path.basename(CONFIG_FILE)}")
+
+        if os.path.isdir(KIOSKS_ROOT):
+            for kname in os.listdir(KIOSKS_ROOT):
+                kdir = os.path.join(KIOSKS_ROOT, kname)
+                if not os.path.isdir(kdir):
+                    continue
+                for root, _dirs, files in os.walk(kdir):
+                    for fn in files:
+                        fp = os.path.join(root, fn)
+                        arcname = "config/kiosks/" + kname + "/" + os.path.relpath(fp, kdir)
+                        zf.write(fp, arcname)
+
+    buf.seek(0)
+    return send_file(buf, mimetype="application/zip", as_attachment=True, download_name=zip_name)
+
+
+@app.route("/config/restore", methods=["POST"])
+def config_restore():
+    ensure_data_dirs(ensure_downloads=False)
+    f = request.files.get("backup_zip")
+    if not f or not f.filename.endswith(".zip"):
+        flash("Please upload a valid .zip backup file.", "error")
+        return redirect(url_for("config_page"))
+
+    raw = f.read(200 * 1024 * 1024 + 1)
+    if len(raw) > 200 * 1024 * 1024:
+        flash("Backup file too large (max 200 MB).", "error")
+        return redirect(url_for("config_page"))
+
+    restored_tasks, restored_kiosks = [], []
+    restored_config = False
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            for info in zf.infolist():
+                name = info.filename.replace("\\", "/")
+                if ".." in name or name.startswith("/"):
+                    app.logger.warning("Backup restore: skipping unsafe path %s", name)
+                    continue
+
+                if name.startswith("tasks/") and not name.endswith("/"):
+                    parts = name.split("/")
+                    if len(parts) >= 3:
+                        slug = parts[1]
+                        if is_valid_slug(slug):
+                            dest = os.path.join(TASKS_ROOT, slug, "/".join(parts[2:]))
+                            os.makedirs(os.path.dirname(dest), exist_ok=True)
+                            with zf.open(info) as src, open(dest, "wb") as dst:
+                                dst.write(src.read())
+                            if slug not in restored_tasks:
+                                restored_tasks.append(slug)
+
+                elif name.startswith("config/kiosks/") and not name.endswith("/"):
+                    parts = name.split("/")
+                    if len(parts) >= 4:
+                        kname = parts[2]
+                        if is_valid_slug(kname):
+                            rel = "/".join(parts[3:])
+                            dest = os.path.join(KIOSKS_ROOT, kname, rel)
+                            os.makedirs(os.path.dirname(dest), exist_ok=True)
+                            with zf.open(info) as src, open(dest, "wb") as dst:
+                                dst.write(src.read())
+                            if kname not in restored_kiosks:
+                                restored_kiosks.append(kname)
+
+                elif name.startswith("config/") and not name.endswith("/") and "kiosks" not in name:
+                    fn = os.path.basename(name)
+                    if fn:
+                        dest = os.path.join(CONFIG_ROOT, fn)
+                        with zf.open(info) as src, open(dest, "wb") as dst:
+                            dst.write(src.read())
+                        restored_config = True
+
+    except zipfile.BadZipFile:
+        flash("Invalid or corrupted zip file.", "error")
+        return redirect(url_for("config_page"))
+    except Exception as exc:
+        app.logger.exception("Backup restore failed")
+        flash(f"Restore failed: {exc}", "error")
+        return redirect(url_for("config_page"))
+
+    for slug in restored_tasks:
+        cron_expr = read_text(os.path.join(TASKS_ROOT, slug, "cron.txt"))
+        if cron_expr and cron_expr.strip():
+            _reschedule_task(slug, cron_expr.strip())
+    _invalidate_task_cache()
+
+    parts = []
+    if restored_tasks:
+        parts.append(f"{len(restored_tasks)} task(s): {', '.join(restored_tasks)}")
+    if restored_config:
+        parts.append("gallery-dl config")
+    if restored_kiosks:
+        parts.append(f"{len(restored_kiosks)} kiosk(s)")
+    flash("Restored: " + ("; ".join(parts) if parts else "nothing found in zip."), "success")
+    return redirect(url_for("config_page"))
 
 @app.route("/one-time", methods=["GET", "POST"])
 def one_time_download():
@@ -1164,7 +1341,7 @@ def one_time_download():
             if os.path.exists(ONE_TIME_STOP_FILE):
                 os.remove(ONE_TIME_STOP_FILE)
         except Exception:
-            pass
+            app.logger.debug("Could not remove stale one-time stop file before start")
 
         thread = threading.Thread(target=run_one_time_download, args=(entered_url,), daemon=True)
         thread.start()
@@ -1272,7 +1449,7 @@ def run_one_time_download(url: str):
         if os.path.exists(ONE_TIME_STOP_FILE):
             os.remove(ONE_TIME_STOP_FILE)
     except Exception:
-        pass
+        app.logger.debug("Could not remove one-time stop file before run")
 
     env = os.environ.copy()
     env["GALLERY_DL_CONFIG"] = CONFIG_FILE
@@ -1305,7 +1482,7 @@ def run_one_time_download(url: str):
             try:
                 Path(ONE_TIME_PID_FILE).write_text(str(proc.pid))
             except Exception:
-                pass
+                app.logger.warning("Could not write one-time PID file", exc_info=True)
 
             while proc.poll() is None:
                 if os.path.exists(ONE_TIME_STOP_FILE):
@@ -1314,7 +1491,7 @@ def run_one_time_download(url: str):
                         logf.write("\nStop requested. Terminating one-time download...\n")
                         logf.flush()
                     except Exception:
-                        pass
+                        app.logger.warning("Could not terminate one-time download process", exc_info=True)
                 time.sleep(0.25)
 
             returncode = proc.returncode
@@ -1332,12 +1509,12 @@ def run_one_time_download(url: str):
             if os.path.exists(ONE_TIME_PID_FILE):
                 os.remove(ONE_TIME_PID_FILE)
         except Exception:
-            pass
+            app.logger.debug("Could not remove one-time PID file in cleanup")
         try:
             if os.path.exists(ONE_TIME_STOP_FILE):
                 os.remove(ONE_TIME_STOP_FILE)
         except Exception:
-            pass
+            app.logger.debug("Could not remove one-time stop file in cleanup")
 
 
 def run_task_background(task_folder: str):
@@ -1359,7 +1536,7 @@ def run_task_background(task_folder: str):
         if os.path.exists(error_path):
             os.remove(error_path)
     except Exception:
-        pass
+        app.logger.warning("Could not remove error sentinel for %s", task_folder, exc_info=True)
 
     command = read_text(command_path)
     if not command:
@@ -1410,7 +1587,7 @@ def run_task_background(task_folder: str):
             try:
                 Path(pid_path).write_text(str(proc.pid))
             except Exception:
-                pass
+                app.logger.warning("Could not write PID file for %s", task_folder, exc_info=True)
 
             timeout = _get_task_timeout(task_folder)
             timed_out = False
@@ -1433,7 +1610,7 @@ def run_task_background(task_folder: str):
             if was_stopped:
                 os.remove(stopped_path)
         except Exception:
-            pass
+            app.logger.debug("Could not remove stopped sentinel for %s", task_folder)
 
         success = returncode == 0 and not timed_out
         with open(logs_path, "a", encoding="utf-8") as logf:
@@ -1454,13 +1631,14 @@ def run_task_background(task_folder: str):
         _record_run(task_folder, success=success, duration=duration, stopped=was_stopped)
 
     except Exception as exc:
+        app.logger.exception("Unhandled error in run_task_background for %s", task_folder)
         with open(logs_path, "a", encoding="utf-8") as logf:
             logf.write(f"\nERROR while running task: {exc}\n")
         try:
             Path(error_path).touch()
             _write_last_error(task_folder, str(exc))
         except Exception:
-            pass
+            app.logger.warning("Could not write error sentinel after task crash for %s", task_folder, exc_info=True)
         _record_run(task_folder, success=False, duration=0, stopped=False)
     finally:
         for p in (lock_path, pid_path):
@@ -1468,16 +1646,16 @@ def run_task_background(task_folder: str):
                 if os.path.exists(p):
                     os.remove(p)
             except Exception:
-                pass
+                app.logger.debug("Could not remove lock/pid file %s in cleanup", p)
 
         try:
             slug = os.path.basename(task_folder.rstrip("/"))
             _TASK_CACHE.pop(slug, None)
             _invalidate_task_cache()
             touch_mediawall_notify()
-            print(f"task {slug} finished", flush=True)
+            app.logger.info("task %s finished", slug)
         except Exception:
-            pass
+            app.logger.exception("Error in post-run cleanup for %s", task_folder)
 
 
 @app.route("/tasks/<slug>/action", methods=["POST"])
@@ -1675,9 +1853,9 @@ def task_history(slug):
                         try:
                             runs.append(json.loads(line))
                         except Exception:
-                            pass
+                            app.logger.debug("Skipping malformed history line for %s: %s", slug, repr(line))
         except Exception:
-            pass
+            app.logger.warning("Could not read run history for %s", slug, exc_info=True)
     return jsonify({"slug": slug, "runs": list(reversed(runs[-50:]))})
 
 @app.route("/tasks/<slug>/recent")
@@ -1718,7 +1896,7 @@ def task_logs_stream(slug):
             try:
                 last_pos = os.path.getsize(logs_path)
             except Exception:
-                pass
+                app.logger.debug("Could not get initial size of log file %s", logs_path)
         else:
             yield f"data: {json.dumps({'content': '', 'reset': True})}\n\n"
         while True:
@@ -1741,7 +1919,7 @@ def task_logs_stream(slug):
             except GeneratorExit:
                 return
             except Exception:
-                pass
+                app.logger.debug("SSE stream error for %s", slug, exc_info=True)
 
     return Response(
         gen(),
@@ -1769,6 +1947,214 @@ def download_task_logs(slug):
         return send_file(logs_path, as_attachment=True, download_name=f"{slug}-logs.txt")
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+# ---------------------------------------------------------------------
+# Archived (rotated) log listing and download
+# ---------------------------------------------------------------------
+_ARCHIVED_LOG_RE = re.compile(r'^logs-(\d{4}-\d{2}-\d{2}T\d{6})\.txt$')
+
+@app.route("/tasks/<slug>/logs/archived")
+def task_logs_archived(slug):
+    if not is_valid_slug(slug):
+        return jsonify({"error": "Invalid task identifier"}), 400
+    task_folder = os.path.join(TASKS_ROOT, slug)
+    if not os.path.isdir(task_folder):
+        return jsonify({"error": "Task not found"}), 404
+    files = []
+    try:
+        for fn in sorted(os.listdir(task_folder), reverse=True):
+            m = _ARCHIVED_LOG_RE.match(fn)
+            if m:
+                fp = os.path.join(task_folder, fn)
+                files.append({
+                    "name": fn,
+                    "ts": m.group(1),
+                    "size": os.path.getsize(fp),
+                })
+    except Exception:
+        app.logger.exception("Could not list archived logs for %s", slug)
+    return jsonify({"slug": slug, "files": files})
+
+@app.route("/tasks/<slug>/logs/archived/<filename>")
+def download_task_log_archived(slug, filename):
+    if not is_valid_slug(slug) or not _ARCHIVED_LOG_RE.match(filename):
+        return jsonify({"error": "Invalid"}), 400
+    task_folder = os.path.join(TASKS_ROOT, slug)
+    fp = os.path.join(task_folder, filename)
+    if not os.path.isfile(fp):
+        return jsonify({"error": "Not found"}), 404
+    try:
+        return send_file(fp, as_attachment=True, download_name=f"{slug}-{filename}")
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+# ── Kiosk management ────────────────────────────────────────────────────────
+
+@app.route("/kiosks", methods=["GET", "POST"])
+def kiosks_list():
+    ensure_data_dirs(ensure_downloads=False)
+    os.makedirs(KIOSKS_ROOT, exist_ok=True)
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        if not name:
+            flash("Kiosk name is required.", "error")
+            return redirect(url_for("kiosks_list"))
+        kslug = slugify(name)
+        kdir = os.path.join(KIOSKS_ROOT, kslug)
+        if os.path.isdir(kdir):
+            flash(f"A kiosk named '{name}' already exists.", "error")
+            return redirect(url_for("kiosks_list"))
+        os.makedirs(os.path.join(kdir, "images"), exist_ok=True)
+        _save_kiosk_settings(kslug, {
+            "name": name,
+            "interval": int(request.form.get("interval", 10)),
+            "order": request.form.get("order", "random"),
+        })
+        flash(f"Kiosk '{name}' created.", "success")
+        return redirect(url_for("kiosk_manage", kslug=kslug))
+    return render_template("kiosks.html", kiosks=_list_kiosks())
+
+
+@app.route("/kiosks/<kslug>", methods=["GET", "POST"])
+def kiosk_manage(kslug):
+    if not is_valid_slug(kslug):
+        flash("Invalid kiosk identifier.", "error")
+        return redirect(url_for("kiosks_list"))
+    ensure_data_dirs(ensure_downloads=False)
+    kdir = os.path.join(KIOSKS_ROOT, kslug)
+    if not os.path.isdir(kdir):
+        flash("Kiosk not found.", "error")
+        return redirect(url_for("kiosks_list"))
+
+    if request.method == "POST":
+        action = request.form.get("action")
+
+        if action == "settings":
+            settings = _kiosk_settings(kslug)
+            settings["name"] = request.form.get("name", settings.get("name", kslug)).strip() or kslug
+            settings["interval"] = max(1, int(request.form.get("interval", 10)))
+            settings["order"] = request.form.get("order", "random")
+            _save_kiosk_settings(kslug, settings)
+            flash("Settings saved.", "success")
+
+        elif action == "add_images":
+            filenames = request.form.getlist("filenames")
+            idir = os.path.join(kdir, "images")
+            os.makedirs(idir, exist_ok=True)
+            added = 0
+            for fn in filenames:
+                if "/" in fn or "\\" in fn or ".." in fn:
+                    continue
+                src = os.path.join(MEDIA_WALL_DIR, fn)
+                dst = os.path.join(idir, fn)
+                if os.path.isfile(src) and not os.path.exists(dst):
+                    try:
+                        shutil.copy2(src, dst)
+                        added += 1
+                    except Exception:
+                        app.logger.warning("Could not copy media wall file to kiosk: %s", fn, exc_info=True)
+            flash(f"Added {added} image(s) to kiosk.", "success")
+
+        elif action == "remove_image":
+            fn = request.form.get("filename", "")
+            if "/" not in fn and "\\" not in fn and ".." not in fn and fn:
+                fp = os.path.join(kdir, "images", fn)
+                try:
+                    if os.path.isfile(fp):
+                        os.remove(fp)
+                        flash("Image removed.", "success")
+                except Exception:
+                    app.logger.warning("Could not remove kiosk image %s", fn, exc_info=True)
+                    flash("Could not remove image.", "error")
+
+        return redirect(url_for("kiosk_manage", kslug=kslug))
+
+    settings = _kiosk_settings(kslug)
+    idir = os.path.join(kdir, "images")
+    kiosk_images = []
+    if os.path.isdir(idir):
+        for fn in sorted(os.listdir(idir)):
+            if os.path.isfile(os.path.join(idir, fn)):
+                kiosk_images.append(fn)
+
+    wall_images = []
+    if os.path.isdir(MEDIA_WALL_DIR):
+        kiosk_set = set(kiosk_images)
+        for fn in sorted(os.listdir(MEDIA_WALL_DIR)):
+            fp = os.path.join(MEDIA_WALL_DIR, fn)
+            if not os.path.isfile(fp):
+                continue
+            ext = ("." + fn.rsplit(".", 1)[-1].lower()) if "." in fn else ""
+            if ext in IMAGE_EXTS:
+                wall_images.append({"name": fn, "in_kiosk": fn in kiosk_set})
+
+    return render_template(
+        "kiosk_manage.html",
+        kslug=kslug,
+        settings=settings,
+        kiosk_images=kiosk_images,
+        wall_images=wall_images,
+    )
+
+
+@app.route("/kiosks/<kslug>/delete", methods=["POST"])
+def kiosk_delete(kslug):
+    if not is_valid_slug(kslug):
+        flash("Invalid kiosk identifier.", "error")
+        return redirect(url_for("kiosks_list"))
+    kdir = os.path.join(KIOSKS_ROOT, kslug)
+    if os.path.isdir(kdir):
+        try:
+            shutil.rmtree(kdir)
+            flash("Kiosk deleted.", "success")
+        except Exception:
+            app.logger.exception("Could not delete kiosk %s", kslug)
+            flash("Failed to delete kiosk.", "error")
+    return redirect(url_for("kiosks_list"))
+
+
+# ── Kiosk display ────────────────────────────────────────────────────────────
+
+@app.route("/kiosk/<kslug>")
+def kiosk_display(kslug):
+    if not is_valid_slug(kslug):
+        return "Invalid kiosk", 400
+    kdir = os.path.join(KIOSKS_ROOT, kslug)
+    if not os.path.isdir(kdir):
+        return "Kiosk not found", 404
+    settings = _kiosk_settings(kslug)
+    return render_template("kiosk_display.html", kslug=kslug, settings=settings)
+
+
+@app.route("/kiosk/<kslug>/images")
+def kiosk_images_api(kslug):
+    if not is_valid_slug(kslug):
+        return jsonify({"error": "Invalid"}), 400
+    idir = os.path.join(KIOSKS_ROOT, kslug, "images")
+    settings = _kiosk_settings(kslug)
+    images = []
+    if os.path.isdir(idir):
+        for fn in os.listdir(idir):
+            if os.path.isfile(os.path.join(idir, fn)):
+                images.append({
+                    "name": fn,
+                    "url": url_for("kiosk_media", kslug=kslug, filename=fn),
+                })
+    return jsonify({
+        "slug": kslug,
+        "name": settings.get("name", kslug),
+        "interval": settings.get("interval", 10),
+        "order": settings.get("order", "random"),
+        "images": images,
+    })
+
+
+@app.route("/kiosk/<kslug>/media/<filename>")
+def kiosk_media(kslug, filename):
+    if not is_valid_slug(kslug) or "/" in filename or "\\" in filename or ".." in filename:
+        return "Invalid", 400
+    idir = os.path.join(KIOSKS_ROOT, kslug, "images")
+    return send_from_directory(idir, filename)
 
 # ---------------------------------------------------------------------
 # Original media route (serves from /downloads)

@@ -844,21 +844,26 @@ a.r-item:hover {
     var selHistoryApi = '';
     function loadStats() {
         if (!selSlug) return;
-        var btn = document.querySelector('.t-item[data-slug="' + selSlug + '"]');
-        var api = btn ? btn.dataset.historyApi : '/tasks/' + selSlug + '/history';
+        var slug = selSlug;
+        var btn  = document.querySelector('.t-item[data-slug="' + slug + '"]');
+        var api  = btn ? btn.dataset.historyApi : '/tasks/' + slug + '/history';
         statsContent.innerHTML = '<span class="text-muted small">Loading&hellip;</span>';
-        fetch(api)
-            .then(function (r) { return r.json(); })
-            .then(function (d) {
-                if (!d.runs || !d.runs.length) {
-                    statsContent.innerHTML = '<p class="text-muted small">No runs recorded yet.</p>';
-                    return;
-                }
-                var total = d.runs.length;
-                var ok    = d.runs.filter(function (r) { return r.success; }).length;
-                var pct   = total ? Math.round(ok / total * 100) : 0;
+        Promise.all([
+            fetch(api).then(function (r) { return r.json(); }),
+            fetch('/tasks/' + slug + '/logs/archived').then(function (r) { return r.json(); })
+        ]).then(function (results) {
+            var d    = results[0];
+            var arch = results[1];
+            var html = '';
+
+            if (!d.runs || !d.runs.length) {
+                html += '<p class="text-muted small">No runs recorded yet.</p>';
+            } else {
+                var total  = d.runs.length;
+                var ok     = d.runs.filter(function (r) { return r.success; }).length;
+                var pct    = total ? Math.round(ok / total * 100) : 0;
                 var avgDur = total ? (d.runs.reduce(function (s, r) { return s + r.duration; }, 0) / total) : 0;
-                var html = '<div class="d-flex gap-4 mb-3 small">'
+                html += '<div class="d-flex gap-4 mb-3 small">'
                     + '<span><strong>' + total + '</strong> runs</span>'
                     + '<span><strong>' + pct + '%</strong> success</span>'
                     + '<span>avg <strong>' + fmtDur(avgDur) + '</strong></span>'
@@ -872,11 +877,26 @@ a.r-item:hover {
                     html += '<tr><td>' + fmtDate(r.ts) + '</td><td>' + res + '</td><td>' + fmtDur(r.duration) + '</td></tr>';
                 });
                 html += '</tbody></table>';
-                statsContent.innerHTML = html;
-            })
-            .catch(function () {
-                statsContent.innerHTML = '<span class="text-danger small">Failed to load history.</span>';
-            });
+            }
+
+            if (arch.files && arch.files.length) {
+                html += '<hr class="my-3"><p class="small fw-semibold mb-2">Log Archive</p>'
+                    + '<ul class="list-unstyled small mb-0">';
+                arch.files.forEach(function (f) {
+                    var ts  = f.ts.replace('T', ' ').replace(/(\d{2})(\d{2})(\d{2})$/, '$1:$2:$3');
+                    var sz  = f.size < 1024 ? f.size + ' B'
+                            : f.size < 1048576 ? Math.round(f.size / 1024) + ' KB'
+                            : (f.size / 1048576).toFixed(1) + ' MB';
+                    html += '<li class="mb-1"><a href="/tasks/' + slug + '/logs/archived/' + f.name + '" class="text-decoration-none">'
+                        + ts + '</a> <span class="text-muted">(' + sz + ')</span></li>';
+                });
+                html += '</ul>';
+            }
+
+            statsContent.innerHTML = html;
+        }).catch(function () {
+            statsContent.innerHTML = '<span class="text-danger small">Failed to load history.</span>';
+        });
     }
 
     function fmtDur(s) {

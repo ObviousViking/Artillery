@@ -108,6 +108,12 @@
                             </a>
                         </li>
                     <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint in ('kiosks_list', 'kiosk_manage') %}active{% endif %}"
+                            href="{{ url_for('kiosks_list') }}">
+                            Kiosks
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'config_page' %}active{% endif %}"
                             href="{{ url_for('config_page') }}">
                             Config
