@@ -39,4 +39,4 @@ ENV FLASK_APP=app.py \
 EXPOSE 80
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["gunicorn", "-b", "0.0.0.0:80", "--workers", "1", "--worker-class", "gthread", "--threads", "8", "--timeout", "120", "app:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:80", "--workers", "1", "--worker-class", "gthread", "--threads", "16", "--timeout", "120", "app:app"]
