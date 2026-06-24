@@ -63,14 +63,7 @@ else
   log "PUID/PGID not set (or zero), running as root."
 fi
 
-# Setup cron to run scheduler as the chosen user
-log "Setting up cron entry for scheduler..."
-CRON_LINE="* * * * * umask $UMASK && /usr/local/bin/gosu $APP_USER_SPEC /usr/local/bin/python /app/scheduler.py >> /var/log/cron.log 2>&1"
-echo "$CRON_LINE" | crontab -
-
-log "Starting cron..."
-touch /var/log/cron.log
-cron
+# Scheduling is handled by APScheduler running inside the web process.
 
 
 

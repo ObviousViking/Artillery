@@ -329,9 +329,14 @@ a.r-item:hover {
     <div class="t-sidebar-hd">
       <button type="button" id="btnNew" title="New task">+</button>
     </div>
-    <div class="t-search">
+    <div class="t-search" style="position:relative;">
       <input type="search" id="taskSearch" class="form-control"
-             placeholder="Filter tasks…" autocomplete="off" spellcheck="false"/>
+             placeholder="Filter tasks…" autocomplete="off" spellcheck="false"
+             style="padding-right:2rem;"/>
+      <button type="button" id="taskSearchClear"
+              style="display:none;position:absolute;right:0.4rem;top:50%;transform:translateY(-50%);
+                     background:none;border:none;padding:0;line-height:1;font-size:1rem;
+                     color:var(--text-muted);cursor:pointer;" aria-label="Clear search">&#x2715;</button>
     </div>
 
     <div class="t-list">
@@ -354,7 +359,10 @@ a.r-item:hover {
           data-urls-api="/tasks/{{ task.slug|e }}/urls"
           data-has-archive="{{ '1' if task.has_archive else '0' }}"
           data-has-cookies="{{ '1' if task.has_cookies else '0' }}"
-          data-next-run="{{ (task.next_run or '')|e }}">
+          data-next-run="{{ (task.next_run or '')|e }}"
+          data-last-error="{{ (task.last_error or '')|e }}"
+          data-timeout="{{ (task.timeout or '')|e }}"
+          data-history-api="/tasks/{{ task.slug|e }}/history">
           <div class="t-item-row">
             <span class="t-item-name">{{ task.name }}</span>
             <span class="t-item-st {{ display_st }}" data-sstatus>{{ st }}</span>
@@ -400,9 +408,13 @@ a.r-item:hover {
               <div class="form-text">Folder: <code>/data/tasks/&lt;name&gt;</code></div>
             </div>
             <div class="mb-3">
-              <label class="form-label" for="cUrls">URLs <span class="text-muted fw-normal">(one per line)</span></label>
+              <label class="form-label" for="cUrls">URLs <span class="text-muted fw-normal">(one per line, max 100)</span></label>
               <textarea id="cUrls" name="urls" class="form-control form-control-sm" rows="8"
-                placeholder="https://example.com/profile&#10;https://example.com/gallery" required></textarea>
+                placeholder="https://example.com/profile&#10;https://example.com/gallery"></textarea>
+              <div class="mt-2">
+                <label class="form-label small text-muted mb-1">Or upload a .txt file (no limit):</label>
+                <input type="file" id="cUrlsFile" name="urls_file" class="form-control form-control-sm" accept=".txt,.csv"/>
+              </div>
             </div>
             <div class="mb-3">
               <label class="form-label" for="cSched">Cron schedule <span class="text-muted fw-normal">(optional)</span></label>
@@ -459,6 +471,7 @@ a.r-item:hover {
           <li><button class="t-tab"    data-tab="edit">Edit</button></li>
           <li><button class="t-tab"    data-tab="logs">Logs</button></li>
           <li><button class="t-tab"    data-tab="recent">Recent</button></li>
+          <li><button class="t-tab"    data-tab="stats">Stats</button></li>
         </ul>
       </div>
 
@@ -485,6 +498,11 @@ a.r-item:hover {
           <div id="recentGrid" class="r-grid"></div>
         </div>
 
+        <!-- Stats -->
+        <div id="tStats" style="display:none;">
+          <div id="statsContent"><span class="text-muted small">Loading&hellip;</span></div>
+        </div>
+
         <!-- Details -->
         <div id="tDetails" style="display:none;">
           <dl class="row small mb-4" style="max-width:440px;">
@@ -496,7 +514,13 @@ a.r-item:hover {
             <dd class="col-8" id="dLastRun">Never</dd>
             <dt class="col-4 fw-normal text-muted">URLs</dt>
             <dd class="col-8" id="dUrlCount">—</dd>
+            <dt class="col-4 fw-normal text-muted">Timeout</dt>
+            <dd class="col-8" id="dTimeout">—</dd>
           </dl>
+          <div id="dLastError" style="display:none;" class="alert alert-danger small py-2 px-3 mb-3" style="max-width:520px;">
+            <strong>Last error:</strong><br>
+            <pre id="dLastErrorText" class="mb-0 mt-1" style="white-space:pre-wrap;font-size:0.78rem;"></pre>
+          </div>
           <div class="d-flex gap-2 flex-wrap">
             <form id="fRun" method="post" class="m-0">
               <input type="hidden" name="action" value="run">
@@ -565,6 +589,10 @@ a.r-item:hover {
                   <!-- Hidden until loaded -->
                   <textarea id="eUrls" name="urls" class="form-control form-control-sm"
                     rows="8" style="display:none;"></textarea>
+                  <div class="mt-2">
+                    <label class="form-label small text-muted mb-1">Or upload a .txt file to replace (no limit):</label>
+                    <input type="file" id="eUrlsFile" name="urls_file" class="form-control form-control-sm" accept=".txt,.csv"/>
+                  </div>
                 </div>
 
                 <div class="mb-3">
@@ -645,13 +673,15 @@ a.r-item:hover {
     var pEmpty = $('pEmpty'), pNew = $('pNew'), pTask = $('pTask');
     var btnNew = $('btnNew');
     var dName = $('dName');
-    var tLogs = $('tLogs'), tDetails = $('tDetails'), tEdit = $('tEdit'), tRecent = $('tRecent');
+    var tLogs = $('tLogs'), tDetails = $('tDetails'), tEdit = $('tEdit'), tRecent = $('tRecent'), tStats = $('tStats');
     var logBox = $('logBox'), recentGrid = $('recentGrid'), bRecentRefresh = $('bRecentRefresh'), bLogToggle = $('bLogToggle');
     var fRun = $('fRun'), fPause = $('fPause'), fDelete = $('fDelete'), fDeleteArchive = $('fDeleteArchive');
     var fDeleteCookies = $('fDeleteCookies'), fStop = $('fStop'), fClearLogs = $('fClearLogs');
     var bRun = $('bRun'), bPause = $('bPause'), bDlLogs = $('bDlLogs'), bDelArchive = $('bDelArchive');
     var bDelCookies = $('bDelCookies'), eCookieStatus = $('eCookieStatus');
-    var dSched = $('dSched'), dNextRun = $('dNextRun'), dLastRun = $('dLastRun'), dUrlCount = $('dUrlCount');
+    var dSched = $('dSched'), dNextRun = $('dNextRun'), dLastRun = $('dLastRun'), dUrlCount = $('dUrlCount'), dTimeout = $('dTimeout');
+    var dLastError = $('dLastError'), dLastErrorText = $('dLastErrorText');
+    var statsContent = $('statsContent');
     var eName = $('eName'), eUrls = $('eUrls'), eSched = $('eSched');
     var eCmd = $('eCmd'), eCmdH = $('eCmdH'), eKeepUrls = $('eKeepUrls');
     var eUrlCntLbl = $('eUrlCntLbl'), urlGate = $('urlGate');
@@ -708,6 +738,7 @@ a.r-item:hover {
         tDetails.style.display = t === 'details' ? '' : 'none';
         tEdit.style.display    = t === 'edit'    ? '' : 'none';
         tRecent.style.display  = t === 'recent'  ? '' : 'none';
+        tStats.style.display   = t === 'stats'   ? '' : 'none';
         document.querySelectorAll('.t-tab').forEach(function (b) {
             b.classList.toggle('on', b.dataset.tab === t);
         });
@@ -717,6 +748,51 @@ a.r-item:hover {
             else fetchLog(api);
         } else stopLog();
         if (t === 'recent' && selSlug) loadRecent();
+        if (t === 'stats'  && selSlug) loadStats();
+    }
+
+    var selHistoryApi = '';
+    function loadStats() {
+        if (!selSlug) return;
+        var btn = document.querySelector('.t-item[data-slug="' + selSlug + '"]');
+        var api = btn ? btn.dataset.historyApi : '/tasks/' + selSlug + '/history';
+        statsContent.innerHTML = '<span class="text-muted small">Loading&hellip;</span>';
+        fetch(api)
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (!d.runs || !d.runs.length) {
+                    statsContent.innerHTML = '<p class="text-muted small">No runs recorded yet.</p>';
+                    return;
+                }
+                var total = d.runs.length;
+                var ok    = d.runs.filter(function (r) { return r.success; }).length;
+                var pct   = total ? Math.round(ok / total * 100) : 0;
+                var avgDur = total ? (d.runs.reduce(function (s, r) { return s + r.duration; }, 0) / total) : 0;
+                var html = '<div class="d-flex gap-4 mb-3 small">'
+                    + '<span><strong>' + total + '</strong> runs</span>'
+                    + '<span><strong>' + pct + '%</strong> success</span>'
+                    + '<span>avg <strong>' + fmtDur(avgDur) + '</strong></span>'
+                    + '</div>'
+                    + '<table class="table table-sm table-borderless small" style="max-width:480px;">'
+                    + '<thead><tr><th>Time</th><th>Result</th><th>Duration</th></tr></thead><tbody>';
+                d.runs.slice(0, 20).forEach(function (r) {
+                    var res = r.stopped ? '<span class="text-warning">stopped</span>'
+                            : r.success ? '<span class="text-success">ok</span>'
+                            : '<span class="text-danger">failed</span>';
+                    html += '<tr><td>' + fmtDate(r.ts) + '</td><td>' + res + '</td><td>' + fmtDur(r.duration) + '</td></tr>';
+                });
+                html += '</tbody></table>';
+                statsContent.innerHTML = html;
+            })
+            .catch(function () {
+                statsContent.innerHTML = '<span class="text-danger small">Failed to load history.</span>';
+            });
+    }
+
+    function fmtDur(s) {
+        if (s < 60)  return Math.round(s) + 's';
+        if (s < 3600) return Math.round(s / 60) + 'm';
+        return (s / 3600).toFixed(1) + 'h';
     }
 
     /* ── Task selection ───────────────────────────────────────────────── */
@@ -741,6 +817,14 @@ a.r-item:hover {
         dSched.textContent    = btn.dataset.schedule || '—';
         dLastRun.textContent  = fmtDate(btn.dataset.lastRun);
         dUrlCount.textContent = fmtN(selUrlCount);
+        dTimeout.textContent  = btn.dataset.timeout ? btn.dataset.timeout + 's' : '—';
+        var lastErr = btn.dataset.lastError || '';
+        if (lastErr && st === 'error') {
+            dLastError.style.display = '';
+            dLastErrorText.textContent = lastErr;
+        } else {
+            dLastError.style.display = 'none';
+        }
 
         /* Action form targets */
         var au = btn.dataset.actionUrl;
@@ -1088,11 +1172,19 @@ a.r-item:hover {
             autoScroll = logBox.scrollTop + logBox.clientHeight >= logBox.scrollHeight - 10;
         });
 
+        var taskSearchClear = $('taskSearchClear');
         taskSearch.addEventListener('input', function () {
             var q = this.value.trim().toLowerCase();
+            taskSearchClear.style.display = q ? '' : 'none';
             document.querySelectorAll('.t-item').forEach(function (btn) {
                 btn.style.display = (!q || btn.dataset.name.toLowerCase().includes(q)) ? '' : 'none';
             });
+        });
+        taskSearchClear.addEventListener('click', function () {
+            taskSearch.value = '';
+            taskSearchClear.style.display = 'none';
+            document.querySelectorAll('.t-item').forEach(function (btn) { btn.style.display = ''; });
+            taskSearch.focus();
         });
 
         /* ── Cookies validation on submit ─────────────────────────────── */

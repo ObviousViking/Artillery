@@ -78,6 +78,69 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
+TASK_TIMEOUT_SECONDS = int(os.environ.get("TASK_TIMEOUT_SECONDS", "0") or "0")
+MAX_ROTATED_LOGS = 5
+
+def _get_task_timeout(task_folder: str) -> Optional[int]:
+    txt = read_text(os.path.join(task_folder, "timeout.txt"))
+    if txt and txt.strip().isdigit():
+        v = int(txt.strip())
+        return v if v > 0 else None
+    return TASK_TIMEOUT_SECONDS if TASK_TIMEOUT_SECONDS > 0 else None
+
+def _rotate_logs(task_folder: str) -> None:
+    logs_path = os.path.join(task_folder, "logs.txt")
+    if not os.path.exists(logs_path) or os.path.getsize(logs_path) == 0:
+        return
+    stamp = dt.datetime.utcnow().strftime("%Y-%m-%dT%H%M%S")
+    archived = os.path.join(task_folder, f"logs-{stamp}.txt")
+    try:
+        os.rename(logs_path, archived)
+    except Exception:
+        return
+    pat = re.compile(r'^logs-\d{4}-\d{2}-\d{2}T\d{6}\.txt$')
+    archives = sorted(f for f in os.listdir(task_folder) if pat.match(f))
+    for old in archives[:-MAX_ROTATED_LOGS]:
+        try:
+            os.remove(os.path.join(task_folder, old))
+        except Exception:
+            pass
+
+def _write_last_error(task_folder: str, message: str) -> None:
+    try:
+        Path(os.path.join(task_folder, "last_error.txt")).write_text(
+            message.strip(), encoding="utf-8"
+        )
+    except Exception:
+        pass
+
+def _clear_last_error(task_folder: str) -> None:
+    p = os.path.join(task_folder, "last_error.txt")
+    try:
+        if os.path.exists(p):
+            os.remove(p)
+    except Exception:
+        pass
+
+def _record_run(task_folder: str, success: bool, duration: float, stopped: bool) -> None:
+    history_path = os.path.join(task_folder, "run_history.jsonl")
+    entry = json.dumps({
+        "ts": dt.datetime.utcnow().isoformat() + "Z",
+        "success": success,
+        "duration": round(duration, 1),
+        "stopped": stopped,
+    })
+    try:
+        with open(history_path, "a", encoding="utf-8") as f:
+            f.write(entry + "\n")
+        with open(history_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        if len(lines) > 100:
+            with open(history_path, "w", encoding="utf-8") as f:
+                f.writelines(lines[-100:])
+    except Exception:
+        pass
+
 # ---------------------------------------------------------------------
 # Media wall (DB + cache folder)
 # ---------------------------------------------------------------------
@@ -331,8 +394,10 @@ def _task_mtimes(task_path: str) -> dict:
         "lock": _mt(os.path.join(task_path, "lock")),
         "paused": _mt(os.path.join(task_path, "paused")),
         "error": _mt(os.path.join(task_path, "error")),
-        "archive": _mt(os.path.join(task_path, "archive.sqlite")),
-        "cookies": _mt(os.path.join(task_path, "cookies.txt")),
+        "archive":    _mt(os.path.join(task_path, "archive.sqlite")),
+        "cookies":    _mt(os.path.join(task_path, "cookies.txt")),
+        "last_error": _mt(os.path.join(task_path, "last_error.txt")),
+        "timeout":    _mt(os.path.join(task_path, "timeout.txt")),
     }
 
 def _cache_name_for_relpath(relpath: str) -> str:
@@ -674,6 +739,12 @@ def load_tasks():
             except Exception:
                 pass
 
+        last_error = ""
+        if status == "error":
+            last_error = read_text(os.path.join(task_path, "last_error.txt")) or ""
+
+        timeout_val = read_text(os.path.join(task_path, "timeout.txt")) or ""
+
         task = {
             "id": slug,
             "name": name,
@@ -688,6 +759,8 @@ def load_tasks():
             "url_count": url_count,
             "has_archive": has_archive,
             "has_cookies": has_cookies,
+            "last_error": last_error,
+            "timeout": timeout_val.strip(),
         }
         _TASK_CACHE[slug] = {"_mtimes": mtimes, "task": task}
         tasks.append(task)
@@ -893,10 +966,27 @@ def tasks():
             return redirect(url_for("tasks"))
 
         keep_existing_urls = request.form.get("keep_existing_urls", "0") == "1"
+        urls_upload = request.files.get("urls_file")
 
-        if not keep_existing_urls and not urls_text:
-            flash("You need to provide at least one URL.", "error")
-            return redirect(url_for("tasks"))
+        if not keep_existing_urls:
+            if urls_upload and urls_upload.filename:
+                raw_urls = urls_upload.read(10 * 1024 * 1024 + 1)
+                if len(raw_urls) > 10 * 1024 * 1024:
+                    flash("URLs file too large (max 10 MB).", "error")
+                    return redirect(url_for("tasks"))
+                urls_text = raw_urls.decode("utf-8", errors="replace")
+            elif urls_text:
+                url_lines = [l for l in urls_text.splitlines() if l.strip()]
+                if len(url_lines) > 100:
+                    flash(
+                        f"Too many URLs ({len(url_lines)}). Paste supports a max of 100 — "
+                        "upload a .txt file instead for larger lists.",
+                        "error",
+                    )
+                    return redirect(url_for("tasks"))
+            else:
+                flash("You need to provide at least one URL.", "error")
+                return redirect(url_for("tasks"))
 
         slug = slugify(name)
         task_folder = os.path.join(TASKS_ROOT, slug)
@@ -1262,7 +1352,9 @@ def run_task_background(task_folder: str):
     urls_file     = os.path.join(task_folder, "urls.txt")
     error_path    = os.path.join(task_folder, "error")
 
-    # Clear any previous error state so status shows "running" immediately
+    # Rotate previous log and clear transient state before starting
+    _rotate_logs(task_folder)
+    _clear_last_error(task_folder)
     try:
         if os.path.exists(error_path):
             os.remove(error_path)
@@ -1319,8 +1411,21 @@ def run_task_background(task_folder: str):
                 Path(pid_path).write_text(str(proc.pid))
             except Exception:
                 pass
-            returncode = proc.wait()
 
+            timeout = _get_task_timeout(task_folder)
+            timed_out = False
+            try:
+                returncode = proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+                returncode = -1
+                timed_out = True
+                logf.write(f"\nTask killed: exceeded {timeout}s timeout.\n")
+                logf.flush()
+
+        run_end = dt.datetime.utcnow()
+        duration = (run_end - dt.datetime.fromisoformat(now.rstrip("Z"))).total_seconds()
         write_text(last_run_path, now)
 
         was_stopped = os.path.exists(stopped_path)
@@ -1330,22 +1435,33 @@ def run_task_background(task_folder: str):
         except Exception:
             pass
 
+        success = returncode == 0 and not timed_out
         with open(logs_path, "a", encoding="utf-8") as logf:
-            if returncode == 0:
+            if success:
                 logf.write("\nTask finished successfully.\n")
             elif was_stopped:
                 logf.write("\nTask stopped.\n")
+            elif timed_out:
+                logf.write(f"\nTask timed out after {timeout}s.\n")
+                Path(error_path).touch()
+                _write_last_error(task_folder, f"Timed out after {timeout}s.")
             else:
                 logf.write(f"\nTask exited with code {returncode}.\n")
                 Path(error_path).touch()
+                tail = _tail_lines(logs_path, 8)
+                _write_last_error(task_folder, "\n".join(tail))
+
+        _record_run(task_folder, success=success, duration=duration, stopped=was_stopped)
 
     except Exception as exc:
         with open(logs_path, "a", encoding="utf-8") as logf:
             logf.write(f"\nERROR while running task: {exc}\n")
         try:
             Path(error_path).touch()
+            _write_last_error(task_folder, str(exc))
         except Exception:
             pass
+        _record_run(task_folder, success=False, duration=0, stopped=False)
     finally:
         for p in (lock_path, pid_path):
             try:
@@ -1357,6 +1473,7 @@ def run_task_background(task_folder: str):
         try:
             slug = os.path.basename(task_folder.rstrip("/"))
             _TASK_CACHE.pop(slug, None)
+            _invalidate_task_cache()
             touch_mediawall_notify()
             print(f"task {slug} finished", flush=True)
         except Exception:
@@ -1539,6 +1656,29 @@ def task_urls(slug):
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
+
+@app.route("/tasks/<slug>/history")
+def task_history(slug):
+    if not is_valid_slug(slug):
+        return jsonify({"error": "Invalid task identifier"}), 400
+    task_folder = os.path.join(TASKS_ROOT, slug)
+    if not os.path.isdir(task_folder):
+        return jsonify({"error": "Task not found"}), 404
+    history_path = os.path.join(task_folder, "run_history.jsonl")
+    runs = []
+    if os.path.exists(history_path):
+        try:
+            with open(history_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            runs.append(json.loads(line))
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+    return jsonify({"slug": slug, "runs": list(reversed(runs[-50:]))})
 
 @app.route("/tasks/<slug>/recent")
 def task_recent(slug):
