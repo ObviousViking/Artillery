@@ -14,6 +14,7 @@ import signal
 import faulthandler
 import hashlib
 import random
+import secrets
 import atexit
 from pathlib import Path
 from typing import Optional, List, Tuple
@@ -32,15 +33,7 @@ from flask import (
 from flask_wtf.csrf import CSRFProtect
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
-
-if app.config["SECRET_KEY"] == "dev-secret-key":
-    import warnings
-    warnings.warn(
-        "Artillery: using default SECRET_KEY. "
-        "Set the SECRET_KEY environment variable before exposing this app on a network.",
-        stacklevel=1,
-    )
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 
 csrf = CSRFProtect(app)
 

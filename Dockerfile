@@ -39,4 +39,4 @@ ENV FLASK_APP=app.py \
 EXPOSE 80
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["gunicorn", "-b", "0.0.0.0:80", "--control-socket", "/tmp/gunicorn.sock", "app:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:80", "--workers", "1", "--timeout", "120", "app:app"]
