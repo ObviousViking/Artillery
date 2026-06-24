@@ -104,42 +104,51 @@
     min-width: 0;
 }
 .t-item-meta {
-    font-size: 0.69rem;
+    font-size: 0.72rem;
     color: var(--text-muted);
     margin-top: 3px;
-    padding-left: 14px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
     overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
 }
+.t-item-meta-sep { color: var(--border-input); flex-shrink: 0; }
 
-/* ── Sidebar status badge ────────────────────────────────────────────── */
-@keyframes sdot-pulse { 0%,100%{opacity:1} 50%{opacity:.2} }
-.t-item-st {
-    font-size: 0.65rem;
-    font-weight: 700;
+/* ── Sidebar status dot ──────────────────────────────────────────────── */
+@keyframes sdot-pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+.t-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
     flex-shrink: 0;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    padding: 2px 7px;
-    border-radius: 100px;
-    line-height: 1.7;
-    white-space: nowrap;
+    display: inline-block;
 }
-.t-item-st.running  { color: #2563eb; background: rgba(59,130,246,0.16); animation: sdot-pulse 1.3s ease-in-out infinite; }
-.t-item-st.error    { color: #dc2626; background: rgba(239,68,68,0.16); }
-.t-item-st.complete { color: #16a34a; background: rgba(34,197,94,0.16); }
-.t-item-st.idle-ok  { color: #16a34a; background: rgba(34,197,94,0.16); }
-.t-item-st.paused   { color: #b45309; background: rgba(245,158,11,0.16); }
-.t-item-st.idle     { color: #6b7280; background: rgba(107,114,128,0.14); }
+.t-dot.running  { background: #22c55e; box-shadow: 0 0 4px #22c55e; animation: sdot-pulse 1.4s ease-in-out infinite; }
+.t-dot.error    { background: #ef4444; }
+.t-dot.complete { background: #22c55e; }
+.t-dot.idle-ok  { background: #22c55e; }
+.t-dot.paused   { background: #f59e0b; }
+.t-dot.idle     { background: #4b5563; }
 
-/* Dark mode: slightly lighter text so badges pop on dark sidebar */
-[data-theme="dark"] .t-item-st.running  { color: #60a5fa; }
-[data-theme="dark"] .t-item-st.error    { color: #f87171; }
-[data-theme="dark"] .t-item-st.complete { color: #4ade80; }
-[data-theme="dark"] .t-item-st.idle-ok  { color: #4ade80; }
-[data-theme="dark"] .t-item-st.paused   { color: #fbbf24; }
-[data-theme="dark"] .t-item-st.idle     { color: #9ca3af; }
+/* ── Panel header status pill ────────────────────────────────────────── */
+.t-det-status {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.17rem 0.55rem;
+    border-radius: 999px;
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
+}
+.t-det-status.running  { background: rgba(34,197,94,0.14);  color: #22c55e;  border: 1px solid rgba(34,197,94,0.3); }
+.t-det-status.error    { background: rgba(239,68,68,0.12);  color: #ef4444;  border: 1px solid rgba(239,68,68,0.3); }
+.t-det-status.complete,
+.t-det-status.idle-ok  { background: rgba(34,197,94,0.08);  color: #16a34a;  border: 1px solid rgba(34,197,94,0.2); }
+.t-det-status.paused   { background: rgba(245,158,11,0.12); color: #f59e0b;  border: 1px solid rgba(245,158,11,0.3); }
+.t-det-status.idle     { background: var(--bg-tertiary);    color: var(--text-muted); border: 1px solid var(--border-color); }
+[data-theme="dark"] .t-det-status.complete,
+[data-theme="dark"] .t-det-status.idle-ok  { color: #4ade80; }
 
 /* ── Main area ───────────────────────────────────────────────────────── */
 .t-main {
@@ -331,7 +340,7 @@ a.r-item:hover {
       <button type="button" id="btnNew" title="New task">+</button>
     </div>
     <div class="t-search" style="position:relative;">
-      <input type="search" id="taskSearch" class="form-control"
+      <input type="text" id="taskSearch" class="form-control"
              placeholder="Filter tasks…" autocomplete="off" spellcheck="false"
              style="padding-right:2rem;"/>
       <button type="button" id="taskSearchClear"
@@ -366,17 +375,20 @@ a.r-item:hover {
           data-history-api="/tasks/{{ task.slug|e }}/history">
           <div class="t-item-row">
             <span class="t-item-name">{{ task.name }}</span>
-            <span class="t-item-st {{ display_st }}" data-sstatus>{{ st }}</span>
           </div>
           <div class="t-item-meta">
+            <span class="t-dot {{ display_st }}" data-sstatus></span>
+            <span data-stext>{{ st }}</span>
             {%- if uc -%}
-              {%- if uc >= 1000000 -%}{{ "%.1f"|format(uc/1000000) }}M URLs
-              {%- elif uc >= 1000 -%}{{ "{:,}".format(uc) }} URLs
-              {%- else -%}{{ uc }} URL{{ "s" if uc != 1 else "" }}
+              <span class="t-item-meta-sep">&middot;</span>
+              {%- if uc >= 1000000 -%}<span>{{ "%.1f"|format(uc/1000000) }}M URLs</span>
+              {%- elif uc >= 1000 -%}<span>{{ "{:,}".format(uc) }} URLs</span>
+              {%- else -%}<span>{{ uc }} URL{{ "s" if uc != 1 else "" }}</span>
               {%- endif -%}
-              {%- if task.schedule %} &middot; {% endif -%}
             {%- endif -%}
-            {%- if task.schedule -%}<span class="t-item-next"></span>{%- endif -%}
+            {%- if task.schedule -%}
+              <span class="t-item-meta-sep">&middot;</span><span class="t-item-next"></span>
+            {%- endif -%}
           </div>
         </button>
         {% endfor %}
@@ -466,6 +478,7 @@ a.r-item:hover {
       <div class="t-det-hd">
         <div class="t-det-title">
           <span class="t-det-name" id="dName">—</span>
+          <span class="t-det-status" id="dStatus"></span>
         </div>
         <ul class="t-tabs">
           <li><button class="t-tab on" data-tab="details">Details</button></li>
@@ -637,7 +650,7 @@ a.r-item:hover {
                   <div class="form-text">Backend adds <code>--config</code> and <code>--destination</code> if missing.</div>
                 </div>
                 <input type="hidden" id="eCmdH" name="command"/>
-                <button type="submit" class="btn btn-sm btn-danger">Save changes</button>
+                <button type="submit" class="btn btn-sm btn-primary">Save changes</button>
               </div>
             </div>
           </form>
@@ -677,7 +690,7 @@ a.r-item:hover {
     /* ── Refs ─────────────────────────────────────────────────────────── */
     var pEmpty = $('pEmpty'), pNew = $('pNew'), pTask = $('pTask');
     var btnNew = $('btnNew');
-    var dName = $('dName');
+    var dName = $('dName'), dStatus = $('dStatus');
     var tLogs = $('tLogs'), tDetails = $('tDetails'), tEdit = $('tEdit'), tRecent = $('tRecent'), tStats = $('tStats');
     var logBox = $('logBox'), recentGrid = $('recentGrid'), bRecentRefresh = $('bRecentRefresh'), bLogToggle = $('bLogToggle');
     var fRun = $('fRun'), fPause = $('fPause'), fDelete = $('fDelete'), fDeleteArchive = $('fDeleteArchive');
@@ -807,13 +820,7 @@ a.r-item:hover {
         selSlug     = newSlug;
         selUrlCount = parseInt(btn.dataset.urlCount, 10) || 0;
         selUrlsApi  = btn.dataset.urlsApi;
-        if (changed) {
-            urlsLoaded = false;
-            recentLoaded = false;
-            var st0 = btn.dataset.status || 'idle';
-            if (st0 === 'running') activeTab = 'logs';
-            else if (st0 === 'error') activeTab = 'details';
-        }
+        if (changed) { urlsLoaded = false; recentLoaded = false; }
 
         /* Sidebar: highlight selected */
         document.querySelectorAll('.t-item').forEach(function (el) {
@@ -822,7 +829,10 @@ a.r-item:hover {
 
         /* Header */
         var st = btn.dataset.status || 'idle';
+        var dst = displaySt(st, btn.dataset.lastRun);
         dName.textContent = btn.dataset.name;
+        dStatus.className = 't-det-status ' + dst;
+        dStatus.textContent = st;
 
         /* Details tab */
         dSched.textContent    = btn.dataset.schedule || '—';
@@ -1109,11 +1119,11 @@ a.r-item:hover {
                     if (btn) {
                         if (t.last_run) btn.dataset.lastRun = t.last_run;
                         btn.dataset.nextRun = t.next_run || '';
-                        var lbl = btn.querySelector('[data-sstatus]');
-                        if (lbl) {
-                            lbl.className   = 't-item-st ' + displaySt(t.status, btn.dataset.lastRun);
-                            lbl.textContent = t.status;
-                        }
+                        var ds = displaySt(t.status, btn.dataset.lastRun);
+                        var dot = btn.querySelector('[data-sstatus]');
+                        if (dot) dot.className = 't-dot ' + ds;
+                        var stxt = btn.querySelector('[data-stext]');
+                        if (stxt) stxt.textContent = t.status;
                         btn.dataset.status = t.status;
                         btn.dataset.hasArchive = t.has_archive ? '1' : '0';
                         btn.dataset.hasCookies = t.has_cookies ? '1' : '0';
@@ -1122,6 +1132,9 @@ a.r-item:hover {
                     }
                     if (t.slug === selSlug) {
                         var isRunning = (t.status === 'running');
+                        var panelDs = displaySt(t.status, t.last_run);
+                        dStatus.className = 't-det-status ' + panelDs;
+                        dStatus.textContent = t.status;
                         fRun.style.display  = isRunning ? 'none' : '';
                         fStop.style.display = isRunning ? '' : 'none';
                         setPauseBtn(t.status);
