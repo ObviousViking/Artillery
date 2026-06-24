@@ -327,6 +327,7 @@ a.r-item:hover {
   <!-- ── Left sidebar ─────────────────────────────────────────────────── -->
   <aside class="t-sidebar">
     <div class="t-sidebar-hd">
+      <span>{{ tasks|length }} task{{ 's' if tasks|length != 1 else '' }}</span>
       <button type="button" id="btnNew" title="New task">+</button>
     </div>
     <div class="t-search" style="position:relative;">
@@ -373,9 +374,9 @@ a.r-item:hover {
               {%- elif uc >= 1000 -%}{{ "{:,}".format(uc) }} URLs
               {%- else -%}{{ uc }} URL{{ "s" if uc != 1 else "" }}
               {%- endif -%}
-              {%- if task.schedule %} &middot; {{ task.schedule }}{% endif -%}
-            {%- elif task.schedule -%}{{ task.schedule }}
+              {%- if task.schedule %} &middot; {% endif -%}
             {%- endif -%}
+            {%- if task.schedule -%}<span class="t-item-next"></span>{%- endif -%}
           </div>
         </button>
         {% endfor %}
@@ -452,7 +453,7 @@ a.r-item:hover {
               <div class="form-text">Backend adds <code>--config</code> and <code>--destination</code> if missing.</div>
             </div>
             <input type="hidden" id="cCmdH" name="command"/>
-            <button type="submit" class="btn btn-sm btn-danger">Create task</button>
+            <button type="submit" class="btn btn-sm btn-primary">Create task</button>
           </div>
         </div>
       </form>
@@ -521,7 +522,8 @@ a.r-item:hover {
             <strong>Last error:</strong><br>
             <pre id="dLastErrorText" class="mb-0 mt-1" style="white-space:pre-wrap;font-size:0.78rem;"></pre>
           </div>
-          <div class="d-flex gap-2 flex-wrap">
+          <!-- Primary actions -->
+          <div class="d-flex gap-2 flex-wrap mb-2">
             <form id="fRun" method="post" class="m-0">
               <input type="hidden" name="action" value="run">
               <button type="submit" id="bRun" class="btn btn-sm btn-success">&#9654; Run</button>
@@ -534,30 +536,33 @@ a.r-item:hover {
               <input type="hidden" name="action" value="pause">
               <button type="submit" id="bPause" class="btn btn-sm btn-secondary">&#9646;&#9646; Pause</button>
             </form>
-            <a id="bDlLogs" href="#" class="btn btn-sm btn-secondary text-white">&#8659; Download Logs</a>
-            <form id="fClearLogs" method="post" class="m-0"
-              onsubmit="return confirm('Clear all logs for this task?')">
-              <input type="hidden" name="action" value="clear_logs">
-              <button type="submit" class="btn btn-sm btn-secondary">&#128465; Clear Logs</button>
-            </form>
+            <a id="bDlLogs" href="#" class="btn btn-sm btn-secondary text-white">&#8659; Logs</a>
             <form id="fDuplicate" method="post" class="m-0">
               <input type="hidden" name="action" value="duplicate">
               <button type="submit" class="btn btn-sm btn-secondary">&#10697; Duplicate</button>
             </form>
-            <form id="fDelete" method="post" class="m-0"
-              onsubmit="return confirm('Delete this task? Its folder and logs will be removed.')">
-              <input type="hidden" name="action" value="delete">
-              <button type="submit" class="btn btn-sm btn-danger">&#128465; Delete Task</button>
+          </div>
+          <!-- Danger zone -->
+          <div class="d-flex gap-2 flex-wrap">
+            <form id="fClearLogs" method="post" class="m-0"
+              onsubmit="return confirm('Clear all logs for this task?')">
+              <input type="hidden" name="action" value="clear_logs">
+              <button type="submit" class="btn btn-sm btn-outline-secondary">Clear Logs</button>
             </form>
             <form id="fDeleteArchive" method="post" class="m-0"
               onsubmit="return confirm('Delete archive.sqlite? gallery-dl will re-download previously seen items on next run.')">
               <input type="hidden" name="action" value="delete_archive">
-              <button type="submit" id="bDelArchive" class="btn btn-sm btn-warning" style="display:none;">&#128465; Delete Archive</button>
+              <button type="submit" id="bDelArchive" class="btn btn-sm btn-outline-warning" style="display:none;">Delete Archive</button>
             </form>
             <form id="fDeleteCookies" method="post" class="m-0"
               onsubmit="return confirm('Delete cookies.txt for this task?')">
               <input type="hidden" name="action" value="delete_cookies">
-              <button type="submit" id="bDelCookies" class="btn btn-sm btn-warning" style="display:none;">&#128465; Delete Cookies</button>
+              <button type="submit" id="bDelCookies" class="btn btn-sm btn-outline-warning" style="display:none;">Delete Cookies</button>
+            </form>
+            <form id="fDelete" method="post" class="m-0 ms-auto"
+              onsubmit="return confirm('Delete this task? Its folder and logs will be removed.')">
+              <input type="hidden" name="action" value="delete">
+              <button type="submit" class="btn btn-sm btn-outline-danger">&#128465; Delete Task</button>
             </form>
           </div>
         </div>
@@ -802,7 +807,13 @@ a.r-item:hover {
         selSlug     = newSlug;
         selUrlCount = parseInt(btn.dataset.urlCount, 10) || 0;
         selUrlsApi  = btn.dataset.urlsApi;
-        if (changed) { urlsLoaded = false; recentLoaded = false; }
+        if (changed) {
+            urlsLoaded = false;
+            recentLoaded = false;
+            var st0 = btn.dataset.status || 'idle';
+            if (st0 === 'running') activeTab = 'logs';
+            else if (st0 === 'error') activeTab = 'details';
+        }
 
         /* Sidebar: highlight selected */
         document.querySelectorAll('.t-item').forEach(function (el) {
@@ -1106,6 +1117,8 @@ a.r-item:hover {
                         btn.dataset.status = t.status;
                         btn.dataset.hasArchive = t.has_archive ? '1' : '0';
                         btn.dataset.hasCookies = t.has_cookies ? '1' : '0';
+                        var nextEl = btn.querySelector('.t-item-next');
+                        if (nextEl) nextEl.textContent = fmtNextRun(t.next_run);
                     }
                     if (t.slug === selSlug) {
                         var isRunning = (t.status === 'running');
@@ -1131,6 +1144,8 @@ a.r-item:hover {
 
         document.querySelectorAll('.t-item').forEach(function (btn) {
             btn.addEventListener('click', function () { selectTask(this); });
+            var nextEl = btn.querySelector('.t-item-next');
+            if (nextEl) nextEl.textContent = fmtNextRun(btn.dataset.nextRun);
         });
 
         btnNew.addEventListener('click', function () {
