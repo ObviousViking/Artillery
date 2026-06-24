@@ -632,6 +632,7 @@ def load_tasks():
 
     tasks = []
     if not os.path.isdir(TASKS_ROOT):
+        return tasks
 
     for entry in sorted(os.listdir(TASKS_ROOT)):
         task_path = os.path.join(TASKS_ROOT, entry)
