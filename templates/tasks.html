@@ -516,6 +516,10 @@ a.r-item:hover {
               <input type="hidden" name="action" value="clear_logs">
               <button type="submit" class="btn btn-sm btn-secondary">&#128465; Clear Logs</button>
             </form>
+            <form id="fDuplicate" method="post" class="m-0">
+              <input type="hidden" name="action" value="duplicate">
+              <button type="submit" class="btn btn-sm btn-secondary">&#10697; Duplicate</button>
+            </form>
             <form id="fDelete" method="post" class="m-0"
               onsubmit="return confirm('Delete this task? Its folder and logs will be removed.')">
               <input type="hidden" name="action" value="delete">
@@ -538,6 +542,7 @@ a.r-item:hover {
         <div id="tEdit" style="display:none;">
           <form method="post" action="{{ url_for('tasks') }}" id="fEdit" enctype="multipart/form-data">
             <input type="hidden" name="editing_flag" value="1"/>
+            <input type="hidden" id="eOrigSlug" name="original_slug" value=""/>
             <!-- Tells backend not to overwrite urls.txt unless the user explicitly loaded and edited them -->
             <input type="hidden" id="eKeepUrls" name="keep_existing_urls" value="1"/>
             <div class="row g-4">
@@ -739,7 +744,7 @@ a.r-item:hover {
 
         /* Action form targets */
         var au = btn.dataset.actionUrl;
-        fRun.action = fPause.action = fStop.action = fDelete.action = fDeleteArchive.action = fClearLogs.action = fDeleteCookies.action = au;
+        fRun.action = fPause.action = fStop.action = fDuplicate.action = fDelete.action = fDeleteArchive.action = fClearLogs.action = fDeleteCookies.action = au;
         bDlLogs.href   = btn.dataset.logsDlUrl;
         bDelArchive.style.display = (btn.dataset.hasArchive === '1') ? '' : 'none';
         selHasCookies = btn.dataset.hasCookies === '1';
@@ -754,6 +759,7 @@ a.r-item:hover {
         dNextRun.textContent = fmtNextRun(btn.dataset.nextRun);
 
         /* Edit form */
+        eOrigSlug.value      = btn.dataset.slug;
         eName.value          = btn.dataset.name;
         eSched.value         = btn.dataset.schedule || '';
         eCmd.value           = btn.dataset.command;
