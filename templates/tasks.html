@@ -887,26 +887,73 @@ a.r-item:hover {
         return text;
     }
 
+    var logSource = null;
+    var logBuffer = '';
+
     function updateLogStatusText() {
         $('logStatusText').textContent = logPolling
-            ? 'Auto-refreshes every 1 s · last 50 lines shown'
-            : 'Refresh paused · last 50 lines shown';
+            ? 'Live · last 50 lines shown'
+            : 'Paused · last 50 lines shown';
     }
 
     function setLogPolling(enabled) {
         logPolling = enabled;
         bLogToggle.textContent = enabled ? 'Pause refresh' : 'Resume refresh';
         updateLogStatusText();
+        if (!enabled) {
+            _closeLogSource();
+        } else if (logApi) {
+            _openLogSource(logApi);
+        }
+    }
+
+    function _renderLog(content) {
+        logBox.innerHTML = '<pre>' + colorize(content || '(no output yet)') + '</pre>';
+        if (autoScroll) logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function _closeLogSource() {
+        if (logSource) { logSource.close(); logSource = null; }
+        if (logTimer)  { clearInterval(logTimer); logTimer = null; }
+    }
+
+    function _openLogSource(api) {
+        _closeLogSource();
+        var sseUrl = api.replace('/logs', '/logs/stream');
+        var src = new EventSource(sseUrl);
+        logSource = src;
+        src.onmessage = function (e) {
+            try {
+                var d = JSON.parse(e.data);
+                if (d.reset) {
+                    logBuffer = d.content || '';
+                } else {
+                    logBuffer += d.content || '';
+                    var lines = logBuffer.split('\n');
+                    if (lines.length > 55) {
+                        logBuffer = lines.slice(lines.length - 50).join('\n');
+                    }
+                }
+                _renderLog(logBuffer);
+            } catch (_) {}
+        };
+        src.onerror = function () {
+            // SSE dropped — fall back to polling until next startLog()
+            _closeLogSource();
+            logTimer = setInterval(function () { fetchLog(api); }, 3000);
+        };
     }
 
     function fetchLog(api) {
         fetch(api + '?tail=50')
             .then(function (r) { return r.json(); })
             .then(function (d) {
-                logBox.innerHTML = d.error
-                    ? '<span class="text-danger">' + d.error + '</span>'
-                    : '<pre>' + colorize(d.content || '(no output yet)') + '</pre>';
-                if (autoScroll) logBox.scrollTop = logBox.scrollHeight;
+                if (d.error) {
+                    logBox.innerHTML = '<span class="text-danger">' + d.error + '</span>';
+                } else {
+                    logBuffer = d.content || '';
+                    _renderLog(logBuffer);
+                }
             })
             .catch(function (e) {
                 logBox.innerHTML = '<span class="text-danger">' + e.message + '</span>';
@@ -914,13 +961,17 @@ a.r-item:hover {
     }
 
     function startLog(api) {
-        stopLog();
+        _closeLogSource();
+        logBuffer = '';
         logApi = api;
-        fetchLog(api);
-        logTimer = setInterval(function () { fetchLog(api); }, 1000);
+        if (logPolling) {
+            _openLogSource(api);
+        } else {
+            fetchLog(api);
+        }
     }
     function stopLog() {
-        if (logTimer) { clearInterval(logTimer); logTimer = null; }
+        _closeLogSource();
     }
 
     /* ── Edit form checkboxes ─────────────────────────────────────────── */

@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <title>Artillery</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content="{{ csrf_token() }}" />
 
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}" />
@@ -144,6 +145,37 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- CSRF: inject token into every form so Flask-WTF is satisfied -->
+    <script>
+    (function () {
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        if (!meta) return;
+        var token = meta.content;
+        function inject(root) {
+            root.querySelectorAll('form').forEach(function (form) {
+                if (form.querySelector('input[name="csrf_token"]')) return;
+                var inp = document.createElement('input');
+                inp.type = 'hidden';
+                inp.name = 'csrf_token';
+                inp.value = token;
+                form.appendChild(inp);
+            });
+        }
+        document.addEventListener('DOMContentLoaded', function () { inject(document); });
+        // Re-inject if forms are added dynamically (MutationObserver)
+        var obs = new MutationObserver(function (muts) {
+            muts.forEach(function (m) {
+                m.addedNodes.forEach(function (n) {
+                    if (n.nodeType === 1) inject(n.tagName === 'FORM' ? n.parentElement : n);
+                });
+            });
+        });
+        document.addEventListener('DOMContentLoaded', function () {
+            obs.observe(document.body, { childList: true, subtree: true });
+        });
+    })();
+    </script>
 
     <!-- Dark mode toggle script -->
     <script>

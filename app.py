@@ -14,9 +14,12 @@ import signal
 import faulthandler
 import hashlib
 import random
+import atexit
 from pathlib import Path
 from typing import Optional, List, Tuple
 from croniter import croniter
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 # Ensure webp is served as image/webp on systems with incomplete MIME databases
 mimetypes.add_type('image/webp', '.webp')
@@ -26,9 +29,20 @@ from flask import (
     redirect, url_for, flash, send_from_directory, Response,
     send_file, jsonify,
 )
+from flask_wtf.csrf import CSRFProtect
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
+
+if app.config["SECRET_KEY"] == "dev-secret-key":
+    import warnings
+    warnings.warn(
+        "Artillery: using default SECRET_KEY. "
+        "Set the SECRET_KEY environment variable before exposing this app on a network.",
+        stacklevel=1,
+    )
+
+csrf = CSRFProtect(app)
 
 # ---------------------------------------------------------------------
 # Logging / Debug toggles
@@ -233,6 +247,81 @@ def _set_media_wall_scan_cron(expr: str) -> None:
 
 # In-memory cache to reduce repeated disk reads on /tasks
 _TASK_CACHE = {}
+
+# Coarse TTL cache for the full task list — short-circuits per-task stat sweeps
+# when nothing has changed between requests (e.g. during the 5 s polling loop).
+_TASK_LIST_CACHE: dict = {"ts": 0.0, "tasks": None}
+_TASK_LIST_TTL = 2.0  # seconds
+
+def _invalidate_task_cache() -> None:
+    _TASK_LIST_CACHE["ts"] = 0.0
+    _TASK_LIST_CACHE["tasks"] = None
+
+# Slug validation — block path traversal attempts on every <slug> route.
+_SLUG_RE = re.compile(r'^[a-z0-9][a-z0-9-]*$')
+
+def is_valid_slug(slug: str) -> bool:
+    return bool(_SLUG_RE.match(slug))
+
+# ── APScheduler ────────────────────────────────────────────────────────────────
+_bg_scheduler = BackgroundScheduler(daemon=True)
+
+def _make_cron_trigger(cron_expr: str):
+    parts = cron_expr.strip().split()
+    if len(parts) != 5:
+        return None
+    minute, hour, day, month, day_of_week = parts
+    try:
+        return CronTrigger(
+            minute=minute, hour=hour, day=day,
+            month=month, day_of_week=day_of_week,
+        )
+    except Exception:
+        return None
+
+def _run_scheduled_task(slug: str) -> None:
+    task_folder = os.path.join(TASKS_ROOT, slug)
+    if not os.path.isdir(task_folder):
+        return
+    if os.path.exists(os.path.join(task_folder, "paused")):
+        return
+    lock_path = os.path.join(task_folder, "lock")
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
+    except FileExistsError:
+        return
+    threading.Thread(target=run_task_background, args=(task_folder,), daemon=True).start()
+
+def _reschedule_task(slug: str, cron_expr: str) -> None:
+    trigger = _make_cron_trigger(cron_expr)
+    if trigger is None:
+        _unschedule_task(slug)
+        return
+    _bg_scheduler.add_job(
+        _run_scheduled_task,
+        trigger=trigger,
+        id=f"task_{slug}",
+        replace_existing=True,
+        args=[slug],
+    )
+
+def _unschedule_task(slug: str) -> None:
+    try:
+        _bg_scheduler.remove_job(f"task_{slug}")
+    except Exception:
+        pass
+
+def _load_all_schedules() -> None:
+    if not os.path.isdir(TASKS_ROOT):
+        return
+    for entry in os.listdir(TASKS_ROOT):
+        task_path = os.path.join(TASKS_ROOT, entry)
+        if not os.path.isdir(task_path):
+            continue
+        cron_expr = read_text(os.path.join(task_path, "cron.txt"))
+        if cron_expr and cron_expr.strip():
+            _reschedule_task(entry, cron_expr.strip())
 
 def _task_mtimes(task_path: str) -> dict:
     def _mt(p):
@@ -542,11 +631,14 @@ MEDIA_WALL_ENABLED = _get_media_wall_enabled()
 _start_media_wall_scan_thread()
 
 def load_tasks():
+    now = time.time()
+    if _TASK_LIST_CACHE["tasks"] is not None and now - _TASK_LIST_CACHE["ts"] < _TASK_LIST_TTL:
+        return list(_TASK_LIST_CACHE["tasks"])
+
     ensure_data_dirs(ensure_downloads=False)
 
     tasks = []
     if not os.path.isdir(TASKS_ROOT):
-        return tasks
 
     for entry in sorted(os.listdir(TASKS_ROOT)):
         task_path = os.path.join(TASKS_ROOT, entry)
@@ -606,6 +698,8 @@ def load_tasks():
         _TASK_CACHE[slug] = {"_mtimes": mtimes, "task": task}
         tasks.append(task)
 
+    _TASK_LIST_CACHE["ts"] = time.time()
+    _TASK_LIST_CACHE["tasks"] = tasks
     return tasks
 
 # ---------------------------------------------------------------------
@@ -868,7 +962,17 @@ def tasks():
         cookies_file = request.files.get("cookies_file")
         cookies_path = os.path.join(task_folder, "cookies.txt")
         if cookies_file and cookies_file.filename:
-            cookies_file.save(cookies_path)
+            raw = cookies_file.read(1 * 1024 * 1024 + 1)
+            if len(raw) > 1 * 1024 * 1024:
+                flash("Cookies file too large (max 1 MB).", "error")
+                return redirect(url_for("tasks", selected=slug))
+            text_preview = raw[:512].decode("utf-8", errors="replace")
+            first_line = text_preview.lstrip().split("\n")[0].strip()
+            if first_line and not first_line.startswith("#") and "\t" not in first_line:
+                flash("Cookies file doesn't look like a valid Netscape cookies file.", "error")
+                return redirect(url_for("tasks", selected=slug))
+            with open(cookies_path, "wb") as _cf:
+                _cf.write(raw)
 
         if "--cookies" in command and not os.path.exists(cookies_path):
             flash("Warning: command uses --cookies but no cookies.txt file exists for this task. Upload one via the edit form.", "warning")
@@ -877,6 +981,11 @@ def tasks():
         if not os.path.exists(logs_path):
             write_text(logs_path, "")
 
+        if schedule:
+            _reschedule_task(slug, schedule)
+        else:
+            _unschedule_task(slug)
+        _invalidate_task_cache()
         flash("Task created (or updated).", "success")
         return redirect(url_for("tasks", selected=slug))
 
@@ -1262,6 +1371,9 @@ def run_task_background(task_folder: str):
 
 @app.route("/tasks/<slug>/action", methods=["POST"])
 def task_action(slug):
+    if not is_valid_slug(slug):
+        flash("Invalid task identifier.", "error")
+        return redirect(url_for("tasks"))
     ensure_data_dirs(ensure_downloads=False)
     action = request.form.get("action")
     task_folder = os.path.join(TASKS_ROOT, slug)
@@ -1287,12 +1399,15 @@ def task_action(slug):
                 shutil.copy2(src, os.path.join(new_folder, fname))
         write_text(os.path.join(new_folder, "name.txt"), new_name)
         write_text(os.path.join(new_folder, "logs.txt"), "")
+        _invalidate_task_cache()
         flash(f"Task duplicated as '{new_name}'.", "success")
         return redirect(url_for("tasks", selected=new_slug))
 
     if action == "delete":
         try:
             shutil.rmtree(task_folder)
+            _unschedule_task(slug)
+            _invalidate_task_cache()
             flash(f"Task '{slug}' deleted.", "success")
         except Exception as exc:
             flash(f"Failed to delete task: {exc}", "error")
@@ -1386,12 +1501,9 @@ def task_action(slug):
 
 @app.route("/tasks/<slug>/logs")
 def task_logs(slug):
-    """
-    Fetch the log content for a task.
-    Returns JSON with the log content and metadata.
-    """
+    if not is_valid_slug(slug):
+        return jsonify({"error": "Invalid task identifier"}), 400
     ensure_data_dirs(ensure_downloads=False)
-    
     task_folder = os.path.join(TASKS_ROOT, slug)
     if not os.path.isdir(task_folder):
         return jsonify({"error": "Task not found"}), 404
@@ -1420,6 +1532,8 @@ def task_logs(slug):
 
 @app.route("/tasks/<slug>/urls")
 def task_urls(slug):
+    if not is_valid_slug(slug):
+        return jsonify({"error": "Invalid task identifier"}), 400
     ensure_data_dirs(ensure_downloads=False)
     task_folder = os.path.join(TASKS_ROOT, slug)
     if not os.path.isdir(task_folder):
@@ -1434,6 +1548,8 @@ def task_urls(slug):
 
 @app.route("/tasks/<slug>/recent")
 def task_recent(slug):
+    if not is_valid_slug(slug):
+        return jsonify({"error": "Invalid task identifier"}), 400
     ensure_data_dirs(ensure_downloads=False)
     task_folder = os.path.join(TASKS_ROOT, slug)
     if not os.path.isdir(task_folder):
@@ -1448,12 +1564,65 @@ def task_recent(slug):
 
 
 # ---------------------------------------------------------------------
+# SSE log streaming
+# ---------------------------------------------------------------------
+
+@app.route("/tasks/<slug>/logs/stream")
+def task_logs_stream(slug):
+    if not is_valid_slug(slug):
+        return Response("", status=400)
+    task_folder = os.path.join(TASKS_ROOT, slug)
+    if not os.path.isdir(task_folder):
+        return Response("", status=404)
+
+    def gen():
+        logs_path = os.path.join(task_folder, "logs.txt")
+        last_pos = 0
+        if os.path.exists(logs_path):
+            initial = "\n".join(_tail_lines(logs_path, 50))
+            yield f"data: {json.dumps({'content': initial, 'reset': True})}\n\n"
+            try:
+                last_pos = os.path.getsize(logs_path)
+            except Exception:
+                pass
+        else:
+            yield f"data: {json.dumps({'content': '', 'reset': True})}\n\n"
+        while True:
+            try:
+                time.sleep(1)
+                if not os.path.exists(logs_path):
+                    continue
+                size = os.path.getsize(logs_path)
+                if size < last_pos:
+                    # log was cleared — re-send tail
+                    initial = "\n".join(_tail_lines(logs_path, 50))
+                    yield f"data: {json.dumps({'content': initial, 'reset': True})}\n\n"
+                    last_pos = size
+                elif size > last_pos:
+                    with open(logs_path, "r", encoding="utf-8", errors="replace") as _lf:
+                        _lf.seek(last_pos)
+                        new_text = _lf.read()
+                    last_pos = size
+                    yield f"data: {json.dumps({'content': new_text, 'reset': False})}\n\n"
+            except GeneratorExit:
+                return
+            except Exception:
+                pass
+
+    return Response(
+        gen(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+# ---------------------------------------------------------------------
 # Download task logs
 # ---------------------------------------------------------------------
 @app.route("/tasks/<slug>/logs/download")
 def download_task_logs(slug):
+    if not is_valid_slug(slug):
+        return jsonify({"error": "Invalid task identifier"}), 400
     ensure_data_dirs(ensure_downloads=False)
-
     task_folder = os.path.join(TASKS_ROOT, slug)
     if not os.path.isdir(task_folder):
         return jsonify({"error": "Task not found"}), 404
@@ -1479,6 +1648,16 @@ def media_file(subpath):
 # ---------------------------------------------------------------------
 # Main (dev only)
 # ---------------------------------------------------------------------
+
+# ── Start APScheduler (skip double-start under Werkzeug reloader) ──────────────
+if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    try:
+        _load_all_schedules()
+        _bg_scheduler.start()
+        atexit.register(lambda: _bg_scheduler.shutdown(wait=False))
+        app.logger.info("APScheduler started; %d job(s) loaded.", len(_bg_scheduler.get_jobs()))
+    except Exception as _e:
+        app.logger.warning("APScheduler failed to start: %s", _e)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
