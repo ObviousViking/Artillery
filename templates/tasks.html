@@ -67,6 +67,49 @@ body { padding-top: 60px !important; }
     border-radius: 6px;
 }
 
+/* Disk usage footer */
+.t-disk-box {
+    flex-shrink: 0;
+    border-top: 1px solid var(--border-color);
+    padding: 10px 14px;
+    background: var(--bg-tertiary);
+}
+.t-disk-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+.t-disk-label-val {
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--text-primary);
+}
+.t-disk-track {
+    height: 4px;
+    background: var(--border-color);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 5px;
+}
+.t-disk-fill {
+    height: 100%;
+    background: var(--focus-color);
+    border-radius: 2px;
+    transition: width 0.4s ease;
+}
+.t-disk-fill.danger { background: #ef4444; }
+.t-disk-sub {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
 /* Task list item */
 .t-item {
     display: block;
@@ -467,6 +510,18 @@ a.r-item:hover {
       {% else %}
         <div class="p-3 text-center" style="font-size:0.8rem;color:var(--text-muted);">No tasks yet.</div>
       {% endif %}
+    </div>
+
+    <!-- Disk usage footer -->
+    <div class="t-disk-box" id="diskBox">
+        <div class="t-disk-label">
+            <span>Downloads disk</span>
+            <span class="t-disk-label-val" id="diskVal">—</span>
+        </div>
+        <div class="t-disk-track">
+            <div class="t-disk-fill" id="diskFill" style="width:0%"></div>
+        </div>
+        <div class="t-disk-sub" id="diskSub">Loading…</div>
     </div>
   </aside>
 
@@ -1351,7 +1406,36 @@ a.r-item:hover {
         }
         pollStatus();
         setInterval(pollStatus, 5000);
+
+        loadDisk();
+        setInterval(loadDisk, 60000);
     });
+
+    /* ── Disk usage ───────────────────────────────────────────────────── */
+    function fmtBytes(b) {
+        if (b >= 1e12) return (b / 1e12).toFixed(1) + ' TB';
+        if (b >= 1e9)  return (b / 1e9).toFixed(1)  + ' GB';
+        if (b >= 1e6)  return (b / 1e6).toFixed(1)  + ' MB';
+        return Math.round(b / 1024) + ' KB';
+    }
+    function loadDisk() {
+        fetch('/api/disk')
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(d) {
+                if (!d || d.error) return;
+                var pct = d.total > 0 ? (d.used / d.total * 100) : 0;
+                var fill = document.getElementById('diskFill');
+                fill.style.width = pct.toFixed(1) + '%';
+                fill.className = 't-disk-fill' + (pct >= 90 ? ' danger' : '');
+                document.getElementById('diskVal').textContent =
+                    fmtBytes(d.used) + ' / ' + fmtBytes(d.total);
+                document.getElementById('diskSub').textContent =
+                    fmtBytes(d.free) + ' free (' + pct.toFixed(0) + '% used)';
+            })
+            .catch(function() {
+                document.getElementById('diskSub').textContent = 'Unavailable';
+            });
+    }
 
 }());
 </script>

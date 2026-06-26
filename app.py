@@ -1128,6 +1128,16 @@ def tasks():
     return render_template("tasks.html", tasks=tasks_list)
 
 
+@app.route("/api/disk")
+def api_disk():
+    try:
+        usage = shutil.disk_usage(DOWNLOADS_ROOT)
+        return jsonify({"total": usage.total, "used": usage.used, "free": usage.free})
+    except Exception:
+        app.logger.warning("Could not get disk usage for %s", DOWNLOADS_ROOT, exc_info=True)
+        return jsonify({"error": "unavailable"}), 500
+
+
 @app.route("/api/tasks")
 def api_tasks():
     """Return a lightweight JSON representation of tasks for front-end polling."""
