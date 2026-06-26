@@ -2007,7 +2007,7 @@ def kiosks_list():
         os.makedirs(os.path.join(kdir, "images"), exist_ok=True)
         _save_kiosk_settings(kslug, {
             "name": name,
-            "interval": int(request.form.get("interval", 10)),
+            "interval": max(1, int(request.form.get("interval") or 10)),
             "order": request.form.get("order", "random"),
         })
         flash(f"Kiosk '{name}' created.", "success")
@@ -2032,7 +2032,7 @@ def kiosk_manage(kslug):
         if action == "settings":
             settings = _kiosk_settings(kslug)
             settings["name"] = request.form.get("name", settings.get("name", kslug)).strip() or kslug
-            settings["interval"] = max(1, int(request.form.get("interval", 10)))
+            settings["interval"] = max(1, int(request.form.get("interval") or 10))
             settings["order"] = request.form.get("order", "random")
             _save_kiosk_settings(kslug, settings)
             flash("Settings saved.", "success")
