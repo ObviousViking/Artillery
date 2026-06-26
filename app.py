@@ -33,9 +33,11 @@ from flask import (
     send_file, jsonify,
 )
 from flask_wtf.csrf import CSRFProtect
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", secrets.token_hex(32))
+app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB max upload (covers bulk kiosk image uploads)
 
 csrf = CSRFProtect(app)
 
@@ -2038,22 +2040,35 @@ def kiosk_manage(kslug):
             flash("Settings saved.", "success")
 
         elif action == "add_images":
-            filenames = request.form.getlist("filenames")
+            uploaded = request.files.getlist("images")
             idir = os.path.join(kdir, "images")
             os.makedirs(idir, exist_ok=True)
             added = 0
-            for fn in filenames:
-                if "/" in fn or "\\" in fn or ".." in fn:
+            skipped = []
+            for f in uploaded:
+                if not f or not f.filename:
                     continue
-                src = os.path.join(MEDIA_WALL_DIR, fn)
-                dst = os.path.join(idir, fn)
-                if os.path.isfile(src) and not os.path.exists(dst):
-                    try:
-                        shutil.copy2(src, dst)
-                        added += 1
-                    except Exception:
-                        app.logger.warning("Could not copy media wall file to kiosk: %s", fn, exc_info=True)
-            flash(f"Added {added} image(s) to kiosk.", "success")
+                fn = secure_filename(f.filename)
+                if not fn:
+                    continue
+                ext = ("." + fn.rsplit(".", 1)[-1].lower()) if "." in fn else ""
+                if ext not in IMAGE_EXTS:
+                    skipped.append(fn)
+                    continue
+                raw = f.read(20 * 1024 * 1024 + 1)
+                if len(raw) > 20 * 1024 * 1024:
+                    flash(f"Skipped {fn}: too large (max 20 MB per file).", "warning")
+                    continue
+                try:
+                    with open(os.path.join(idir, fn), "wb") as out:
+                        out.write(raw)
+                    added += 1
+                except Exception:
+                    app.logger.warning("Could not save uploaded kiosk image %s", fn, exc_info=True)
+            if added:
+                flash(f"Uploaded {added} image(s).", "success")
+            if skipped:
+                flash(f"Skipped {len(skipped)} file(s) — unsupported type (allowed: {', '.join(sorted(IMAGE_EXTS))}).", "warning")
 
         elif action == "remove_image":
             fn = request.form.get("filename", "")
@@ -2077,23 +2092,11 @@ def kiosk_manage(kslug):
             if os.path.isfile(os.path.join(idir, fn)):
                 kiosk_images.append(fn)
 
-    wall_images = []
-    if os.path.isdir(MEDIA_WALL_DIR):
-        kiosk_set = set(kiosk_images)
-        for fn in sorted(os.listdir(MEDIA_WALL_DIR)):
-            fp = os.path.join(MEDIA_WALL_DIR, fn)
-            if not os.path.isfile(fp):
-                continue
-            ext = ("." + fn.rsplit(".", 1)[-1].lower()) if "." in fn else ""
-            if ext in IMAGE_EXTS:
-                wall_images.append({"name": fn, "in_kiosk": fn in kiosk_set})
-
     return render_template(
         "kiosk_manage.html",
         kslug=kslug,
         settings=settings,
         kiosk_images=kiosk_images,
-        wall_images=wall_images,
     )
 
 

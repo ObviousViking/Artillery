@@ -12,6 +12,8 @@ html, body {
     overflow: hidden;
     cursor: none;
 }
+/* Show cursor on splash so users know they can click */
+#splash { cursor: pointer; }
 #stage {
     position: fixed; inset: 0;
     display: flex; align-items: center; justify-content: center;
@@ -67,9 +69,27 @@ html, body {
     text-align: center;
     opacity: 0.6;
 }
+#splash {
+    position: fixed; inset: 0; z-index: 200;
+    background: #000;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    cursor: pointer;
+    font-family: system-ui, sans-serif;
+    color: #fff;
+    user-select: none;
+}
+#splash h1 { font-size: 2.2rem; font-weight: 600; margin-bottom: 0.6rem; letter-spacing: -0.02em; }
+#splash p  { font-size: 1rem; opacity: 0.45; }
 </style>
 </head>
 <body>
+
+<!-- Splash: gives a user gesture so requestFullscreen is allowed -->
+<div id="splash">
+    <h1>{{ settings.name or kslug }}</h1>
+    <p>Click or tap to start</p>
+</div>
 
 <div id="stage">
     <div id="noImages" style="display:none;">
@@ -100,7 +120,9 @@ html, body {
     var btnFs = document.getElementById('btnFs');
     var noImages = document.getElementById('noImages');
 
+    var splash = document.getElementById('splash');
     var images = [];
+    var imagesReady = false;
     var idx = 0;
     var interval = 10;
     var order = 'random';
@@ -111,19 +133,28 @@ html, body {
     var barTimer = null;
     var controlsTimer = null;
 
-    // Auto-fullscreen on load
     function goFullscreen() {
         var el = document.documentElement;
-        if (el.requestFullscreen) el.requestFullscreen();
-        else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
-        else if (el.mozRequestFullScreen) el.mozRequestFullScreen();
+        try {
+            if (el.requestFullscreen) el.requestFullscreen();
+            else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+            else if (el.mozRequestFullScreen) el.mozRequestFullScreen();
+        } catch(e) {}
     }
-    document.addEventListener('click', function fsOnce() {
+
+    // Splash dismissal is the user gesture — always succeeds for fullscreen
+    splash.addEventListener('click', function() {
         goFullscreen();
-        document.removeEventListener('click', fsOnce);
-    }, { once: true });
-    // Try immediately (may be blocked without gesture)
-    try { goFullscreen(); } catch(e) {}
+        splash.style.display = 'none';
+        document.body.style.cursor = 'none';
+        if (imagesReady && images.length) {
+            showSlide(0);
+            startTimer();
+        } else if (imagesReady) {
+            noImages.style.display = '';
+        }
+        // If not ready yet, fetch callback will start slideshow once splash is gone
+    });
 
     btnFs.addEventListener('click', function() {
         if (document.fullscreenElement) {
@@ -252,19 +283,25 @@ html, body {
             interval = d.interval || 10;
             order = d.order || 'random';
             images = d.images || [];
-            if (!images.length) {
-                noImages.style.display = '';
-                return;
-            }
             if (order === 'random') {
                 images.sort(function() { return Math.random() - 0.5; });
             }
-            showSlide(0);
-            startTimer();
+            imagesReady = true;
+            // Only start if splash already dismissed
+            if (splash.style.display === 'none') {
+                if (images.length) {
+                    showSlide(0);
+                    startTimer();
+                } else {
+                    noImages.style.display = '';
+                }
+            }
         })
         .catch(function() {
-            noImages.style.display = '';
-            noImages.querySelector('p').textContent = 'Failed to load kiosk images.';
+            imagesReady = true;
+            if (splash.style.display === 'none') {
+                noImages.style.display = '';
+            }
         });
 })();
 </script>
