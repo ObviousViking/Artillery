@@ -4,7 +4,7 @@
     <div class="d-flex align-items-center gap-3 mt-4 mb-3">
         <a href="{{ url_for('kiosks_list') }}" class="btn btn-sm btn-outline-secondary">&larr; Kiosks</a>
         <h2 class="mb-0">{{ settings.name or kslug }}</h2>
-        <a href="{{ url_for('kiosk_display', kslug=kslug) }}" class="btn btn-sm btn-success ms-auto" target="_blank">Open Fullscreen</a>
+        <button class="btn btn-sm btn-success ms-auto" onclick="openKiosk()">Open Fullscreen</button>
     </div>
 
     <div class="row g-4">
@@ -34,6 +34,38 @@
                         </div>
                         <button type="submit" class="btn btn-sm btn-outline-light">Save</button>
                     </form>
+                </div>
+            </div>
+
+            <!-- Launch commands -->
+            <div class="card shadow-sm border-secondary mt-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-2">Launch Commands</h5>
+                    <p class="text-muted small mb-3">For dedicated devices (Raspberry Pi, signage displays) — run Chromium in kiosk mode so the browser opens fullscreen automatically without any click.</p>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Linux / Raspberry Pi</label>
+                        <div class="input-group input-group-sm">
+                            <input type="text" id="cmdLinux" class="form-control font-monospace" readonly
+                                style="font-size:0.7rem;">
+                            <button class="btn btn-outline-secondary" onclick="copyCmd('cmdLinux')" type="button">Copy</button>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Windows</label>
+                        <div class="input-group input-group-sm">
+                            <input type="text" id="cmdWin" class="form-control font-monospace" readonly
+                                style="font-size:0.7rem;">
+                            <button class="btn btn-outline-secondary" onclick="copyCmd('cmdWin')" type="button">Copy</button>
+                        </div>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label small fw-semibold">macOS</label>
+                        <div class="input-group input-group-sm">
+                            <input type="text" id="cmdMac" class="form-control font-monospace" readonly
+                                style="font-size:0.7rem;">
+                            <button class="btn btn-outline-secondary" onclick="copyCmd('cmdMac')" type="button">Copy</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -91,4 +123,35 @@
         </div>
     </div>
 </div>
+
+<script>
+var KIOSK_URL = window.location.origin + '{{ url_for("kiosk_display", kslug=kslug) }}';
+
+function openKiosk() {
+    var w = screen.width, h = screen.height;
+    window.open(KIOSK_URL, 'artillery_kiosk',
+        'toolbar=no,menubar=no,scrollbars=no,location=no,status=no,resizable=yes,' +
+        'width=' + w + ',height=' + h + ',top=0,left=0');
+}
+
+function copyCmd(id) {
+    var el = document.getElementById(id);
+    navigator.clipboard.writeText(el.value).then(function() {
+        var btn = el.nextElementSibling;
+        var orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(function() { btn.textContent = orig; }, 1500);
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    var url = KIOSK_URL;
+    document.getElementById('cmdLinux').value =
+        'chromium-browser --kiosk --incognito --noerrdialogs --disable-infobars "' + url + '"';
+    document.getElementById('cmdWin').value =
+        '"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --kiosk --incognito --noerrdialogs --disable-infobars "' + url + '"';
+    document.getElementById('cmdMac').value =
+        'open -a "Google Chrome" --args --kiosk --incognito --noerrdialogs --disable-infobars "' + url + '"';
+});
+</script>
 {% endblock %}

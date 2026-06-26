@@ -2159,6 +2159,25 @@ def kiosk_media(kslug, filename):
     idir = os.path.join(KIOSKS_ROOT, kslug, "images")
     return send_from_directory(idir, filename)
 
+
+@app.route("/kiosk/<kslug>/manifest.json")
+def kiosk_manifest(kslug):
+    if not is_valid_slug(kslug):
+        return "Invalid", 400
+    settings = _kiosk_settings(kslug)
+    name = settings.get("name", kslug)
+    manifest = {
+        "name": name,
+        "short_name": name,
+        "display": "fullscreen",
+        "orientation": "landscape",
+        "start_url": url_for("kiosk_display", kslug=kslug),
+        "background_color": "#000000",
+        "theme_color": "#000000",
+        "icons": [],
+    }
+    return jsonify(manifest)
+
 # ---------------------------------------------------------------------
 # Original media route (serves from /downloads)
 # ---------------------------------------------------------------------
