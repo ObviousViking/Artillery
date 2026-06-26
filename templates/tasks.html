@@ -592,7 +592,7 @@ a.r-item:hover {
               <div class="form-text">Backend adds <code>--config</code> and <code>--destination</code> if missing.</div>
             </div>
             <input type="hidden" id="cCmdH" name="command"/>
-            <button type="submit" class="btn btn-sm btn-primary">Create task</button>
+            <button type="submit" class="btn btn-sm btn-act">Create task</button>
           </div>
         </div>
       </form>
@@ -624,7 +624,7 @@ a.r-item:hover {
           <div id="logBox"><span class="text-muted">Loading&hellip;</span></div>
           <div class="d-flex align-items-center justify-content-between mt-2">
             <small class="text-muted" id="logStatusText">Auto-refreshes every 1 s &middot; last 50 lines shown</small>
-            <button type="button" id="bLogToggle" class="btn btn-sm btn-outline-secondary py-0 px-2">Pause refresh</button>
+            <button type="button" id="bLogToggle" class="btn btn-sm btn-neutral py-0 px-2">Pause refresh</button>
           </div>
         </div>
 
@@ -633,7 +633,7 @@ a.r-item:hover {
           <div class="d-flex align-items-center justify-content-between mb-3">
             <small class="text-muted">Most recent downloads from logs</small>
             <button type="button" id="bRecentRefresh"
-              class="btn btn-sm btn-outline-secondary py-0 px-2"
+              class="btn btn-sm btn-neutral py-0 px-2"
               style="font-size:0.72rem;">&#8635; Refresh</button>
           </div>
           <div id="recentGrid" class="r-grid"></div>
@@ -728,7 +728,7 @@ a.r-item:hover {
                   <!-- Shown until URLs are loaded -->
                   <div id="urlGate" class="url-gate">
                     <p id="urlGateMsg" class="text-muted small mb-2"></p>
-                    <button type="button" id="bLoadUrls" class="btn btn-sm btn-outline-secondary"
+                    <button type="button" id="bLoadUrls" class="btn btn-sm btn-neutral"
                       style="display:none;">Load for editing</button>
                   </div>
                   <!-- Hidden until loaded -->
@@ -777,7 +777,7 @@ a.r-item:hover {
                   <div class="form-text">Backend adds <code>--config</code> and <code>--destination</code> if missing.</div>
                 </div>
                 <input type="hidden" id="eCmdH" name="command"/>
-                <button type="submit" class="btn btn-sm btn-primary">Save changes</button>
+                <button type="submit" class="btn btn-sm btn-act">Save changes</button>
               </div>
             </div>
           </form>

@@ -21,10 +21,10 @@
                     </div>
 
                     <div class="d-flex flex-wrap gap-2">
-                        <button type="submit" name="action" value="save" class="btn btn-danger">
+                        <button type="submit" name="action" value="save" class="btn btn-act">
                             Save config
                         </button>
-                        <button type="submit" name="action" value="reset" class="btn btn-outline-warning">
+                        <button type="submit" name="action" value="reset" class="btn btn-caution">
                             Load default config from GitHub
                         </button>
                     </div>
@@ -70,7 +70,7 @@
                             name="media_wall_scan_cron" value="{{ media_wall_scan_cron }}">
                     </div>
                     <div class="col-auto">
-                        <button type="submit" class="btn btn-sm btn-outline-light">Save</button>
+                        <button type="submit" class="btn btn-sm btn-neutral">Save</button>
                     </div>
                 </form>
 
@@ -103,8 +103,8 @@
                 <h6 class="mb-2">Backup</h6>
                 <form method="post" action="{{ url_for('config_backup') }}" id="backupForm">
                     <div class="mb-2 d-flex gap-2">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" id="bkSelectAll">All</button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" id="bkDeselectAll">None</button>
+                        <button type="button" class="btn btn-sm btn-neutral" id="bkSelectAll">All</button>
+                        <button type="button" class="btn btn-sm btn-neutral" id="bkDeselectAll">None</button>
                     </div>
                     <div class="mb-3" style="max-height:220px;overflow-y:auto;border:1px solid var(--border-color);border-radius:6px;padding:0.5rem;">
                         {% for task in tasks %}
@@ -122,7 +122,7 @@
                             id="bkIncludeConfig" checked>
                         <label class="form-check-label small" for="bkIncludeConfig">Include gallery-dl config</label>
                     </div>
-                    <button type="submit" class="btn btn-sm btn-outline-light">Download Backup</button>
+                    <button type="submit" class="btn btn-sm btn-neutral">Download Backup</button>
                 </form>
 
                 <hr class="my-4">
@@ -135,7 +135,7 @@
                     <div class="d-flex flex-wrap gap-2 align-items-center">
                         <input type="file" name="backup_zip" accept=".zip"
                             class="form-control form-control-sm" style="max-width:320px;" required>
-                        <button type="submit" class="btn btn-sm btn-outline-warning"
+                        <button type="submit" class="btn btn-sm btn-caution"
                             onclick="return confirm('Restore will overwrite existing files. Continue?')">
                             Restore
                         </button>
