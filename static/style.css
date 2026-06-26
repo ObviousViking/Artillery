@@ -437,6 +437,20 @@ code {
 /* Fix: <a class="btn"> inherits the global link colour in light mode */
 a.btn { color: inherit !important; }
 
+/* Green — save, run, open, manage, create, upload */
+.btn-go {
+    background-color: #16a34a;
+    border-color: #16a34a;
+    color: #fff !important;
+}
+.btn-go:hover, .btn-go:focus, .btn-go:active {
+    background-color: #15803d;
+    border-color: #15803d;
+    color: #fff !important;
+    opacity: 1;
+}
+
+/* Orange — pause */
 .btn-act {
     background-color: var(--focus-color);
     border-color: var(--focus-color);

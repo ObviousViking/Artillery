@@ -21,7 +21,7 @@
                     <h5 class="card-title mb-1">{{ k.name }}</h5>
                     <p class="text-muted small mb-3">{{ k.image_count }} image{{ 's' if k.image_count != 1 else '' }} &middot; {{ k.interval }}s interval &middot; {{ k.order }}</p>
                     <div class="d-flex gap-2 mt-auto">
-                        <a href="{{ url_for('kiosk_display', kslug=k.slug) }}" class="btn btn-sm btn-act" target="_blank">Open</a>
+                        <a href="{{ url_for('kiosk_display', kslug=k.slug) }}" class="btn btn-sm btn-go" target="_blank">Open</a>
                         <a href="{{ url_for('kiosk_manage', kslug=k.slug) }}" class="btn btn-sm btn-neutral">Manage</a>
                         <form method="post" action="{{ url_for('kiosk_delete', kslug=k.slug) }}" class="ms-auto"
                             onsubmit="return confirm('Delete kiosk {{ k.name|e }}?')">
@@ -60,7 +60,7 @@
                         </select>
                     </div>
                 </div>
-                <button type="submit" class="btn btn-sm btn-act">Create Kiosk</button>
+                <button type="submit" class="btn btn-sm btn-go">Create Kiosk</button>
             </form>
         </div>
     </div>

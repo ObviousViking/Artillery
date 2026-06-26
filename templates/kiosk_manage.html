@@ -4,7 +4,7 @@
     <div class="d-flex align-items-center gap-3 mt-4 mb-3">
         <a href="{{ url_for('kiosks_list') }}" class="btn btn-sm btn-neutral">&larr; Kiosks</a>
         <h2 class="mb-0">{{ settings.name or kslug }}</h2>
-        <a href="{{ url_for('kiosk_display', kslug=kslug) }}" class="btn btn-sm btn-act ms-auto" target="_blank">Open</a>
+        <a href="{{ url_for('kiosk_display', kslug=kslug) }}" class="btn btn-sm btn-go ms-auto" target="_blank">Open</a>
     </div>
 
     <div class="row g-4">
@@ -90,7 +90,7 @@
                             </div>
                         </div>
 
-                        <button type="submit" class="btn btn-sm btn-act">Save</button>
+                        <button type="submit" class="btn btn-sm btn-go">Save</button>
                     </form>
                 </div>
             </div>
@@ -141,7 +141,7 @@
                         <div class="d-flex flex-wrap gap-2 align-items-center">
                             <input type="file" name="images" accept="image/*" multiple
                                 class="form-control form-control-sm" style="max-width:380px;" required>
-                            <button type="submit" class="btn btn-sm btn-act">Upload</button>
+                            <button type="submit" class="btn btn-sm btn-go">Upload</button>
                         </div>
                     </form>
                 </div>
