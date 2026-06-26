@@ -2033,9 +2033,15 @@ def kiosk_manage(kslug):
 
         if action == "settings":
             settings = _kiosk_settings(kslug)
-            settings["name"] = request.form.get("name", settings.get("name", kslug)).strip() or kslug
-            settings["interval"] = max(1, int(request.form.get("interval") or 10))
-            settings["order"] = request.form.get("order", "random")
+            settings["name"]       = request.form.get("name", settings.get("name", kslug)).strip() or kslug
+            settings["interval"]   = max(1, int(request.form.get("interval") or 10))
+            settings["order"]      = request.form.get("order", "random")
+            settings["transition"] = request.form.get("transition", "fade")
+            settings["trans_speed"] = max(0.1, min(3.0, float(request.form.get("trans_speed") or 0.9)))
+            settings["fit"]        = request.form.get("fit", "contain")
+            settings["background"] = request.form.get("background", "black")
+            settings["ken_burns"]  = "1" if request.form.get("ken_burns") else "0"
+            settings["show_clock"] = "1" if request.form.get("show_clock") else "0"
             _save_kiosk_settings(kslug, settings)
             flash("Settings saved.", "success")
 

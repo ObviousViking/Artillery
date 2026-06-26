@@ -5,6 +5,14 @@
         <h2 class="mb-0">Kiosks</h2>
     </div>
 
+    <div class="alert alert-warning border-warning d-flex align-items-start gap-2 mb-4" role="alert" style="font-size:0.875rem;">
+        <span style="font-size:1.1rem;">&#9888;</span>
+        <div>
+            <strong>Under development</strong> — this feature is a work in progress. Ideas and feedback welcome on
+            <a href="https://github.com/obviousviking/artillery/issues" target="_blank" rel="noopener" class="alert-link">GitHub</a>.
+        </div>
+    </div>
+
     <div class="row g-3 mb-4">
         {% for k in kiosks %}
         <div class="col-sm-6 col-lg-4">
@@ -13,8 +21,7 @@
                     <h5 class="card-title mb-1">{{ k.name }}</h5>
                     <p class="text-muted small mb-3">{{ k.image_count }} image{{ 's' if k.image_count != 1 else '' }} &middot; {{ k.interval }}s interval &middot; {{ k.order }}</p>
                     <div class="d-flex gap-2 mt-auto">
-                        <button class="btn btn-sm btn-success"
-                            onclick="openKiosk('{{ url_for('kiosk_display', kslug=k.slug) }}')">Open</button>
+                        <a href="{{ url_for('kiosk_display', kslug=k.slug) }}" class="btn btn-sm btn-success" target="_blank">Open</a>
                         <a href="{{ url_for('kiosk_manage', kslug=k.slug) }}" class="btn btn-sm btn-outline-secondary">Manage</a>
                         <form method="post" action="{{ url_for('kiosk_delete', kslug=k.slug) }}" class="ms-auto"
                             onsubmit="return confirm('Delete kiosk {{ k.name|e }}?')">
@@ -58,12 +65,4 @@
         </div>
     </div>
 </div>
-<script>
-function openKiosk(url) {
-    var w = screen.width, h = screen.height;
-    window.open(url, 'artillery_kiosk',
-        'toolbar=no,menubar=no,scrollbars=no,location=no,status=no,resizable=yes,' +
-        'width=' + w + ',height=' + h + ',top=0,left=0');
-}
-</script>
 {% endblock %}

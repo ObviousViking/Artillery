@@ -4,7 +4,7 @@
     <div class="d-flex align-items-center gap-3 mt-4 mb-3">
         <a href="{{ url_for('kiosks_list') }}" class="btn btn-sm btn-outline-secondary">&larr; Kiosks</a>
         <h2 class="mb-0">{{ settings.name or kslug }}</h2>
-        <button class="btn btn-sm btn-success ms-auto" onclick="openKiosk()">Open Fullscreen</button>
+        <a href="{{ url_for('kiosk_display', kslug=kslug) }}" class="btn btn-sm btn-success ms-auto" target="_blank">Open</a>
     </div>
 
     <div class="row g-4">
@@ -15,23 +15,81 @@
                     <h5 class="card-title mb-3">Settings</h5>
                     <form method="post">
                         <input type="hidden" name="action" value="settings">
+
                         <div class="mb-3">
                             <label class="form-label small">Name</label>
                             <input type="text" name="name" class="form-control form-control-sm"
                                 value="{{ settings.name or kslug }}" required>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label small">Interval (seconds)</label>
-                            <input type="number" name="interval" class="form-control form-control-sm"
-                                value="{{ settings.interval or 10 }}" min="1" max="3600">
+
+                        <p class="small text-muted fw-semibold mb-2 mt-3" style="letter-spacing:0.04em;">PLAYBACK</p>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col">
+                                <label class="form-label small">Interval (sec)</label>
+                                <input type="number" name="interval" class="form-control form-control-sm"
+                                    value="{{ settings.interval or 10 }}" min="1" max="3600">
+                            </div>
+                            <div class="col">
+                                <label class="form-label small">Order</label>
+                                <select name="order" class="form-select form-select-sm">
+                                    <option value="random"     {% if settings.get('order','random') == 'random'     %}selected{% endif %}>Random</option>
+                                    <option value="sequential" {% if settings.get('order') == 'sequential' %}selected{% endif %}>Sequential</option>
+                                </select>
+                            </div>
                         </div>
+
+                        <p class="small text-muted fw-semibold mb-2 mt-3" style="letter-spacing:0.04em;">TRANSITION</p>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col">
+                                <label class="form-label small">Style</label>
+                                <select name="transition" class="form-select form-select-sm">
+                                    <option value="fade"  {% if settings.get('transition','fade') == 'fade'  %}selected{% endif %}>Fade</option>
+                                    <option value="cut"   {% if settings.get('transition') == 'cut'   %}selected{% endif %}>Cut</option>
+                                    <option value="slide" {% if settings.get('transition') == 'slide' %}selected{% endif %}>Slide</option>
+                                </select>
+                            </div>
+                            <div class="col">
+                                <label class="form-label small">Speed (sec)</label>
+                                <input type="number" name="trans_speed" class="form-control form-control-sm"
+                                    value="{{ settings.get('trans_speed', 0.9) }}" min="0.1" max="3.0" step="0.1">
+                            </div>
+                        </div>
+
+                        <p class="small text-muted fw-semibold mb-2 mt-3" style="letter-spacing:0.04em;">DISPLAY</p>
+
                         <div class="mb-3">
-                            <label class="form-label small">Order</label>
-                            <select name="order" class="form-select form-select-sm">
-                                <option value="random" {% if settings.order != 'sequential' %}selected{% endif %}>Random</option>
-                                <option value="sequential" {% if settings.order == 'sequential' %}selected{% endif %}>Sequential</option>
+                            <label class="form-label small">Image fit</label>
+                            <select name="fit" class="form-select form-select-sm">
+                                <option value="contain" {% if settings.get('fit','contain') == 'contain' %}selected{% endif %}>Contain — full image, letterboxed</option>
+                                <option value="cover"   {% if settings.get('fit') == 'cover'   %}selected{% endif %}>Cover — fill screen, crop edges</option>
+                                <option value="center"  {% if settings.get('fit') == 'center'  %}selected{% endif %}>Center — actual size, no scaling</option>
                             </select>
                         </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small">Background <span class="text-muted">(visible with Contain)</span></label>
+                            <select name="background" class="form-select form-select-sm">
+                                <option value="black" {% if settings.get('background','black') == 'black' %}selected{% endif %}>Black</option>
+                                <option value="white" {% if settings.get('background') == 'white' %}selected{% endif %}>White</option>
+                                <option value="blur"  {% if settings.get('background') == 'blur'  %}selected{% endif %}>Blurred image</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="ken_burns" id="cbKenBurns" value="1"
+                                    {% if settings.get('ken_burns') == '1' %}checked{% endif %}>
+                                <label class="form-check-label small" for="cbKenBurns">Ken Burns effect <span class="text-muted">(slow zoom while displayed)</span></label>
+                            </div>
+                            <div class="form-check mt-1">
+                                <input class="form-check-input" type="checkbox" name="show_clock" id="cbClock" value="1"
+                                    {% if settings.get('show_clock') == '1' %}checked{% endif %}>
+                                <label class="form-check-label small" for="cbClock">Clock overlay</label>
+                            </div>
+                        </div>
+
                         <button type="submit" class="btn btn-sm btn-outline-light">Save</button>
                     </form>
                 </div>
@@ -126,13 +184,6 @@
 
 <script>
 var KIOSK_URL = window.location.origin + '{{ url_for("kiosk_display", kslug=kslug) }}';
-
-function openKiosk() {
-    var w = screen.width, h = screen.height;
-    window.open(KIOSK_URL, 'artillery_kiosk',
-        'toolbar=no,menubar=no,scrollbars=no,location=no,status=no,resizable=yes,' +
-        'width=' + w + ',height=' + h + ',top=0,left=0');
-}
 
 function copyCmd(id) {
     var el = document.getElementById(id);
