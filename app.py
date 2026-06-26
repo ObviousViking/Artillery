@@ -112,10 +112,40 @@ def _rotate_logs(task_folder: str) -> None:
         except Exception:
             app.logger.warning("Could not remove old log archive %s", old, exc_info=True)
 
+_ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+_ERROR_LINE_RE = re.compile(r'\[(error|warning)\]|error:|failed to download|traceback|exception', re.IGNORECASE)
+
+def _extract_errors_from_log(logs_path: str, max_lines: int = 30) -> str:
+    """Return error/warning lines from the log with ANSI stripped.
+    Falls back to a pointer to the logs tab if nothing is found."""
+    lines = []
+    try:
+        with open(logs_path, encoding="utf-8", errors="replace") as f:
+            for raw in f:
+                clean = _ANSI_RE.sub('', raw).rstrip()
+                if _ERROR_LINE_RE.search(clean):
+                    lines.append(clean)
+    except Exception:
+        return ""
+
+    if not lines:
+        return "Task exited with a non-zero code but no error lines were found. Check the Logs tab for details."
+
+    # Deduplicate consecutive identical lines then take the last max_lines
+    deduped: list[str] = []
+    prev = None
+    for line in lines:
+        if line != prev:
+            deduped.append(line)
+            prev = line
+
+    return "\n".join(deduped[-max_lines:])
+
+
 def _write_last_error(task_folder: str, message: str) -> None:
     try:
         Path(os.path.join(task_folder, "last_error.txt")).write_text(
-            message.strip(), encoding="utf-8"
+            _ANSI_RE.sub('', message).strip(), encoding="utf-8"
         )
     except Exception:
         app.logger.warning("Could not write last_error.txt for %s", task_folder, exc_info=True)
@@ -750,7 +780,8 @@ def load_tasks():
 
         last_error = ""
         if status == "error":
-            last_error = read_text(os.path.join(task_path, "last_error.txt")) or ""
+            raw_err = read_text(os.path.join(task_path, "last_error.txt")) or ""
+            last_error = _ANSI_RE.sub('', raw_err).strip()
 
         timeout_val = read_text(os.path.join(task_path, "timeout.txt")) or ""
 
@@ -1637,8 +1668,7 @@ def run_task_background(task_folder: str):
             else:
                 logf.write(f"\nTask exited with code {returncode}.\n")
                 Path(error_path).touch()
-                tail = _tail_lines(logs_path, 8)
-                _write_last_error(task_folder, "\n".join(tail))
+                _write_last_error(task_folder, _extract_errors_from_log(logs_path))
 
         _record_run(task_folder, success=success, duration=duration, stopped=was_stopped)
 
