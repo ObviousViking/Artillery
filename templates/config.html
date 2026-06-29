@@ -21,10 +21,10 @@
                     </div>
 
                     <div class="d-flex flex-wrap gap-2">
-                        <button type="submit" name="action" value="save" class="btn btn-danger">
+                        <button type="submit" name="action" value="save" class="btn btn-go">
                             Save config
                         </button>
-                        <button type="submit" name="action" value="reset" class="btn btn-outline-warning">
+                        <button type="submit" name="action" value="reset" class="btn btn-caution">
                             Load default config from GitHub
                         </button>
                     </div>
@@ -70,7 +70,7 @@
                             name="media_wall_scan_cron" value="{{ media_wall_scan_cron }}">
                     </div>
                     <div class="col-auto">
-                        <button type="submit" class="btn btn-sm btn-outline-light">Save</button>
+                        <button type="submit" class="btn btn-sm btn-neutral">Save</button>
                     </div>
                 </form>
 
@@ -87,5 +87,72 @@
         </div>
     </div>
 </div>
+
+<!-- Backup & Restore -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-secondary">
+            <div class="card-body">
+                <h2 class="card-title mb-3">Backup &amp; Restore</h2>
+
+                <p class="text-muted small mb-3">
+                    Create a zip of selected tasks and optionally the gallery-dl config.
+                    Restore by uploading a previous backup zip.
+                </p>
+
+                <h6 class="mb-2">Backup</h6>
+                <form method="post" action="{{ url_for('config_backup') }}" id="backupForm">
+                    <div class="mb-2 d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-neutral" id="bkSelectAll">All</button>
+                        <button type="button" class="btn btn-sm btn-neutral" id="bkDeselectAll">None</button>
+                    </div>
+                    <div class="mb-3" style="max-height:220px;overflow-y:auto;border:1px solid var(--border-color);border-radius:6px;padding:0.5rem;">
+                        {% for task in tasks %}
+                        <div class="form-check">
+                            <input class="form-check-input bk-task-cb" type="checkbox" name="slugs"
+                                value="{{ task.slug }}" id="bk_{{ task.slug }}" checked>
+                            <label class="form-check-label small" for="bk_{{ task.slug }}">{{ task.name }}</label>
+                        </div>
+                        {% else %}
+                        <span class="text-muted small">No tasks yet.</span>
+                        {% endfor %}
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="include_config" value="1"
+                            id="bkIncludeConfig" checked>
+                        <label class="form-check-label small" for="bkIncludeConfig">Include gallery-dl config</label>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-neutral">Download Backup</button>
+                </form>
+
+                <hr class="my-4">
+
+                <h6 class="mb-2">Restore</h6>
+                <p class="text-muted small mb-2">
+                    Upload a backup zip. Task folders are merged (existing files overwritten). Config is overwritten if present.
+                </p>
+                <form method="post" action="{{ url_for('config_restore') }}" enctype="multipart/form-data">
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <input type="file" name="backup_zip" accept=".zip"
+                            class="form-control form-control-sm" style="max-width:320px;" required>
+                        <button type="submit" class="btn btn-sm btn-caution"
+                            onclick="return confirm('Restore will overwrite existing files. Continue?')">
+                            Restore
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('bkSelectAll').addEventListener('click', function() {
+    document.querySelectorAll('.bk-task-cb').forEach(function(cb) { cb.checked = true; });
+});
+document.getElementById('bkDeselectAll').addEventListener('click', function() {
+    document.querySelectorAll('.bk-task-cb').forEach(function(cb) { cb.checked = false; });
+});
+</script>
 
 {% endblock %}

@@ -21,7 +21,7 @@
                             <div class="input-group one-time-input-group" style="max-width:680px;">
                                 <input id="oneTimeUrl" name="url" class="form-control one-time-url" type="url"
                                     placeholder="https://example.com/..." value="{{ entered_url|e }}" required />
-                                <button type="submit" class="btn btn-danger">Fire</button>
+                                <button type="submit" class="btn btn-go">Fire</button>
                             </div>
                         </div>
                     </div>
@@ -45,7 +45,7 @@
                         <h3 class="card-title mb-1">Recent downloads</h3>
                         <p class="text-muted small mb-0">Auto-refreshes every second</p>
                     </div>
-                    <button type="button" id="bOneTimeRecentRefresh" class="btn btn-sm btn-outline-secondary">Refresh</button>
+                    <button type="button" id="bOneTimeRecentRefresh" class="btn btn-sm btn-neutral">Refresh</button>
                 </div>
                 <div id="oneTimeRecentGrid" class="r-grid"></div>
             </div>
@@ -60,12 +60,12 @@
                         <p class="text-muted small mb-0">Shared log for all quick downloads</p>
                     </div>
                     <div class="d-flex align-items-center gap-2">
-                        <a href="{{ url_for('one_time_download_logs') }}" class="btn btn-sm btn-outline-secondary rounded">Download log</a>
+                        <a href="{{ url_for('one_time_download_logs') }}" class="btn btn-sm btn-neutral rounded">Download log</a>
                         <form method="post" action="{{ url_for('one_time_clear_logs') }}" class="m-0">
-                            <button type="submit" class="btn btn-sm btn-outline-secondary rounded">Clear log</button>
+                            <button type="submit" class="btn btn-sm btn-neutral rounded">Clear log</button>
                         </form>
                         <form method="post" action="{{ url_for('one_time_stop') }}" class="m-0">
-                            <button type="submit" id="bOneTimeStop" class="btn btn-sm btn-outline-warning rounded" {{ 'disabled' if not running else '' }}>Stop download</button>
+                            <button type="submit" id="bOneTimeStop" class="btn btn-sm btn-destruct rounded" {{ 'disabled' if not running else '' }}>Stop download</button>
                         </form>
                     </div>
                 </div>

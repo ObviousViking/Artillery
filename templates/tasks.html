@@ -4,9 +4,11 @@
 
 <style>
 /* ── Shell: full-height layout ───────────────────────────────────────── */
+/* Override body padding-top (80px) so shell snaps flush under navbar (~60px) */
+body { padding-top: 60px !important; }
 .t-shell {
     display: flex;
-    height: calc(100vh - 80px);
+    height: calc(100vh - 60px);
     overflow: hidden;
 }
 
@@ -39,23 +41,19 @@
 
 /* New task button */
 #btnNew {
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: #22c55e;
+    background: var(--focus-color);
     color: #fff;
     border: none;
-    font-size: 1rem;
-    line-height: 1;
+    border-radius: 5px;
+    padding: 0.22rem 0.65rem;
+    font-size: 0.78rem;
+    font-weight: 600;
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
+    white-space: nowrap;
     flex-shrink: 0;
-    transition: background 0.15s, transform 0.12s;
+    transition: opacity 0.15s;
 }
-#btnNew:hover { background: #16a34a; transform: scale(1.1); }
+#btnNew:hover { opacity: 0.82; }
 
 /* Task search */
 .t-search {
@@ -67,6 +65,49 @@
     font-size: 0.76rem;
     padding: 4px 8px;
     border-radius: 6px;
+}
+
+/* Disk usage footer */
+.t-disk-box {
+    flex-shrink: 0;
+    border-top: 1px solid var(--border-color);
+    padding: 10px 14px;
+    background: var(--bg-tertiary);
+}
+.t-disk-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+.t-disk-label-val {
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--text-primary);
+}
+.t-disk-track {
+    height: 4px;
+    background: var(--border-color);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 5px;
+}
+.t-disk-fill {
+    height: 100%;
+    background: var(--focus-color);
+    border-radius: 2px;
+    transition: width 0.4s ease;
+}
+.t-disk-fill.danger { background: #ef4444; }
+.t-disk-sub {
+    font-size: 0.7rem;
+    color: var(--text-muted);
 }
 
 /* Task list item */
@@ -104,42 +145,100 @@
     min-width: 0;
 }
 .t-item-meta {
-    font-size: 0.69rem;
+    font-size: 0.72rem;
     color: var(--text-muted);
     margin-top: 3px;
-    padding-left: 14px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
     overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
+}
+.t-item-meta-sep { color: var(--border-input); flex-shrink: 0; }
+
+/* ── Action buttons ───────────────────────────────────────────────────── */
+.t-btn {
+    border-radius: 5px;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    border: 1px solid transparent;
+    line-height: 1.4;
+    text-decoration: none;
+    display: inline-block;
+    transition: opacity 0.12s;
+}
+.t-btn:hover { opacity: 0.82; }
+
+/* Run / Unpause — green */
+.t-btn-run  { background: #16a34a; border-color: #16a34a; color: #fff; }
+/* Stop — red */
+.t-btn-stop { background: #dc2626; border-color: #dc2626; color: #fff; }
+/* Pause — orange */
+.t-btn-pause { background: var(--focus-color); border-color: var(--focus-color); color: #fff; }
+/* Delete archive / cookies / clear logs / delete task — red */
+.t-btn-warn, .t-btn-muted, .t-btn-danger {
+    background: #dc2626; border-color: #dc2626; color: #fff;
+}
+/* Neutral — download logs, duplicate */
+.t-btn-action {
+    background: var(--bg-tertiary);
+    border-color: var(--border-input);
+    color: var(--text-primary);
 }
 
-/* ── Sidebar status badge ────────────────────────────────────────────── */
-@keyframes sdot-pulse { 0%,100%{opacity:1} 50%{opacity:.2} }
-.t-item-st {
-    font-size: 0.65rem;
-    font-weight: 700;
+/* Action rows */
+.t-actions-primary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+.t-actions-danger {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border-color);
+}
+.t-actions-danger .ms-auto { margin-left: auto; }
+
+/* ── Sidebar status dot ──────────────────────────────────────────────── */
+@keyframes sdot-pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+.t-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
     flex-shrink: 0;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    padding: 2px 7px;
-    border-radius: 100px;
-    line-height: 1.7;
-    white-space: nowrap;
+    display: inline-block;
 }
-.t-item-st.running  { color: #2563eb; background: rgba(59,130,246,0.16); animation: sdot-pulse 1.3s ease-in-out infinite; }
-.t-item-st.error    { color: #dc2626; background: rgba(239,68,68,0.16); }
-.t-item-st.complete { color: #16a34a; background: rgba(34,197,94,0.16); }
-.t-item-st.idle-ok  { color: #16a34a; background: rgba(34,197,94,0.16); }
-.t-item-st.paused   { color: #b45309; background: rgba(245,158,11,0.16); }
-.t-item-st.idle     { color: #6b7280; background: rgba(107,114,128,0.14); }
+.t-dot.running  { background: #22c55e; box-shadow: 0 0 4px #22c55e; animation: sdot-pulse 1.4s ease-in-out infinite; }
+.t-dot.error    { background: #ef4444; }
+.t-dot.complete { background: #22c55e; }
+.t-dot.idle-ok  { background: #22c55e; }
+.t-dot.paused   { background: #f59e0b; }
+.t-dot.idle     { background: #4b5563; }
 
-/* Dark mode: slightly lighter text so badges pop on dark sidebar */
-[data-theme="dark"] .t-item-st.running  { color: #60a5fa; }
-[data-theme="dark"] .t-item-st.error    { color: #f87171; }
-[data-theme="dark"] .t-item-st.complete { color: #4ade80; }
-[data-theme="dark"] .t-item-st.idle-ok  { color: #4ade80; }
-[data-theme="dark"] .t-item-st.paused   { color: #fbbf24; }
-[data-theme="dark"] .t-item-st.idle     { color: #9ca3af; }
+/* ── Panel header status pill ────────────────────────────────────────── */
+.t-det-status {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.17rem 0.55rem;
+    border-radius: 999px;
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
+}
+.t-det-status.running  { background: rgba(34,197,94,0.14);  color: #22c55e;  border: 1px solid rgba(34,197,94,0.3); }
+.t-det-status.error    { background: rgba(239,68,68,0.12);  color: #ef4444;  border: 1px solid rgba(239,68,68,0.3); }
+.t-det-status.complete,
+.t-det-status.idle-ok  { background: rgba(34,197,94,0.08);  color: #16a34a;  border: 1px solid rgba(34,197,94,0.2); }
+.t-det-status.paused   { background: rgba(245,158,11,0.12); color: #f59e0b;  border: 1px solid rgba(245,158,11,0.3); }
+.t-det-status.idle     { background: var(--bg-tertiary);    color: var(--text-muted); border: 1px solid var(--border-color); }
+[data-theme="dark"] .t-det-status.complete,
+[data-theme="dark"] .t-det-status.idle-ok  { color: #4ade80; }
 
 /* ── Main area ───────────────────────────────────────────────────────── */
 .t-main {
@@ -197,11 +296,11 @@
 .t-det-name {
     font-size: 0.95rem;
     font-weight: 600;
-    flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     min-width: 0;
+    max-width: 70%;
 }
 /* Tabs */
 .t-tabs {
@@ -257,8 +356,8 @@
 /* ── Recent downloads grid ───────────────────────────────────────────── */
 .r-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-    gap: 0.6rem;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.75rem;
 }
 .r-item {
     display: flex;
@@ -280,7 +379,7 @@ a.r-item:hover {
 }
 .r-item img {
     width: 100%;
-    height: 100px;
+    height: 180px;
     object-fit: contain;
     border-radius: 5px;
     display: block;
@@ -297,9 +396,9 @@ a.r-item:hover {
     width: 100%;
 }
 .r-item-video {
-    height: 100px;
+    height: 180px;
     justify-content: center;
-    font-size: 1.6rem;
+    font-size: 2rem;
     opacity: 0.45;
 }
 
@@ -327,11 +426,17 @@ a.r-item:hover {
   <!-- ── Left sidebar ─────────────────────────────────────────────────── -->
   <aside class="t-sidebar">
     <div class="t-sidebar-hd">
-      <button type="button" id="btnNew" title="New task">+</button>
+      <span>{{ tasks|length }} task{{ 's' if tasks|length != 1 else '' }}</span>
+      <button type="button" id="btnNew">+ New</button>
     </div>
-    <div class="t-search">
-      <input type="search" id="taskSearch" class="form-control"
-             placeholder="Filter tasks…" autocomplete="off" spellcheck="false"/>
+    <div class="t-search" style="position:relative;">
+      <input type="text" id="taskSearch" class="form-control"
+             placeholder="Filter tasks…" autocomplete="off" spellcheck="false"
+             style="padding-right:2rem;"/>
+      <button type="button" id="taskSearchClear"
+              style="display:none;position:absolute;right:0.4rem;top:50%;transform:translateY(-50%);
+                     background:none;border:none;padding:0;line-height:1;font-size:1rem;
+                     color:var(--text-muted);cursor:pointer;" aria-label="Clear search">&#x2715;</button>
     </div>
 
     <div class="t-list">
@@ -354,19 +459,25 @@ a.r-item:hover {
           data-urls-api="/tasks/{{ task.slug|e }}/urls"
           data-has-archive="{{ '1' if task.has_archive else '0' }}"
           data-has-cookies="{{ '1' if task.has_cookies else '0' }}"
-          data-next-run="{{ (task.next_run or '')|e }}">
+          data-next-run="{{ (task.next_run or '')|e }}"
+          data-last-error="{{ (task.last_error or '')|e }}"
+          data-timeout="{{ (task.timeout or '')|e }}"
+          data-history-api="/tasks/{{ task.slug|e }}/history">
           <div class="t-item-row">
             <span class="t-item-name">{{ task.name }}</span>
-            <span class="t-item-st {{ display_st }}" data-sstatus>{{ st }}</span>
           </div>
           <div class="t-item-meta">
+            <span class="t-dot {{ display_st }}" data-sstatus></span>
+            <span data-stext>{{ st }}</span>
             {%- if uc -%}
-              {%- if uc >= 1000000 -%}{{ "%.1f"|format(uc/1000000) }}M URLs
-              {%- elif uc >= 1000 -%}{{ "{:,}".format(uc) }} URLs
-              {%- else -%}{{ uc }} URL{{ "s" if uc != 1 else "" }}
+              <span class="t-item-meta-sep">&middot;</span>
+              {%- if uc >= 1000000 -%}<span>{{ "%.1f"|format(uc/1000000) }}M URLs</span>
+              {%- elif uc >= 1000 -%}<span>{{ "{:,}".format(uc) }} URLs</span>
+              {%- else -%}<span>{{ uc }} URL{{ "s" if uc != 1 else "" }}</span>
               {%- endif -%}
-              {%- if task.schedule %} &middot; {{ task.schedule }}{% endif -%}
-            {%- elif task.schedule -%}{{ task.schedule }}
+            {%- endif -%}
+            {%- if task.schedule -%}
+              <span class="t-item-meta-sep">&middot;</span><span class="t-item-next"></span>
             {%- endif -%}
           </div>
         </button>
@@ -374,6 +485,18 @@ a.r-item:hover {
       {% else %}
         <div class="p-3 text-center" style="font-size:0.8rem;color:var(--text-muted);">No tasks yet.</div>
       {% endif %}
+    </div>
+
+    <!-- Disk usage footer -->
+    <div class="t-disk-box" id="diskBox">
+        <div class="t-disk-label">
+            <span>Downloads disk</span>
+            <span class="t-disk-label-val" id="diskVal">—</span>
+        </div>
+        <div class="t-disk-track">
+            <div class="t-disk-fill" id="diskFill" style="width:0%"></div>
+        </div>
+        <div class="t-disk-sub" id="diskSub">Loading…</div>
     </div>
   </aside>
 
@@ -400,9 +523,13 @@ a.r-item:hover {
               <div class="form-text">Folder: <code>/data/tasks/&lt;name&gt;</code></div>
             </div>
             <div class="mb-3">
-              <label class="form-label" for="cUrls">URLs <span class="text-muted fw-normal">(one per line)</span></label>
+              <label class="form-label" for="cUrls">URLs <span class="text-muted fw-normal">(one per line, max 100)</span></label>
               <textarea id="cUrls" name="urls" class="form-control form-control-sm" rows="8"
-                placeholder="https://example.com/profile&#10;https://example.com/gallery" required></textarea>
+                placeholder="https://example.com/profile&#10;https://example.com/gallery"></textarea>
+              <div class="mt-2">
+                <label class="form-label small text-muted mb-1">Or upload a .txt file (no limit):</label>
+                <input type="file" id="cUrlsFile" name="urls_file" class="form-control form-control-sm" accept=".txt,.csv"/>
+              </div>
             </div>
             <div class="mb-3">
               <label class="form-label" for="cSched">Cron schedule <span class="text-muted fw-normal">(optional)</span></label>
@@ -440,7 +567,7 @@ a.r-item:hover {
               <div class="form-text">Backend adds <code>--config</code> and <code>--destination</code> if missing.</div>
             </div>
             <input type="hidden" id="cCmdH" name="command"/>
-            <button type="submit" class="btn btn-sm btn-danger">Create task</button>
+            <button type="submit" class="btn btn-sm btn-go">Create task</button>
           </div>
         </div>
       </form>
@@ -453,12 +580,14 @@ a.r-item:hover {
       <div class="t-det-hd">
         <div class="t-det-title">
           <span class="t-det-name" id="dName">—</span>
+          <span class="t-det-status" id="dStatus"></span>
         </div>
         <ul class="t-tabs">
           <li><button class="t-tab on" data-tab="details">Details</button></li>
           <li><button class="t-tab"    data-tab="edit">Edit</button></li>
           <li><button class="t-tab"    data-tab="logs">Logs</button></li>
           <li><button class="t-tab"    data-tab="recent">Recent</button></li>
+          <li><button class="t-tab"    data-tab="stats">Stats</button></li>
         </ul>
       </div>
 
@@ -470,7 +599,7 @@ a.r-item:hover {
           <div id="logBox"><span class="text-muted">Loading&hellip;</span></div>
           <div class="d-flex align-items-center justify-content-between mt-2">
             <small class="text-muted" id="logStatusText">Auto-refreshes every 1 s &middot; last 50 lines shown</small>
-            <button type="button" id="bLogToggle" class="btn btn-sm btn-outline-secondary py-0 px-2">Pause refresh</button>
+            <button type="button" id="bLogToggle" class="btn btn-sm btn-neutral py-0 px-2">Pause refresh</button>
           </div>
         </div>
 
@@ -479,10 +608,15 @@ a.r-item:hover {
           <div class="d-flex align-items-center justify-content-between mb-3">
             <small class="text-muted">Most recent downloads from logs</small>
             <button type="button" id="bRecentRefresh"
-              class="btn btn-sm btn-outline-secondary py-0 px-2"
+              class="btn btn-sm btn-neutral py-0 px-2"
               style="font-size:0.72rem;">&#8635; Refresh</button>
           </div>
           <div id="recentGrid" class="r-grid"></div>
+        </div>
+
+        <!-- Stats -->
+        <div id="tStats" style="display:none;">
+          <div id="statsContent"><span class="text-muted small">Loading&hellip;</span></div>
         </div>
 
         <!-- Details -->
@@ -496,44 +630,54 @@ a.r-item:hover {
             <dd class="col-8" id="dLastRun">Never</dd>
             <dt class="col-4 fw-normal text-muted">URLs</dt>
             <dd class="col-8" id="dUrlCount">—</dd>
+            <dt class="col-4 fw-normal text-muted">Timeout</dt>
+            <dd class="col-8" id="dTimeout">—</dd>
           </dl>
-          <div class="d-flex gap-2 flex-wrap">
+          <div id="dLastError" style="display:none;" class="alert alert-danger small py-2 px-3 mb-3" style="max-width:520px;">
+            <strong>Last error:</strong><br>
+            <pre id="dLastErrorText" class="mb-0 mt-1" style="white-space:pre-wrap;font-size:0.78rem;"></pre>
+          </div>
+          <!-- Primary actions -->
+          <div class="t-actions-primary">
             <form id="fRun" method="post" class="m-0">
               <input type="hidden" name="action" value="run">
-              <button type="submit" id="bRun" class="btn btn-sm btn-success">&#9654; Run</button>
+              <button type="submit" id="bRun" class="t-btn t-btn-run">&#9654; Run</button>
             </form>
             <form id="fStop" method="post" class="m-0" style="display:none;">
               <input type="hidden" name="action" value="stop">
-              <button type="submit" class="btn btn-sm btn-danger">&#9632; Stop</button>
+              <button type="submit" class="t-btn t-btn-stop">&#9632; Stop</button>
             </form>
             <form id="fPause" method="post" class="m-0">
               <input type="hidden" name="action" value="pause">
-              <button type="submit" id="bPause" class="btn btn-sm btn-secondary">&#9646;&#9646; Pause</button>
+              <button type="submit" id="bPause" class="t-btn t-btn-pause">&#9646;&#9646; Pause</button>
             </form>
-            <a id="bDlLogs" href="#" class="btn btn-sm btn-secondary text-white">&#8659; Download Logs</a>
+            <a id="bDlLogs" href="#" class="t-btn t-btn-action" style="text-decoration:none;">Download Logs</a>
+            <form id="fDuplicate" method="post" class="m-0">
+              <input type="hidden" name="action" value="duplicate">
+              <button type="submit" class="t-btn t-btn-action">&#10697; Duplicate</button>
+            </form>
+          </div>
+          <!-- Danger zone -->
+          <div class="t-actions-danger">
             <form id="fClearLogs" method="post" class="m-0"
               onsubmit="return confirm('Clear all logs for this task?')">
               <input type="hidden" name="action" value="clear_logs">
-              <button type="submit" class="btn btn-sm btn-secondary">&#128465; Clear Logs</button>
-            </form>
-            <form id="fDuplicate" method="post" class="m-0">
-              <input type="hidden" name="action" value="duplicate">
-              <button type="submit" class="btn btn-sm btn-secondary">&#10697; Duplicate</button>
-            </form>
-            <form id="fDelete" method="post" class="m-0"
-              onsubmit="return confirm('Delete this task? Its folder and logs will be removed.')">
-              <input type="hidden" name="action" value="delete">
-              <button type="submit" class="btn btn-sm btn-danger">&#128465; Delete Task</button>
+              <button type="submit" class="t-btn t-btn-muted">Clear Logs</button>
             </form>
             <form id="fDeleteArchive" method="post" class="m-0"
               onsubmit="return confirm('Delete archive.sqlite? gallery-dl will re-download previously seen items on next run.')">
               <input type="hidden" name="action" value="delete_archive">
-              <button type="submit" id="bDelArchive" class="btn btn-sm btn-warning" style="display:none;">&#128465; Delete Archive</button>
+              <button type="submit" id="bDelArchive" class="t-btn t-btn-warn" style="display:none;">Delete Archive</button>
             </form>
             <form id="fDeleteCookies" method="post" class="m-0"
               onsubmit="return confirm('Delete cookies.txt for this task?')">
               <input type="hidden" name="action" value="delete_cookies">
-              <button type="submit" id="bDelCookies" class="btn btn-sm btn-warning" style="display:none;">&#128465; Delete Cookies</button>
+              <button type="submit" id="bDelCookies" class="t-btn t-btn-warn" style="display:none;">Delete Cookies</button>
+            </form>
+            <form id="fDelete" method="post" class="m-0 ms-auto"
+              onsubmit="return confirm('Delete this task? Its folder and logs will be removed.')">
+              <input type="hidden" name="action" value="delete">
+              <button type="submit" class="t-btn t-btn-danger">&#128465; Delete Task</button>
             </form>
           </div>
         </div>
@@ -559,12 +703,16 @@ a.r-item:hover {
                   <!-- Shown until URLs are loaded -->
                   <div id="urlGate" class="url-gate">
                     <p id="urlGateMsg" class="text-muted small mb-2"></p>
-                    <button type="button" id="bLoadUrls" class="btn btn-sm btn-outline-secondary"
+                    <button type="button" id="bLoadUrls" class="btn btn-sm btn-neutral"
                       style="display:none;">Load for editing</button>
                   </div>
                   <!-- Hidden until loaded -->
                   <textarea id="eUrls" name="urls" class="form-control form-control-sm"
                     rows="8" style="display:none;"></textarea>
+                  <div class="mt-2">
+                    <label class="form-label small text-muted mb-1">Or upload a .txt file to replace (no limit):</label>
+                    <input type="file" id="eUrlsFile" name="urls_file" class="form-control form-control-sm" accept=".txt,.csv"/>
+                  </div>
                 </div>
 
                 <div class="mb-3">
@@ -604,7 +752,7 @@ a.r-item:hover {
                   <div class="form-text">Backend adds <code>--config</code> and <code>--destination</code> if missing.</div>
                 </div>
                 <input type="hidden" id="eCmdH" name="command"/>
-                <button type="submit" class="btn btn-sm btn-danger">Save changes</button>
+                <button type="submit" class="btn btn-sm btn-go">Save changes</button>
               </div>
             </div>
           </form>
@@ -644,14 +792,16 @@ a.r-item:hover {
     /* ── Refs ─────────────────────────────────────────────────────────── */
     var pEmpty = $('pEmpty'), pNew = $('pNew'), pTask = $('pTask');
     var btnNew = $('btnNew');
-    var dName = $('dName');
-    var tLogs = $('tLogs'), tDetails = $('tDetails'), tEdit = $('tEdit'), tRecent = $('tRecent');
+    var dName = $('dName'), dStatus = $('dStatus');
+    var tLogs = $('tLogs'), tDetails = $('tDetails'), tEdit = $('tEdit'), tRecent = $('tRecent'), tStats = $('tStats');
     var logBox = $('logBox'), recentGrid = $('recentGrid'), bRecentRefresh = $('bRecentRefresh'), bLogToggle = $('bLogToggle');
     var fRun = $('fRun'), fPause = $('fPause'), fDelete = $('fDelete'), fDeleteArchive = $('fDeleteArchive');
     var fDeleteCookies = $('fDeleteCookies'), fStop = $('fStop'), fClearLogs = $('fClearLogs');
     var bRun = $('bRun'), bPause = $('bPause'), bDlLogs = $('bDlLogs'), bDelArchive = $('bDelArchive');
     var bDelCookies = $('bDelCookies'), eCookieStatus = $('eCookieStatus');
-    var dSched = $('dSched'), dNextRun = $('dNextRun'), dLastRun = $('dLastRun'), dUrlCount = $('dUrlCount');
+    var dSched = $('dSched'), dNextRun = $('dNextRun'), dLastRun = $('dLastRun'), dUrlCount = $('dUrlCount'), dTimeout = $('dTimeout');
+    var dLastError = $('dLastError'), dLastErrorText = $('dLastErrorText');
+    var statsContent = $('statsContent');
     var eName = $('eName'), eUrls = $('eUrls'), eSched = $('eSched');
     var eCmd = $('eCmd'), eCmdH = $('eCmdH'), eKeepUrls = $('eKeepUrls');
     var eUrlCntLbl = $('eUrlCntLbl'), urlGate = $('urlGate');
@@ -708,6 +858,7 @@ a.r-item:hover {
         tDetails.style.display = t === 'details' ? '' : 'none';
         tEdit.style.display    = t === 'edit'    ? '' : 'none';
         tRecent.style.display  = t === 'recent'  ? '' : 'none';
+        tStats.style.display   = t === 'stats'   ? '' : 'none';
         document.querySelectorAll('.t-tab').forEach(function (b) {
             b.classList.toggle('on', b.dataset.tab === t);
         });
@@ -717,6 +868,71 @@ a.r-item:hover {
             else fetchLog(api);
         } else stopLog();
         if (t === 'recent' && selSlug) loadRecent();
+        if (t === 'stats'  && selSlug) loadStats();
+    }
+
+    var selHistoryApi = '';
+    function loadStats() {
+        if (!selSlug) return;
+        var slug = selSlug;
+        var btn  = document.querySelector('.t-item[data-slug="' + slug + '"]');
+        var api  = btn ? btn.dataset.historyApi : '/tasks/' + slug + '/history';
+        statsContent.innerHTML = '<span class="text-muted small">Loading&hellip;</span>';
+        Promise.all([
+            fetch(api).then(function (r) { return r.json(); }),
+            fetch('/tasks/' + slug + '/logs/archived').then(function (r) { return r.json(); })
+        ]).then(function (results) {
+            var d    = results[0];
+            var arch = results[1];
+            var html = '';
+
+            if (!d.runs || !d.runs.length) {
+                html += '<p class="text-muted small">No runs recorded yet.</p>';
+            } else {
+                var total  = d.runs.length;
+                var ok     = d.runs.filter(function (r) { return r.success; }).length;
+                var pct    = total ? Math.round(ok / total * 100) : 0;
+                var avgDur = total ? (d.runs.reduce(function (s, r) { return s + r.duration; }, 0) / total) : 0;
+                html += '<div class="d-flex gap-4 mb-3 small">'
+                    + '<span><strong>' + total + '</strong> runs</span>'
+                    + '<span><strong>' + pct + '%</strong> success</span>'
+                    + '<span>avg <strong>' + fmtDur(avgDur) + '</strong></span>'
+                    + '</div>'
+                    + '<table class="table table-sm table-borderless small" style="max-width:480px;">'
+                    + '<thead><tr><th>Time</th><th>Result</th><th>Duration</th></tr></thead><tbody>';
+                d.runs.slice(0, 20).forEach(function (r) {
+                    var res = r.stopped ? '<span class="text-warning">stopped</span>'
+                            : r.success ? '<span class="text-success">ok</span>'
+                            : '<span class="text-danger">failed</span>';
+                    html += '<tr><td>' + fmtDate(r.ts) + '</td><td>' + res + '</td><td>' + fmtDur(r.duration) + '</td></tr>';
+                });
+                html += '</tbody></table>';
+            }
+
+            if (arch.files && arch.files.length) {
+                html += '<hr class="my-3"><p class="small fw-semibold mb-2">Log Archive</p>'
+                    + '<ul class="list-unstyled small mb-0">';
+                arch.files.forEach(function (f) {
+                    var ts  = f.ts.replace('T', ' ').replace(/(\d{2})(\d{2})(\d{2})$/, '$1:$2:$3');
+                    var sz  = f.size < 1024 ? f.size + ' B'
+                            : f.size < 1048576 ? Math.round(f.size / 1024) + ' KB'
+                            : (f.size / 1048576).toFixed(1) + ' MB';
+                    html += '<li class="mb-1"><a href="/tasks/' + slug + '/logs/archived/' + f.name + '" class="text-decoration-none">'
+                        + ts + '</a> <span class="text-muted">(' + sz + ')</span></li>';
+                });
+                html += '</ul>';
+            }
+
+            statsContent.innerHTML = html;
+        }).catch(function () {
+            statsContent.innerHTML = '<span class="text-danger small">Failed to load history.</span>';
+        });
+    }
+
+    function fmtDur(s) {
+        if (s < 60)  return Math.round(s) + 's';
+        if (s < 3600) return Math.round(s / 60) + 'm';
+        return (s / 3600).toFixed(1) + 'h';
     }
 
     /* ── Task selection ───────────────────────────────────────────────── */
@@ -735,12 +951,23 @@ a.r-item:hover {
 
         /* Header */
         var st = btn.dataset.status || 'idle';
+        var dst = displaySt(st, btn.dataset.lastRun);
         dName.textContent = btn.dataset.name;
+        dStatus.className = 't-det-status ' + dst;
+        dStatus.textContent = st;
 
         /* Details tab */
         dSched.textContent    = btn.dataset.schedule || '—';
         dLastRun.textContent  = fmtDate(btn.dataset.lastRun);
         dUrlCount.textContent = fmtN(selUrlCount);
+        dTimeout.textContent  = btn.dataset.timeout ? btn.dataset.timeout + 's' : '—';
+        var lastErr = btn.dataset.lastError || '';
+        if (lastErr && st === 'error') {
+            dLastError.style.display = '';
+            dLastErrorText.textContent = lastErr;
+        } else {
+            dLastError.style.display = 'none';
+        }
 
         /* Action form targets */
         var au = btn.dataset.actionUrl;
@@ -778,10 +1005,10 @@ a.r-item:hover {
     function setPauseBtn(st) {
         if (st === 'paused') {
             bPause.innerHTML = '&#9654; Unpause';
-            bPause.className = 'btn btn-sm btn-warning';
+            bPause.className = 't-btn t-btn-run';
         } else {
             bPause.innerHTML = '&#9646;&#9646; Pause';
-            bPause.className = 'btn btn-sm btn-secondary';
+            bPause.className = 't-btn t-btn-pause';
         }
     }
 
@@ -887,26 +1114,73 @@ a.r-item:hover {
         return text;
     }
 
+    var logSource = null;
+    var logBuffer = '';
+
     function updateLogStatusText() {
         $('logStatusText').textContent = logPolling
-            ? 'Auto-refreshes every 1 s · last 50 lines shown'
-            : 'Refresh paused · last 50 lines shown';
+            ? 'Live · last 50 lines shown'
+            : 'Paused · last 50 lines shown';
     }
 
     function setLogPolling(enabled) {
         logPolling = enabled;
         bLogToggle.textContent = enabled ? 'Pause refresh' : 'Resume refresh';
         updateLogStatusText();
+        if (!enabled) {
+            _closeLogSource();
+        } else if (logApi) {
+            _openLogSource(logApi);
+        }
+    }
+
+    function _renderLog(content) {
+        logBox.innerHTML = '<pre>' + colorize(content || '(no output yet)') + '</pre>';
+        if (autoScroll) logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function _closeLogSource() {
+        if (logSource) { logSource.close(); logSource = null; }
+        if (logTimer)  { clearInterval(logTimer); logTimer = null; }
+    }
+
+    function _openLogSource(api) {
+        _closeLogSource();
+        var sseUrl = api.replace('/logs', '/logs/stream');
+        var src = new EventSource(sseUrl);
+        logSource = src;
+        src.onmessage = function (e) {
+            try {
+                var d = JSON.parse(e.data);
+                if (d.reset) {
+                    logBuffer = d.content || '';
+                } else {
+                    logBuffer += d.content || '';
+                    var lines = logBuffer.split('\n');
+                    if (lines.length > 55) {
+                        logBuffer = lines.slice(lines.length - 50).join('\n');
+                    }
+                }
+                _renderLog(logBuffer);
+            } catch (_) {}
+        };
+        src.onerror = function () {
+            // SSE dropped — fall back to polling until next startLog()
+            _closeLogSource();
+            logTimer = setInterval(function () { fetchLog(api); }, 3000);
+        };
     }
 
     function fetchLog(api) {
         fetch(api + '?tail=50')
             .then(function (r) { return r.json(); })
             .then(function (d) {
-                logBox.innerHTML = d.error
-                    ? '<span class="text-danger">' + d.error + '</span>'
-                    : '<pre>' + colorize(d.content || '(no output yet)') + '</pre>';
-                if (autoScroll) logBox.scrollTop = logBox.scrollHeight;
+                if (d.error) {
+                    logBox.innerHTML = '<span class="text-danger">' + d.error + '</span>';
+                } else {
+                    logBuffer = d.content || '';
+                    _renderLog(logBuffer);
+                }
             })
             .catch(function (e) {
                 logBox.innerHTML = '<span class="text-danger">' + e.message + '</span>';
@@ -914,13 +1188,17 @@ a.r-item:hover {
     }
 
     function startLog(api) {
-        stopLog();
+        _closeLogSource();
+        logBuffer = '';
         logApi = api;
-        fetchLog(api);
-        logTimer = setInterval(function () { fetchLog(api); }, 1000);
+        if (logPolling) {
+            _openLogSource(api);
+        } else {
+            fetchLog(api);
+        }
     }
     function stopLog() {
-        if (logTimer) { clearInterval(logTimer); logTimer = null; }
+        _closeLogSource();
     }
 
     /* ── Edit form checkboxes ─────────────────────────────────────────── */
@@ -963,17 +1241,22 @@ a.r-item:hover {
                     if (btn) {
                         if (t.last_run) btn.dataset.lastRun = t.last_run;
                         btn.dataset.nextRun = t.next_run || '';
-                        var lbl = btn.querySelector('[data-sstatus]');
-                        if (lbl) {
-                            lbl.className   = 't-item-st ' + displaySt(t.status, btn.dataset.lastRun);
-                            lbl.textContent = t.status;
-                        }
+                        var ds = displaySt(t.status, btn.dataset.lastRun);
+                        var dot = btn.querySelector('[data-sstatus]');
+                        if (dot) dot.className = 't-dot ' + ds;
+                        var stxt = btn.querySelector('[data-stext]');
+                        if (stxt) stxt.textContent = t.status;
                         btn.dataset.status = t.status;
                         btn.dataset.hasArchive = t.has_archive ? '1' : '0';
                         btn.dataset.hasCookies = t.has_cookies ? '1' : '0';
+                        var nextEl = btn.querySelector('.t-item-next');
+                        if (nextEl) nextEl.textContent = fmtNextRun(t.next_run);
                     }
                     if (t.slug === selSlug) {
                         var isRunning = (t.status === 'running');
+                        var panelDs = displaySt(t.status, t.last_run);
+                        dStatus.className = 't-det-status ' + panelDs;
+                        dStatus.textContent = t.status;
                         fRun.style.display  = isRunning ? 'none' : '';
                         fStop.style.display = isRunning ? '' : 'none';
                         setPauseBtn(t.status);
@@ -996,6 +1279,8 @@ a.r-item:hover {
 
         document.querySelectorAll('.t-item').forEach(function (btn) {
             btn.addEventListener('click', function () { selectTask(this); });
+            var nextEl = btn.querySelector('.t-item-next');
+            if (nextEl) nextEl.textContent = fmtNextRun(btn.dataset.nextRun);
         });
 
         btnNew.addEventListener('click', function () {
@@ -1037,11 +1322,19 @@ a.r-item:hover {
             autoScroll = logBox.scrollTop + logBox.clientHeight >= logBox.scrollHeight - 10;
         });
 
+        var taskSearchClear = $('taskSearchClear');
         taskSearch.addEventListener('input', function () {
             var q = this.value.trim().toLowerCase();
+            taskSearchClear.style.display = q ? '' : 'none';
             document.querySelectorAll('.t-item').forEach(function (btn) {
                 btn.style.display = (!q || btn.dataset.name.toLowerCase().includes(q)) ? '' : 'none';
             });
+        });
+        taskSearchClear.addEventListener('click', function () {
+            taskSearch.value = '';
+            taskSearchClear.style.display = 'none';
+            document.querySelectorAll('.t-item').forEach(function (btn) { btn.style.display = ''; });
+            taskSearch.focus();
         });
 
         /* ── Cookies validation on submit ─────────────────────────────── */
@@ -1088,7 +1381,36 @@ a.r-item:hover {
         }
         pollStatus();
         setInterval(pollStatus, 5000);
+
+        loadDisk();
+        setInterval(loadDisk, 60000);
     });
+
+    /* ── Disk usage ───────────────────────────────────────────────────── */
+    function fmtBytes(b) {
+        if (b >= 1e12) return (b / 1e12).toFixed(1) + ' TB';
+        if (b >= 1e9)  return (b / 1e9).toFixed(1)  + ' GB';
+        if (b >= 1e6)  return (b / 1e6).toFixed(1)  + ' MB';
+        return Math.round(b / 1024) + ' KB';
+    }
+    function loadDisk() {
+        fetch('/api/disk')
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(d) {
+                if (!d || d.error) return;
+                var pct = d.total > 0 ? (d.used / d.total * 100) : 0;
+                var fill = document.getElementById('diskFill');
+                fill.style.width = pct.toFixed(1) + '%';
+                fill.className = 't-disk-fill' + (pct >= 90 ? ' danger' : '');
+                document.getElementById('diskVal').textContent =
+                    fmtBytes(d.used) + ' / ' + fmtBytes(d.total);
+                document.getElementById('diskSub').textContent =
+                    fmtBytes(d.free) + ' free (' + pct.toFixed(0) + '% used)';
+            })
+            .catch(function() {
+                document.getElementById('diskSub').textContent = 'Unavailable';
+            });
+    }
 
 }());
 </script>

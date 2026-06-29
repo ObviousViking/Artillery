@@ -2,8 +2,8 @@ FROM python:3.12-slim
 
 # Install cron and gosu properly (from official gosu install script)
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
-        cron \
         wget \
         ca-certificates \
         libjpeg62-turbo \
@@ -39,4 +39,4 @@ ENV FLASK_APP=app.py \
 EXPOSE 80
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["gunicorn", "-b", "0.0.0.0:80", "--control-socket", "/tmp/gunicorn.sock", "app:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:80", "--workers", "1", "--worker-class", "gthread", "--threads", "16", "--timeout", "120", "app:app"]

@@ -426,6 +426,75 @@ code {
     outline-offset: 2px;
 }
 
+/* ── Semantic button system ──────────────────────────────────────────────
+   Use these instead of btn-outline-* which breaks in light mode.
+   btn-act      → orange fill  — primary actions (save, open, create, upload)
+   btn-neutral  → theme fill   — secondary actions (back, copy, all/none)
+   btn-destruct → red fill     — destructive (delete, stop)
+   btn-caution  → amber fill   — caution (restore, reset, load from GitHub)
+   ─────────────────────────────────────────────────────────────────────── */
+
+/* Fix: <a class="btn"> inherits the global link colour in light mode */
+a.btn { color: inherit !important; }
+
+/* Green — save, run, open, manage, create, upload */
+.btn-go {
+    background-color: #16a34a;
+    border-color: #16a34a;
+    color: #fff !important;
+}
+.btn-go:hover, .btn-go:focus, .btn-go:active {
+    background-color: #15803d;
+    border-color: #15803d;
+    color: #fff !important;
+    opacity: 1;
+}
+
+/* Orange — pause */
+.btn-act {
+    background-color: var(--focus-color);
+    border-color: var(--focus-color);
+    color: #fff !important;
+}
+.btn-act:hover, .btn-act:focus, .btn-act:active {
+    background-color: #ea6c0a;
+    border-color: #ea6c0a;
+    color: #fff !important;
+    opacity: 1;
+}
+
+.btn-neutral {
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-input);
+    color: var(--text-primary) !important;
+}
+.btn-neutral:hover, .btn-neutral:focus {
+    background-color: var(--border-input);
+    color: var(--text-primary) !important;
+}
+
+.btn-destruct {
+    background-color: #dc2626;
+    border-color: #dc2626;
+    color: #fff !important;
+}
+.btn-destruct:hover, .btn-destruct:focus {
+    background-color: #b91c1c;
+    border-color: #b91c1c;
+    color: #fff !important;
+}
+
+.btn-caution {
+    background-color: #d97706;
+    border-color: #d97706;
+    color: #fff !important;
+}
+.btn-caution:hover, .btn-caution:focus {
+    background-color: #b45309;
+    border-color: #b45309;
+    color: #fff !important;
+}
+
 /* Badges and pill styles */
 .badge {
     background-color: var(--focus-color);
