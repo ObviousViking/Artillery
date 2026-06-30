@@ -88,6 +88,46 @@
     </div>
 </div>
 
+<!-- Task Scheduler -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-secondary">
+            <div class="card-body">
+                <h2 class="card-title mb-3">Task Scheduler</h2>
+
+                <p class="text-muted small mb-3">
+                    Limit how many tasks run at the same time. Each task spawns a <code>gallery-dl</code>
+                    process — the real bottleneck is your download bandwidth and the risk of rate limiting
+                    or IP bans from target sites. Tasks beyond the limit queue up as threads and start
+                    automatically as slots free.
+                </p>
+
+                <form method="post" action="{{ url_for('config_page') }}" class="row g-2 align-items-end">
+                    <input type="hidden" name="action" value="task_settings">
+                    <div class="col-auto">
+                        <label class="form-label small mb-1" for="taskConcurrentMax">Max concurrent tasks</label>
+                        <input type="number" class="form-control form-control-sm" id="taskConcurrentMax"
+                            name="task_concurrent_max" value="{{ task_concurrent_max }}"
+                            min="1" max="50" style="width:80px;">
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-sm btn-neutral">Save</button>
+                    </div>
+                    <div class="col-12 mt-2">
+                        <div class="form-text">
+                            <strong>1–3</strong> — low-power devices (Raspberry Pi) or slow connections &nbsp;·&nbsp;
+                            <strong>5</strong> — typical home server (default) &nbsp;·&nbsp;
+                            <strong>8–10</strong> — 8+ core machine with fast network &nbsp;·&nbsp;
+                            <strong>15+</strong> — only if targets allow it (high rate-limit risk).
+                            Change applies immediately — no restart needed.
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Backup & Restore -->
 <div class="row mt-4">
     <div class="col-12">

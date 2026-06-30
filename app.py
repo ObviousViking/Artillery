@@ -84,6 +84,7 @@ VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
 TASK_TIMEOUT_SECONDS = int(os.environ.get("TASK_TIMEOUT_SECONDS", "0") or "0")
+TASK_CONCURRENT_MAX  = int(os.environ.get("TASK_CONCURRENT_MAX", "5"))
 MAX_ROTATED_LOGS = 5
 
 def _get_task_timeout(task_folder: str) -> Optional[int]:
@@ -186,8 +187,13 @@ MEDIA_WALL_DIR = os.path.join(CONFIG_ROOT, "media_wall")
 MEDIA_WALL_SCAN_CRON_FILE = os.path.join(CONFIG_ROOT, "mediawall_scan_cron.txt")
 MEDIA_WALL_ENABLED_FILE = os.path.join(CONFIG_ROOT, "mediawall_enabled.txt")
 
-MEDIA_WALL_REFRESH_LOCK = threading.Lock()
-_HISTORY_LOCK          = threading.Lock()  # serialises concurrent run_history.jsonl writes
+MEDIA_WALL_REFRESH_LOCK   = threading.Lock()
+_HISTORY_LOCK             = threading.Lock()  # serialises concurrent run_history.jsonl writes
+_task_cond                = threading.Condition(threading.Lock())
+_task_max_concurrent: int = TASK_CONCURRENT_MAX  # overridden from saved file at startup
+_tasks_running: int       = 0   # currently executing gallery-dl processes
+_tasks_queued: int        = 0   # threads waiting for a concurrency slot
+_TASK_CONCURRENT_MAX_FILE = os.path.join(CONFIG_ROOT, "task_concurrent_max.txt")
 
 # Disable aggressive caching of send_from_directory responses
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
@@ -405,6 +411,47 @@ def _unschedule_task(slug: str) -> None:
         _bg_scheduler.remove_job(f"task_{slug}")
     except Exception:
         app.logger.debug("Scheduler job task_%s not found (already removed or never added)", slug)
+
+def _acquire_task_slot() -> None:
+    global _tasks_queued, _tasks_running
+    with _task_cond:
+        _tasks_queued += 1
+        while _tasks_running >= _task_max_concurrent:
+            _task_cond.wait()
+        _tasks_queued -= 1
+        _tasks_running += 1
+
+def _release_task_slot() -> None:
+    global _tasks_running
+    with _task_cond:
+        _tasks_running -= 1
+        _task_cond.notify()
+
+def _set_task_max_concurrent(n: int) -> None:
+    global _task_max_concurrent
+    n = max(1, min(n, 50))
+    with _task_cond:
+        _task_max_concurrent = n
+        _task_cond.notify_all()
+    try:
+        Path(_TASK_CONCURRENT_MAX_FILE).write_text(str(n))
+    except Exception:
+        app.logger.warning("Could not save task_concurrent_max setting", exc_info=True)
+
+def _load_task_concurrent_max_from_file() -> None:
+    global _task_max_concurrent
+    try:
+        val = Path(_TASK_CONCURRENT_MAX_FILE).read_text().strip()
+        if val.isdigit():
+            v = int(val)
+            if 1 <= v <= 50:
+                with _task_cond:
+                    _task_max_concurrent = v
+    except FileNotFoundError:
+        pass
+    except Exception:
+        app.logger.debug("Could not load task_concurrent_max from file", exc_info=True)
+
 
 def _load_all_schedules() -> None:
     if not os.path.isdir(TASKS_ROOT):
@@ -1169,6 +1216,15 @@ def api_disk():
         return jsonify({"error": "unavailable"}), 500
 
 
+@app.route("/api/queue")
+def api_queue():
+    return jsonify({
+        "running": _tasks_running,
+        "queued": _tasks_queued,
+        "max_concurrent": _task_max_concurrent,
+    })
+
+
 @app.route("/api/tasks")
 def api_tasks():
     """Return a lightweight JSON representation of tasks for front-end polling."""
@@ -1224,6 +1280,13 @@ def config_page():
                 flash("Media wall schedule saved.", "success")
             else:
                 flash("Invalid cron schedule.", "error")
+        elif action == "task_settings":
+            try:
+                v = int(request.form.get("task_concurrent_max", "5"))
+                _set_task_max_concurrent(v)
+                flash("Task concurrency limit updated.", "success")
+            except (ValueError, TypeError):
+                flash("Invalid value for concurrent task limit.", "error")
 
     return render_template(
         "config.html",
@@ -1231,6 +1294,7 @@ def config_page():
         config_path=CONFIG_FILE,
         media_wall_enabled=MEDIA_WALL_ENABLED,
         media_wall_scan_cron=scan_cron,
+        task_concurrent_max=_task_max_concurrent,
         tasks=load_tasks(),
     )
 
@@ -1561,6 +1625,7 @@ def run_one_time_download(url: str):
 
 
 def run_task_background(task_folder: str):
+    _acquire_task_slot()
     ensure_data_dirs(ensure_downloads=True)
 
     lock_path     = os.path.join(task_folder, "lock")
@@ -1587,6 +1652,7 @@ def run_task_background(task_folder: str):
             logf.write("\nNo command configured for this task.\n")
         if os.path.exists(lock_path):
             os.remove(lock_path)
+        _release_task_slot()
         return
 
     if not os.path.exists(urls_file):
@@ -1594,6 +1660,7 @@ def run_task_background(task_folder: str):
             logf.write("\nurls.txt not found for this task.\n")
         if os.path.exists(lock_path):
             os.remove(lock_path)
+        _release_task_slot()
         return
 
     now = dt.datetime.utcnow().isoformat() + "Z"
@@ -1605,6 +1672,7 @@ def run_task_background(task_folder: str):
             logf.write(f"\nFailed to parse command: {exc}\n")
         if os.path.exists(lock_path):
             os.remove(lock_path)
+        _release_task_slot()
         return
 
     env = os.environ.copy()
@@ -1683,6 +1751,7 @@ def run_task_background(task_folder: str):
             app.logger.warning("Could not write error sentinel after task crash for %s", task_folder, exc_info=True)
         _record_run(task_folder, success=False, duration=0, stopped=False)
     finally:
+        _release_task_slot()
         for p in (lock_path, pid_path):
             try:
                 if os.path.exists(p):
@@ -2240,6 +2309,7 @@ def media_file(subpath):
 # ── Start APScheduler (skip double-start under Werkzeug reloader) ──────────────
 if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
     try:
+        _load_task_concurrent_max_from_file()
         _load_all_schedules()
         _bg_scheduler.start()
         atexit.register(lambda: _bg_scheduler.shutdown(wait=False))

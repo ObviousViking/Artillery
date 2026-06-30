@@ -427,6 +427,7 @@ a.r-item:hover {
   <aside class="t-sidebar">
     <div class="t-sidebar-hd">
       <span>{{ tasks|length }} task{{ 's' if tasks|length != 1 else '' }}</span>
+      <span id="queueBadge" style="display:none;font-size:0.65rem;font-weight:600;letter-spacing:0;text-transform:none;background:var(--focus-color);color:#fff;border-radius:4px;padding:0.1rem 0.45rem;"></span>
       <button type="button" id="btnNew">+ New</button>
     </div>
     <div class="t-search" style="position:relative;">
@@ -1384,7 +1385,32 @@ a.r-item:hover {
 
         loadDisk();
         setInterval(loadDisk, 60000);
+
+        loadQueue();
+        setInterval(loadQueue, 10000);
     });
+
+    /* ── Queue status ─────────────────────────────────────────────────── */
+    function loadQueue() {
+        fetch('/api/queue')
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(d) {
+                if (!d) return;
+                var badge = document.getElementById('queueBadge');
+                if (!badge) return;
+                var running = d.running || 0;
+                var queued  = d.queued  || 0;
+                if (running > 0 || queued > 0) {
+                    var txt = running + ' running';
+                    if (queued > 0) txt += ' · ' + queued + ' queued';
+                    badge.textContent = txt;
+                    badge.style.display = '';
+                } else {
+                    badge.style.display = 'none';
+                }
+            })
+            .catch(function() {});
+    }
 
     /* ── Disk usage ───────────────────────────────────────────────────── */
     function fmtBytes(b) {
