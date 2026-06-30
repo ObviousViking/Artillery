@@ -109,6 +109,7 @@ body { padding-top: 60px !important; }
     font-size: 0.7rem;
     color: var(--text-muted);
 }
+.t-queue-fill { background: #16a34a; }
 
 /* Task list item */
 .t-item {
@@ -427,7 +428,6 @@ a.r-item:hover {
   <aside class="t-sidebar">
     <div class="t-sidebar-hd">
       <span>{{ tasks|length }} task{{ 's' if tasks|length != 1 else '' }}</span>
-      <span id="queueBadge" style="display:none;font-size:0.65rem;font-weight:600;letter-spacing:0;text-transform:none;background:var(--focus-color);color:#fff;border-radius:4px;padding:0.1rem 0.45rem;"></span>
       <button type="button" id="btnNew">+ New</button>
     </div>
     <div class="t-search" style="position:relative;">
@@ -486,6 +486,18 @@ a.r-item:hover {
       {% else %}
         <div class="p-3 text-center" style="font-size:0.8rem;color:var(--text-muted);">No tasks yet.</div>
       {% endif %}
+    </div>
+
+    <!-- Task queue footer -->
+    <div class="t-disk-box" id="queueBox">
+        <div class="t-disk-label">
+            <span>Task queue</span>
+            <span class="t-disk-label-val" id="queueVal">0 / {{ task_concurrent_max }} running</span>
+        </div>
+        <div class="t-disk-track">
+            <div class="t-disk-fill t-queue-fill" id="queueFill" style="width:0%"></div>
+        </div>
+        <div class="t-disk-sub" id="queueSub">Idle</div>
     </div>
 
     <!-- Disk usage footer -->
@@ -1387,7 +1399,7 @@ a.r-item:hover {
         setInterval(loadDisk, 60000);
 
         loadQueue();
-        setInterval(loadQueue, 10000);
+        setInterval(loadQueue, 5000);
     });
 
     /* ── Queue status ─────────────────────────────────────────────────── */
@@ -1396,18 +1408,14 @@ a.r-item:hover {
             .then(function(r) { return r.ok ? r.json() : null; })
             .then(function(d) {
                 if (!d) return;
-                var badge = document.getElementById('queueBadge');
-                if (!badge) return;
                 var running = d.running || 0;
                 var queued  = d.queued  || 0;
-                if (running > 0 || queued > 0) {
-                    var txt = running + ' running';
-                    if (queued > 0) txt += ' · ' + queued + ' queued';
-                    badge.textContent = txt;
-                    badge.style.display = '';
-                } else {
-                    badge.style.display = 'none';
-                }
+                var max     = d.max_concurrent || 1;
+                var pct = max > 0 ? Math.min(100, (running / max) * 100) : 0;
+                document.getElementById('queueVal').textContent = running + ' / ' + max + ' running';
+                document.getElementById('queueFill').style.width = pct.toFixed(1) + '%';
+                document.getElementById('queueSub').textContent =
+                    queued > 0 ? (queued + ' task' + (queued !== 1 ? 's' : '') + ' queued') : 'Idle';
             })
             .catch(function() {});
     }

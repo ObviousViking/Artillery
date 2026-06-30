@@ -1203,7 +1203,7 @@ def tasks():
 
     ensure_data_dirs(ensure_downloads=False)
     tasks_list = load_tasks()
-    return render_template("tasks.html", tasks=tasks_list)
+    return render_template("tasks.html", tasks=tasks_list, task_concurrent_max=_task_max_concurrent)
 
 
 @app.route("/api/disk")
