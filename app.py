@@ -130,6 +130,15 @@ if DEBUG_REQUEST_TIMING:
                             request.method, request.path, resp.status_code, dt_ms)
         return resp
 
+# A pinned/backgrounded tab can sit idle for hours (including through OS
+# sleep), so any pooled keep-alive connection the browser reuses is long
+# dead server-side by then. Forcing a fresh connection per request avoids
+# gunicorn's sync worker misparsing a reused stale socket as "Bad Request".
+@app.after_request
+def _no_keepalive(resp):
+    resp.headers["Connection"] = "close"
+    return resp
+
 # ---------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------
@@ -197,6 +206,10 @@ def _set_media_wall_scan_cron(expr: str) -> None:
 
 # In-memory cache to reduce repeated disk reads on /tasks
 _TASK_CACHE = {}
+
+# Guards the pause/resume toggle below so two overlapping requests
+# (e.g. two open tabs) can't race the check-then-act and cancel each other out.
+_PAUSE_LOCK = threading.Lock()
 
 def _task_mtimes(task_path: str) -> dict:
     def _mt(p):
@@ -1048,12 +1061,13 @@ def task_action(slug):
 
     if action == "pause":
         paused_path = os.path.join(task_folder, "paused")
-        if os.path.exists(paused_path):
-            os.remove(paused_path)
-            flash("Task unpaused.", "success")
-        else:
-            Path(paused_path).touch()
-            flash("Task paused.", "success")
+        with _PAUSE_LOCK:
+            if os.path.exists(paused_path):
+                os.remove(paused_path)
+                flash("Task unpaused.", "success")
+            else:
+                Path(paused_path).touch()
+                flash("Task paused.", "success")
         return redirect(url_for("tasks"))
 
     if action == "stop":

@@ -971,6 +971,18 @@ a.r-item:hover {
             });
         });
 
+        /* Guard against double-submit: pause/resume (and the other action forms)
+           toggle server-side state, so a second click before the page navigates
+           away can flip the result right back. Disabling the button on submit
+           stops the resubmit. */
+        [fRun, fStop, fPause, fClearLogs, fDelete, fDeleteArchive].forEach(function (f) {
+            f.addEventListener('submit', function (e) {
+                if (e.defaultPrevented) return; /* confirm() was cancelled */
+                var b = f.querySelector('button[type="submit"]');
+                if (b) b.disabled = true;
+            });
+        });
+
         buildCreateCmd();
         pollStatus();
         setInterval(pollStatus, 5000);
