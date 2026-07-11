@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container-fluid px-4 pb-5">
+    <div class="d-flex align-items-center justify-content-between mt-4 mb-3">
+        <h2 class="mb-0">Kiosks</h2>
+    </div>
+
+    <div class="alert alert-warning border-warning d-flex align-items-start gap-2 mb-4" role="alert" style="font-size:0.875rem;">
+        <span style="font-size:1.1rem;">&#9888;</span>
+        <div>
+            <strong>Under development</strong> — this feature is a work in progress. Ideas and feedback welcome on
+            <a href="https://github.com/obviousviking/artillery/issues" target="_blank" rel="noopener" class="alert-link">GitHub</a>.
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        {% for k in kiosks %}
+        <div class="col-sm-6 col-lg-4">
+            <div class="card shadow-sm border-secondary h-100">
+                <div class="card-body d-flex flex-column">
+                    <h5 class="card-title mb-1">{{ k.name }}</h5>
+                    <p class="text-muted small mb-3">{{ k.image_count }} image{{ 's' if k.image_count != 1 else '' }} &middot; {{ k.interval }}s interval &middot; {{ k.order }}</p>
+                    <div class="d-flex gap-2 mt-auto">
+                        <a href="{{ url_for('kiosk_display', kslug=k.slug) }}" class="btn btn-sm btn-go" target="_blank">Open</a>
+                        <a href="{{ url_for('kiosk_manage', kslug=k.slug) }}" class="btn btn-sm btn-neutral">Manage</a>
+                        <form method="post" action="{{ url_for('kiosk_delete', kslug=k.slug) }}" class="ms-auto"
+                            onsubmit="return confirm('Delete kiosk {{ k.name|e }}?')">
+                            <button type="submit" class="btn btn-sm btn-destruct">Delete</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="col-12">
+            <p class="text-muted">No kiosks yet. Create one below.</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- New kiosk form -->
+    <div class="card shadow-sm border-secondary" style="max-width:480px;">
+        <div class="card-body">
+            <h5 class="card-title mb-3">New Kiosk</h5>
+            <form method="post" action="{{ url_for('kiosks_list') }}">
+                <div class="mb-3">
+                    <label class="form-label small">Name</label>
+                    <input type="text" name="name" class="form-control form-control-sm" required placeholder="e.g. Living Room">
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col">
+                        <label class="form-label small">Interval (seconds)</label>
+                        <input type="number" name="interval" class="form-control form-control-sm" value="10" min="1" max="3600">
+                    </div>
+                    <div class="col">
+                        <label class="form-label small">Order</label>
+                        <select name="order" class="form-select form-select-sm">
+                            <option value="random">Random</option>
+                            <option value="sequential">Sequential</option>
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-sm btn-go">Create Kiosk</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -22,6 +22,12 @@ mkdir -p "$TASKS_DIR" "$CONFIG_DIR" "$DOWNLOADS_DIR"
 mkdir -p "$CONFIG_DIR/media_wall"
 chmod 777 "$CONFIG_DIR/media_wall" 2>/dev/null || true
 
+#######################
+chown -R "$PUID:$PGID" "$TASKS_DIR" "$CONFIG_DIR" 2>/dev/null || true
+chmod -R 775 "$TASKS_DIR" "$CONFIG_DIR" 2>/dev/null || true  # ADD THIS
+
+
+
 log "Updating gallery-dl to latest..."
 pip install --no-cache-dir --upgrade gallery-dl
 
@@ -57,15 +63,16 @@ else
   log "PUID/PGID not set (or zero), running as root."
 fi
 
-# Setup cron to run scheduler as the chosen user
-log "Setting up cron entry for scheduler..."
-CRON_LINE="* * * * * /usr/local/bin/gosu $APP_USER_SPEC /usr/local/bin/python /app/scheduler.py >> /var/log/cron.log 2>&1"
+# Scheduling is handled by APScheduler running inside the web process.
 
-echo "$CRON_LINE" | crontab -
 
-log "Starting cron..."
-touch /var/log/cron.log
-cron
+
+
+#######################
+UMASK="${UMASK:-002}"
+umask "$UMASK"
+
+
 
 log "Starting web app as $APP_USER_SPEC..."
 # Exec gunicorn as the chosen user so it writes files with correct ownership
