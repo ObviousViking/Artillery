@@ -1841,6 +1841,7 @@ def task_action(slug):
             flash("Task is already running.", "error")
             return redirect(url_for("tasks", selected=slug))
 
+        _invalidate_task_cache()
         t = threading.Thread(target=run_task_background, args=(task_folder,), daemon=True)
         t.start()
 
@@ -1856,6 +1857,7 @@ def task_action(slug):
             else:
                 Path(paused_path).touch()
                 flash("Task paused.", "success")
+        _invalidate_task_cache()
         return redirect(url_for("tasks", selected=slug))
 
     if action == "stop":
@@ -1874,6 +1876,7 @@ def task_action(slug):
             flash("Invalid PID file.", "error")
         except Exception as exc:
             flash(f"Failed to stop task: {exc}", "error")
+        _invalidate_task_cache()
         return redirect(url_for("tasks", selected=slug))
 
     if action == "clear_logs":
@@ -1890,6 +1893,7 @@ def task_action(slug):
         if os.path.exists(archive_path):
             try:
                 os.remove(archive_path)
+                _invalidate_task_cache()
                 flash("Archive deleted. gallery-dl will re-download previously seen items on next run.", "success")
             except Exception as exc:
                 flash(f"Failed to delete archive: {exc}", "error")
@@ -1903,6 +1907,7 @@ def task_action(slug):
         if os.path.exists(cookies_path):
             try:
                 os.remove(cookies_path)
+                _invalidate_task_cache()
                 flash("Cookies deleted.", "success")
             except Exception as exc:
                 flash(f"Failed to delete cookies: {exc}", "error")
