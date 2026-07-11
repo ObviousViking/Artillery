@@ -67,6 +67,37 @@ body { padding-top: 60px !important; }
     border-radius: 6px;
 }
 
+/* Status filter chips */
+.t-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 0 10px 7px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+.t-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-muted);
+    border-radius: 999px;
+    padding: 2px 9px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.t-filter-chip:hover { color: var(--text-primary); border-color: var(--text-muted); }
+.t-filter-chip.active {
+    background: rgba(249,115,22,0.12);
+    border-color: var(--focus-color);
+    color: var(--focus-color);
+}
+.t-filter-chip .t-dot { margin: 0; }
+
 /* Disk usage footer */
 .t-disk-box {
     flex-shrink: 0;
@@ -438,6 +469,14 @@ a.r-item:hover {
               style="display:none;position:absolute;right:0.4rem;top:50%;transform:translateY(-50%);
                      background:none;border:none;padding:0;line-height:1;font-size:1rem;
                      color:var(--text-muted);cursor:pointer;" aria-label="Clear search">&#x2715;</button>
+    </div>
+
+    <div class="t-filter-row" id="taskFilterRow" role="group" aria-label="Filter tasks by status">
+      <button type="button" class="t-filter-chip active" data-filter="all">All</button>
+      <button type="button" class="t-filter-chip" data-filter="running"><span class="t-dot running"></span>Running</button>
+      <button type="button" class="t-filter-chip" data-filter="idle"><span class="t-dot idle-ok"></span>Idle</button>
+      <button type="button" class="t-filter-chip" data-filter="paused"><span class="t-dot paused"></span>Paused</button>
+      <button type="button" class="t-filter-chip" data-filter="error"><span class="t-dot error"></span>Error</button>
     </div>
 
     <div class="t-list">
@@ -821,10 +860,36 @@ a.r-item:hover {
     var urlGateMsg = $('urlGateMsg'), bLoadUrls = $('bLoadUrls');
     var cCmd = $('cCmd'), cCmdH = $('cCmdH');
     var taskSearch = $('taskSearch');
+    var taskFilterRow = $('taskFilterRow');
 
     /* ── Helpers ──────────────────────────────────────────────────────── */
     function displaySt(status, lastRun) {
         return (status === 'idle' && lastRun) ? 'idle-ok' : status;
+    }
+
+    /* ── Status filter (persisted across page reloads) ─────────────────── */
+    var TASK_FILTER_KEY = 'artillery-task-filter';
+    var taskFilter = 'all';
+    try {
+        taskFilter = localStorage.getItem(TASK_FILTER_KEY) || 'all';
+    } catch (e) { /* localStorage unavailable (private mode etc.) — default to 'all' */ }
+
+    function applyFilters() {
+        var q = taskSearch.value.trim().toLowerCase();
+        document.querySelectorAll('.t-item').forEach(function (btn) {
+            var matchesSearch = !q || btn.dataset.name.toLowerCase().includes(q);
+            var matchesFilter = taskFilter === 'all' || btn.dataset.status === taskFilter;
+            btn.style.display = (matchesSearch && matchesFilter) ? '' : 'none';
+        });
+    }
+
+    function setTaskFilter(f) {
+        taskFilter = f;
+        try { localStorage.setItem(TASK_FILTER_KEY, f); } catch (e) { /* ignore */ }
+        taskFilterRow.querySelectorAll('.t-filter-chip').forEach(function (chip) {
+            chip.classList.toggle('active', chip.dataset.filter === f);
+        });
+        applyFilters();
     }
 
     function fmtNextRun(iso) {
@@ -1283,6 +1348,7 @@ a.r-item:hover {
                             : '<span class="text-muted">No cookies file</span>';
                     }
                 });
+                applyFilters();
             })
             .catch(function () {});
     }
@@ -1337,18 +1403,20 @@ a.r-item:hover {
 
         var taskSearchClear = $('taskSearchClear');
         taskSearch.addEventListener('input', function () {
-            var q = this.value.trim().toLowerCase();
-            taskSearchClear.style.display = q ? '' : 'none';
-            document.querySelectorAll('.t-item').forEach(function (btn) {
-                btn.style.display = (!q || btn.dataset.name.toLowerCase().includes(q)) ? '' : 'none';
-            });
+            taskSearchClear.style.display = this.value.trim() ? '' : 'none';
+            applyFilters();
         });
         taskSearchClear.addEventListener('click', function () {
             taskSearch.value = '';
             taskSearchClear.style.display = 'none';
-            document.querySelectorAll('.t-item').forEach(function (btn) { btn.style.display = ''; });
+            applyFilters();
             taskSearch.focus();
         });
+
+        taskFilterRow.querySelectorAll('.t-filter-chip').forEach(function (chip) {
+            chip.addEventListener('click', function () { setTaskFilter(chip.dataset.filter); });
+        });
+        setTaskFilter(taskFilter);
 
         /* ── Cookies validation on submit ─────────────────────────────── */
         var cCookiesErrEl = document.createElement('div');
