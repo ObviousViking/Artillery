@@ -860,9 +860,12 @@ a.r-item:hover {
       </div>
       <div class="modal-body">
         <p class="text-muted small mb-2">
-          Runs <code>gallery-dl oauth:&lt;site&gt;</code> in the container. Copy the URL shown,
-          approve in your browser, then paste any code back here.
+          Runs <code>gallery-dl oauth:&lt;site&gt;</code> in the container. Click <strong>Start</strong>,
+          copy the URL from the log, open it in your browser, approve access once, then return here.
           Tokens write to <code>gallery-dl.conf</code> automatically.
+          <br><span style="color:#d97706;">&#9888;</span>
+          Always use the URL from the <em>current</em> run — clicking Start again generates a new
+          session and old callback URLs will mismatch.
         </p>
         <div id="oauthRunLog"
           style="font-family:monospace;font-size:0.74rem;min-height:100px;max-height:260px;overflow-y:auto;
@@ -1738,6 +1741,8 @@ function openOauthRunModal(site) {
     document.getElementById('oauthRunLog').textContent = 'No output yet.';
     document.getElementById('oauthRunStatus').textContent = 'Idle';
     document.getElementById('oauthCodeIn').value = '';
+    document.getElementById('btnOauthStop').disabled = true;
+    document.getElementById('btnOauthStart').disabled = false;
     /* Show run modal on top of credentials modal */
     bootstrap.Modal.getOrCreateInstance(document.getElementById('oauthRunModal')).show();
     clearTimeout(_oauthRunTimer);
@@ -1747,6 +1752,8 @@ function openOauthRunModal(site) {
 function _pollOauthLog() {
     var logEl    = document.getElementById('oauthRunLog');
     var statusEl = document.getElementById('oauthRunStatus');
+    var startBtn = document.getElementById('btnOauthStart');
+    var stopBtn  = document.getElementById('btnOauthStop');
     if (!logEl) return;
     fetch('/oauth/run/log')
         .then(function (r) { return r.ok ? r.json() : null; })
@@ -1754,7 +1761,15 @@ function _pollOauthLog() {
             if (!d) return;
             logEl.textContent = d.content || 'No output yet.';
             logEl.scrollTop = logEl.scrollHeight;
-            statusEl.textContent = d.running ? 'Running…' : 'Idle';
+            if (d.running) {
+                statusEl.innerHTML = '<span class="text-warning">&#9679; Running&hellip;</span>';
+                if (startBtn) startBtn.disabled = true;
+                if (stopBtn)  stopBtn.disabled  = false;
+            } else {
+                statusEl.textContent = 'Idle';
+                if (startBtn) startBtn.disabled = false;
+                if (stopBtn)  stopBtn.disabled  = true;
+            }
             _oauthRunTimer = setTimeout(_pollOauthLog, d.running ? 1500 : 8000);
         })
         .catch(function () { _oauthRunTimer = setTimeout(_pollOauthLog, 10000); });
