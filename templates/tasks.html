@@ -1825,25 +1825,44 @@ function oauthRelay() {
     var raw = document.getElementById('oauthRelayUrl').value.trim();
     var statusEl = document.getElementById('oauthRelayStatus');
     if (!raw) return;
+
     /* Extract query string from whatever the user pasted */
     var qs = '';
     try {
-        /* Handle both full URL and just query string */
         var url = raw.includes('://') ? new URL(raw) : new URL('http://x/' + (raw.startsWith('?') ? raw : '?' + raw));
         qs = url.search.replace(/^\?/, '');
     } catch (e) {
-        statusEl.innerHTML = '<span class="text-danger">Could not parse URL.</span>';
+        statusEl.innerHTML = '<span class="text-danger">Could not parse URL — paste the full address bar URL.</span>';
         return;
     }
     if (!qs) {
         statusEl.innerHTML = '<span class="text-danger">No query parameters found in URL.</span>';
         return;
     }
-    statusEl.textContent = 'Relaying…';
-    /* Open the relay endpoint in a new tab — it returns a plain HTML success/error page */
-    window.open('/oauth/callback?' + qs, '_blank', 'noopener');
-    statusEl.innerHTML = '<span class="text-muted">Opened relay tab — check it for confirmation, then close it.</span>';
-    document.getElementById('oauthRelayUrl').value = '';
+
+    /* Check gallery-dl is still running before opening relay */
+    statusEl.innerHTML = '<span class="text-muted">Checking gallery-dl status…</span>';
+    fetch('/oauth/run/log')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+            if (!d || !d.running) {
+                statusEl.innerHTML = '<span class="text-danger">'
+                    + '&#9888; gallery-dl is no longer running. Click <strong>Stop</strong> then '
+                    + '<strong>Start</strong>, redo the Reddit auth, and paste the new callback URL here.'
+                    + '</span>';
+                return;
+            }
+            /* All good — open relay in new tab */
+            window.open('/oauth/callback?' + qs, '_blank', 'noopener');
+            document.getElementById('oauthRelayUrl').value = '';
+            statusEl.innerHTML = '<span class="text-muted">Relay tab opened — check it for "&#10003; OAuth complete", then close it.</span>';
+        })
+        .catch(function () {
+            /* If we can't check, try anyway */
+            window.open('/oauth/callback?' + qs, '_blank', 'noopener');
+            document.getElementById('oauthRelayUrl').value = '';
+            statusEl.innerHTML = '<span class="text-muted">Relay tab opened.</span>';
+        });
 }
 
 function _oauthStatusHtml(status) {

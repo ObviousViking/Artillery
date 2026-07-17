@@ -1753,15 +1753,16 @@ def oauth_run_log():
 def oauth_callback():
     """Relay the OAuth callback from the user's browser to gallery-dl's local server.
 
-    gallery-dl starts an HTTP server on localhost:6414 to receive the OAuth
+    gallery-dl starts an HTTP server on 127.0.0.1:6414 to receive the OAuth
     redirect from the provider.  When Artillery runs in a container the
     browser's 'localhost' is the host machine, not the container, so the
     redirect never arrives.  This endpoint lets the user paste the failed
     redirect URL here; Artillery forwards it to gallery-dl server-side where
-    localhost:6414 IS reachable.
+    127.0.0.1:6414 IS reachable.
     """
     import urllib.request as _urlreq
     import urllib.error  as _urlerr
+    import html as _html
 
     qs = request.query_string.decode("utf-8")
     if not qs:
@@ -1770,9 +1771,10 @@ def oauth_callback():
                 "<p>Open this page via the callback relay in Artillery.</p>"
                 "</body></html>"), 400
 
-    local_url = f"http://localhost:6414/?{qs}"
+    # Try 127.0.0.1 explicitly — avoids IPv4/IPv6 ambiguity with 'localhost'
+    local_url = f"http://127.0.0.1:6414/?{qs}"
     try:
-        with _urlreq.urlopen(local_url, timeout=15) as _resp:
+        with _urlreq.urlopen(local_url, timeout=30) as _resp:
             _resp.read()
         return ("<html><body style='font-family:sans-serif;padding:2em;"
                 "max-width:520px;margin:2em auto;'>"
@@ -1781,18 +1783,22 @@ def oauth_callback():
                 "<p>You can close this tab and return to Artillery.</p>"
                 "</body></html>")
     except _urlerr.URLError as exc:
+        reason = _html.escape(str(exc.reason) if hasattr(exc, "reason") else str(exc))
         return (f"<html><body style='font-family:sans-serif;padding:2em;"
                 f"max-width:520px;margin:2em auto;'>"
                 f"<h2 style='color:#dc2626;'>Relay failed</h2>"
-                f"<p>Could not reach gallery-dl on <code>localhost:6414</code>: "
-                f"<code>{exc}</code></p>"
-                f"<p>Make sure you clicked <strong>Start</strong> in the OAuth run panel "
-                f"and have not clicked Stop yet.</p>"
+                f"<p>Could not reach gallery-dl on <code>127.0.0.1:6414</code>:<br>"
+                f"<code>{reason}</code></p>"
+                f"<p><strong>This usually means gallery-dl already stopped waiting.</strong><br>"
+                f"Go back to Artillery, click <strong>Stop</strong> then <strong>Start</strong>, "
+                f"and redo the flow — paste the callback URL here within ~60 seconds of "
+                f"clicking Allow on the site.</p>"
                 f"</body></html>"), 502
     except Exception as exc:
         app.logger.exception("oauth_callback relay error")
+        err = _html.escape(str(exc))
         return (f"<html><body style='font-family:sans-serif;padding:2em;'>"
-                f"<h2>Error</h2><p>{exc}</p></body></html>"), 500
+                f"<h2>Error</h2><p>{err}</p></body></html>"), 500
 
 @app.route("/one-time", methods=["GET", "POST"])
 def one_time_download():
