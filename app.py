@@ -924,6 +924,9 @@ def load_tasks():
 
         timeout_val = read_text(os.path.join(task_path, "timeout.txt")) or ""
 
+        oauth_site_raw = (read_text(os.path.join(task_path, "oauth_site.txt")) or "").strip()
+        oauth_site = oauth_site_raw if oauth_site_raw in OAUTH_SITES else ""
+
         task = {
             "id": slug,
             "name": name,
@@ -940,6 +943,7 @@ def load_tasks():
             "has_cookies": has_cookies,
             "last_error": last_error,
             "timeout": timeout_val.strip(),
+            "oauth_site": oauth_site,
         }
         _TASK_CACHE[slug] = {"_mtimes": mtimes, "task": task}
         tasks.append(task)
@@ -1281,6 +1285,13 @@ def tasks():
         if "--cookies" in command and not os.path.exists(cookies_path):
             flash("Warning: command uses --cookies but no cookies.txt file exists for this task. Upload one via the edit form.", "warning")
 
+        oauth_site_field = request.form.get("oauth_site", "").strip()
+        oauth_site_file = os.path.join(task_folder, "oauth_site.txt")
+        if oauth_site_field and oauth_site_field in OAUTH_SITES:
+            write_text(oauth_site_file, oauth_site_field)
+        elif not oauth_site_field and os.path.exists(oauth_site_file):
+            os.remove(oauth_site_file)
+
         logs_path = os.path.join(task_folder, "logs.txt")
         if not os.path.exists(logs_path):
             write_text(logs_path, "")
@@ -1295,7 +1306,12 @@ def tasks():
 
     ensure_data_dirs(ensure_downloads=False)
     tasks_list = load_tasks()
-    return render_template("tasks.html", tasks=tasks_list, task_concurrent_max=_task_max_concurrent)
+    oauth_sites_json = json.dumps({
+        k: {"label": v["label"], "fields": v["fields"], "oauth_cmd": bool(v.get("oauth_cmd"))}
+        for k, v in OAUTH_SITES.items()
+    })
+    return render_template("tasks.html", tasks=tasks_list, task_concurrent_max=_task_max_concurrent,
+                           oauth_sites_json=oauth_sites_json)
 
 
 @app.route("/api/disk")
@@ -1315,6 +1331,42 @@ def api_queue():
         "queued": _tasks_queued,
         "max_concurrent": _task_max_concurrent,
     })
+
+
+@app.route("/api/oauth/<site>", methods=["GET"])
+def api_oauth_get(site):
+    if site not in OAUTH_SITES:
+        return jsonify({"error": "Unknown site"}), 404
+    tokens = _read_gallerydl_tokens(site)
+    fields = [
+        {
+            "key": f["key"],
+            "label": f["label"],
+            "secret": f.get("secret", False),
+            "is_set": bool(tokens.get(f["key"], "").strip()),
+        }
+        for f in OAUTH_SITES[site]["fields"]
+    ]
+    return jsonify({
+        "status": _oauth_site_status(site),
+        "label": OAUTH_SITES[site]["label"],
+        "fields": fields,
+        "oauth_cmd": bool(OAUTH_SITES[site].get("oauth_cmd")),
+    })
+
+@app.route("/api/oauth/<site>", methods=["POST"])
+def api_oauth_save(site):
+    if site not in OAUTH_SITES:
+        return jsonify({"error": "Unknown site"}), 404
+    data = request.get_json(silent=True) or {}
+    tokens = {}
+    for field in OAUTH_SITES[site]["fields"]:
+        tokens[field["key"]] = str(data.get(field["key"], "")).strip()
+    try:
+        _write_gallerydl_tokens(site, tokens)
+        return jsonify({"ok": True, "status": _oauth_site_status(site)})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
 
 @app.route("/api/tasks")
@@ -1585,6 +1637,9 @@ def _oauth_site_status(site: str) -> str:
 
 @app.route("/oauth", methods=["GET", "POST"])
 def oauth_page():
+    if request.method == "GET":
+        return redirect(url_for("tasks"))
+
     ensure_data_dirs(ensure_downloads=False)
 
     if request.method == "POST":
