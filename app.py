@@ -1749,6 +1749,51 @@ def oauth_run_log():
     running = bool(_oauth_proc and _oauth_proc.poll() is None)
     return jsonify({"content": content, "running": running})
 
+@app.route("/oauth/callback")
+def oauth_callback():
+    """Relay the OAuth callback from the user's browser to gallery-dl's local server.
+
+    gallery-dl starts an HTTP server on localhost:6414 to receive the OAuth
+    redirect from the provider.  When Artillery runs in a container the
+    browser's 'localhost' is the host machine, not the container, so the
+    redirect never arrives.  This endpoint lets the user paste the failed
+    redirect URL here; Artillery forwards it to gallery-dl server-side where
+    localhost:6414 IS reachable.
+    """
+    import urllib.request as _urlreq
+    import urllib.error  as _urlerr
+
+    qs = request.query_string.decode("utf-8")
+    if not qs:
+        return ("<html><body style='font-family:sans-serif;padding:2em;'>"
+                "<h2>No parameters</h2>"
+                "<p>Open this page via the callback relay in Artillery.</p>"
+                "</body></html>"), 400
+
+    local_url = f"http://localhost:6414/?{qs}"
+    try:
+        with _urlreq.urlopen(local_url, timeout=15) as _resp:
+            _resp.read()
+        return ("<html><body style='font-family:sans-serif;padding:2em;"
+                "max-width:520px;margin:2em auto;'>"
+                "<h2 style='color:#16a34a;'>&#10003; OAuth complete</h2>"
+                "<p>Tokens have been saved to <code>gallery-dl.conf</code>.</p>"
+                "<p>You can close this tab and return to Artillery.</p>"
+                "</body></html>")
+    except _urlerr.URLError as exc:
+        return (f"<html><body style='font-family:sans-serif;padding:2em;"
+                f"max-width:520px;margin:2em auto;'>"
+                f"<h2 style='color:#dc2626;'>Relay failed</h2>"
+                f"<p>Could not reach gallery-dl on <code>localhost:6414</code>: "
+                f"<code>{exc}</code></p>"
+                f"<p>Make sure you clicked <strong>Start</strong> in the OAuth run panel "
+                f"and have not clicked Stop yet.</p>"
+                f"</body></html>"), 502
+    except Exception as exc:
+        app.logger.exception("oauth_callback relay error")
+        return (f"<html><body style='font-family:sans-serif;padding:2em;'>"
+                f"<h2>Error</h2><p>{exc}</p></body></html>"), 500
+
 @app.route("/one-time", methods=["GET", "POST"])
 def one_time_download():
     ensure_data_dirs(ensure_downloads=True)

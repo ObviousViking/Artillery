@@ -860,13 +860,15 @@ a.r-item:hover {
       </div>
       <div class="modal-body">
         <p class="text-muted small mb-2">
-          Runs <code>gallery-dl oauth:&lt;site&gt;</code> in the container. Click <strong>Start</strong>,
-          copy the URL from the log, open it in your browser, approve access once, then return here.
-          Tokens write to <code>gallery-dl.conf</code> automatically.
-          <br><span style="color:#d97706;">&#9888;</span>
-          Always use the URL from the <em>current</em> run — clicking Start again generates a new
-          session and old callback URLs will mismatch.
+          Click <strong>Start</strong>, then open the URL that appears in the log. The site will ask
+          you to approve access — click Allow.
         </p>
+        <div class="alert alert-warning py-2 px-3 mb-2" style="font-size:0.78rem;border-radius:6px;">
+          <strong>Running in a container?</strong> After clicking Allow the browser will try to open
+          <code>localhost:6414</code> on <em>your machine</em> — not the container — and the page
+          won't load. That's expected. Copy the full URL from your address bar and paste it into the
+          relay box below. Artillery will complete the handshake server-side.
+        </div>
         <div id="oauthRunLog"
           style="font-family:monospace;font-size:0.74rem;min-height:100px;max-height:260px;overflow-y:auto;
                  white-space:pre-wrap;word-break:break-all;padding:0.5rem;border-radius:6px;
@@ -875,8 +877,18 @@ a.r-item:hover {
         </div>
         <div class="input-group input-group-sm mt-2">
           <input type="text" id="oauthCodeIn" class="form-control font-monospace"
-            placeholder="Paste code here if prompted…" autocomplete="off" style="font-size:0.78rem;">
+            placeholder="Paste code here if prompted (some sites only)…" autocomplete="off" style="font-size:0.78rem;">
           <button type="button" class="btn btn-neutral" id="btnSendOauthCode">Send</button>
+        </div>
+        <div class="mt-2" style="border-top:1px solid var(--border-color);padding-top:0.6rem;">
+          <div class="small fw-semibold mb-1">Callback relay <span class="text-muted fw-normal">(container users)</span></div>
+          <div class="input-group input-group-sm">
+            <input type="text" id="oauthRelayUrl" class="form-control font-monospace"
+              placeholder="Paste the localhost:6414 URL from your browser here…"
+              autocomplete="off" style="font-size:0.75rem;">
+            <button type="button" class="btn btn-go" id="btnOauthRelay">Relay</button>
+          </div>
+          <div class="form-text mt-1" id="oauthRelayStatus"></div>
         </div>
       </div>
       <div class="modal-footer" style="border-color:var(--border-color);">
@@ -1634,6 +1646,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('btnOauthStart').addEventListener('click', oauthStart);
     document.getElementById('btnOauthStop').addEventListener('click', oauthStop);
     document.getElementById('btnSendOauthCode').addEventListener('click', oauthSendCode);
+    document.getElementById('btnOauthRelay').addEventListener('click', oauthRelay);
 });
 
 function refreshOauthBadge(site) {
@@ -1806,6 +1819,31 @@ function oauthSendCode() {
     fetch('/oauth/run/input', { method: 'POST', body: fd })
         .then(function (r) { return r.json(); })
         .then(function (d) { if (d.ok) document.getElementById('oauthCodeIn').value = ''; });
+}
+
+function oauthRelay() {
+    var raw = document.getElementById('oauthRelayUrl').value.trim();
+    var statusEl = document.getElementById('oauthRelayStatus');
+    if (!raw) return;
+    /* Extract query string from whatever the user pasted */
+    var qs = '';
+    try {
+        /* Handle both full URL and just query string */
+        var url = raw.includes('://') ? new URL(raw) : new URL('http://x/' + (raw.startsWith('?') ? raw : '?' + raw));
+        qs = url.search.replace(/^\?/, '');
+    } catch (e) {
+        statusEl.innerHTML = '<span class="text-danger">Could not parse URL.</span>';
+        return;
+    }
+    if (!qs) {
+        statusEl.innerHTML = '<span class="text-danger">No query parameters found in URL.</span>';
+        return;
+    }
+    statusEl.textContent = 'Relaying…';
+    /* Open the relay endpoint in a new tab — it returns a plain HTML success/error page */
+    window.open('/oauth/callback?' + qs, '_blank', 'noopener');
+    statusEl.innerHTML = '<span class="text-muted">Opened relay tab — check it for confirmation, then close it.</span>';
+    document.getElementById('oauthRelayUrl').value = '';
 }
 
 function _oauthStatusHtml(status) {
