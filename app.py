@@ -87,84 +87,6 @@ TASK_TIMEOUT_SECONDS = int(os.environ.get("TASK_TIMEOUT_SECONDS", "0") or "0")
 TASK_CONCURRENT_MAX  = int(os.environ.get("TASK_CONCURRENT_MAX", "5"))
 MAX_ROTATED_LOGS = 5
 
-# ── OAuth credentials manager ───────────────────────────────────────────────
-# Tokens are written into gallery-dl.conf (already a /config volume mount)
-# so they survive container updates automatically.
-_OAUTH_TOKEN_RE = re.compile(r'^[\x20-\x7E]{1,512}$')   # printable ASCII, reasonable length
-_OAUTH_LOG_PATH = os.path.join(CONFIG_ROOT, ".oauth_run.log")
-_oauth_proc: Optional[subprocess.Popen] = None
-_oauth_proc_lock = threading.Lock()
-
-OAUTH_SITES: dict = {
-    "twitter": {
-        "label": "Twitter / X",
-        "description": 'Create a Developer App at <a href="https://developer.twitter.com" target="_blank" rel="noopener">developer.twitter.com</a> with OAuth 1.0a enabled.',
-        "fields": [
-            {"key": "consumer-key",        "label": "Consumer Key",         "secret": False},
-            {"key": "consumer-secret",     "label": "Consumer Secret",      "secret": True},
-            {"key": "access-token",        "label": "Access Token",         "secret": False},
-            {"key": "access-token-secret", "label": "Access Token Secret",  "secret": True},
-        ],
-        "oauth_cmd": True,
-    },
-    "reddit": {
-        "label": "Reddit",
-        "description": 'Create a <em>script</em> app at <a href="https://www.reddit.com/prefs/apps" target="_blank" rel="noopener">reddit.com/prefs/apps</a>. Set redirect URI to <code>http://localhost:6414</code>.',
-        "fields": [
-            {"key": "client-id",     "label": "Client ID",     "secret": False},
-            {"key": "user-agent",    "label": "User Agent",    "secret": False},
-            {"key": "refresh-token", "label": "Refresh Token", "secret": True},
-        ],
-        "oauth_cmd": True,
-    },
-    "tumblr": {
-        "label": "Tumblr",
-        "description": 'Register an app at <a href="https://www.tumblr.com/oauth/apps" target="_blank" rel="noopener">tumblr.com/oauth/apps</a>.',
-        "fields": [
-            {"key": "consumer-key",        "label": "Consumer Key",        "secret": False},
-            {"key": "consumer-secret",     "label": "Consumer Secret",     "secret": True},
-            {"key": "access-token",        "label": "Access Token",        "secret": False},
-            {"key": "access-token-secret", "label": "Access Token Secret", "secret": True},
-        ],
-        "oauth_cmd": True,
-    },
-    "pixiv": {
-        "label": "Pixiv",
-        "description": "Use the Run OAuth tool below. Pixiv uses a code-based flow — gallery-dl will print a URL; after authorising, paste the code shown.",
-        "fields": [
-            {"key": "refresh-token", "label": "Refresh Token", "secret": True},
-        ],
-        "oauth_cmd": True,
-    },
-    "deviantart": {
-        "label": "DeviantArt",
-        "description": 'Register an app at <a href="https://www.deviantart.com/developers/apps" target="_blank" rel="noopener">deviantart.com/developers/apps</a>.',
-        "fields": [
-            {"key": "client-id",     "label": "Client ID",     "secret": False},
-            {"key": "client-secret", "label": "Client Secret", "secret": True},
-            {"key": "access-token",  "label": "Access Token",  "secret": False},
-            {"key": "refresh-token", "label": "Refresh Token", "secret": True},
-        ],
-        "oauth_cmd": True,
-    },
-    "flickr": {
-        "label": "Flickr",
-        "description": 'Create an app at <a href="https://www.flickr.com/services/apps/create/" target="_blank" rel="noopener">flickr.com/services/apps/create</a>.',
-        "fields": [
-            {"key": "access-token",        "label": "Access Token",        "secret": False},
-            {"key": "access-token-secret", "label": "Access Token Secret", "secret": True},
-        ],
-        "oauth_cmd": True,
-    },
-    "mastodon": {
-        "label": "Mastodon",
-        "description": "Generate an access token in your Mastodon instance under Settings → Development → New Application.",
-        "fields": [
-            {"key": "access-token", "label": "Access Token", "secret": True},
-        ],
-        "oauth_cmd": False,
-    },
-}
 
 def _get_task_timeout(task_folder: str) -> Optional[int]:
     txt = read_text(os.path.join(task_folder, "timeout.txt"))
@@ -924,9 +846,6 @@ def load_tasks():
 
         timeout_val = read_text(os.path.join(task_path, "timeout.txt")) or ""
 
-        oauth_site_raw = (read_text(os.path.join(task_path, "oauth_site.txt")) or "").strip()
-        oauth_site = oauth_site_raw if oauth_site_raw in OAUTH_SITES else ""
-
         task = {
             "id": slug,
             "name": name,
@@ -943,7 +862,6 @@ def load_tasks():
             "has_cookies": has_cookies,
             "last_error": last_error,
             "timeout": timeout_val.strip(),
-            "oauth_site": oauth_site,
         }
         _TASK_CACHE[slug] = {"_mtimes": mtimes, "task": task}
         tasks.append(task)
@@ -1285,13 +1203,6 @@ def tasks():
         if "--cookies" in command and not os.path.exists(cookies_path):
             flash("Warning: command uses --cookies but no cookies.txt file exists for this task. Upload one via the edit form.", "warning")
 
-        oauth_site_field = request.form.get("oauth_site", "").strip()
-        oauth_site_file = os.path.join(task_folder, "oauth_site.txt")
-        if oauth_site_field and oauth_site_field in OAUTH_SITES:
-            write_text(oauth_site_file, oauth_site_field)
-        elif not oauth_site_field and os.path.exists(oauth_site_file):
-            os.remove(oauth_site_file)
-
         logs_path = os.path.join(task_folder, "logs.txt")
         if not os.path.exists(logs_path):
             write_text(logs_path, "")
@@ -1306,12 +1217,7 @@ def tasks():
 
     ensure_data_dirs(ensure_downloads=False)
     tasks_list = load_tasks()
-    oauth_sites_json = json.dumps({
-        k: {"label": v["label"], "fields": v["fields"], "oauth_cmd": bool(v.get("oauth_cmd"))}
-        for k, v in OAUTH_SITES.items()
-    })
-    return render_template("tasks.html", tasks=tasks_list, task_concurrent_max=_task_max_concurrent,
-                           oauth_sites_json=oauth_sites_json)
+    return render_template("tasks.html", tasks=tasks_list, task_concurrent_max=_task_max_concurrent)
 
 
 @app.route("/api/disk")
@@ -1331,42 +1237,6 @@ def api_queue():
         "queued": _tasks_queued,
         "max_concurrent": _task_max_concurrent,
     })
-
-
-@app.route("/api/oauth/<site>", methods=["GET"])
-def api_oauth_get(site):
-    if site not in OAUTH_SITES:
-        return jsonify({"error": "Unknown site"}), 404
-    tokens = _read_gallerydl_tokens(site)
-    fields = [
-        {
-            "key": f["key"],
-            "label": f["label"],
-            "secret": f.get("secret", False),
-            "is_set": bool(tokens.get(f["key"], "").strip()),
-        }
-        for f in OAUTH_SITES[site]["fields"]
-    ]
-    return jsonify({
-        "status": _oauth_site_status(site),
-        "label": OAUTH_SITES[site]["label"],
-        "fields": fields,
-        "oauth_cmd": bool(OAUTH_SITES[site].get("oauth_cmd")),
-    })
-
-@app.route("/api/oauth/<site>", methods=["POST"])
-def api_oauth_save(site):
-    if site not in OAUTH_SITES:
-        return jsonify({"error": "Unknown site"}), 404
-    data = request.get_json(silent=True) or {}
-    tokens = {}
-    for field in OAUTH_SITES[site]["fields"]:
-        tokens[field["key"]] = str(data.get(field["key"], "")).strip()
-    try:
-        _write_gallerydl_tokens(site, tokens)
-        return jsonify({"ok": True, "status": _oauth_site_status(site)})
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
 
 
 @app.route("/api/tasks")
@@ -1569,236 +1439,6 @@ def config_restore():
         parts.append(f"{len(restored_kiosks)} kiosk(s)")
     flash("Restored: " + ("; ".join(parts) if parts else "nothing found in zip."), "success")
     return redirect(url_for("config_page"))
-
-# ---------------------------------------------------------------------
-# OAuth credentials manager
-# ---------------------------------------------------------------------
-
-def _read_gallerydl_tokens(site: str) -> dict:
-    """Return current token values for a site from gallery-dl.conf (empty dict on any error)."""
-    try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as fh:
-            config = json.loads(fh.read())
-        return config.get("extractor", {}).get(site, {})
-    except Exception:
-        return {}
-
-def _write_gallerydl_tokens(site: str, tokens: dict) -> None:
-    """
-    Surgically patch extractor.<site> keys in gallery-dl.conf.
-    Raises ValueError if the file isn't valid JSON or the site/keys aren't whitelisted.
-    Empty string for a value removes that key; anything else sets it.
-    """
-    if site not in OAUTH_SITES:
-        raise ValueError(f"Unknown site: {site!r}")
-
-    allowed_keys = {f["key"] for f in OAUTH_SITES[site]["fields"]}
-    for key, val in tokens.items():
-        if key not in allowed_keys:
-            raise ValueError(f"Field {key!r} is not allowed for {site}")
-        if val and not _OAUTH_TOKEN_RE.match(val):
-            raise ValueError(f"Value for {key!r} contains invalid characters or is too long")
-
-    raw = "{}"
-    try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as fh:
-            raw = fh.read()
-    except FileNotFoundError:
-        pass
-
-    try:
-        config = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"gallery-dl.conf is not valid JSON: {exc}") from exc
-
-    extractor = config.setdefault("extractor", {})
-    site_conf = extractor.setdefault(site, {})
-
-    for key, val in tokens.items():
-        if val == "":
-            site_conf.pop(key, None)
-        else:
-            site_conf[key] = val
-
-    with open(CONFIG_FILE, "w", encoding="utf-8") as fh:
-        json.dump(config, fh, indent=4, ensure_ascii=False)
-        fh.write("\n")
-
-def _oauth_site_status(site: str) -> str:
-    """Return 'configured', 'partial', or 'none' for a site."""
-    tokens = _read_gallerydl_tokens(site)
-    keys = [f["key"] for f in OAUTH_SITES[site]["fields"]]
-    filled = sum(1 for k in keys if tokens.get(k, "").strip())
-    if filled == 0:
-        return "none"
-    if filled == len(keys):
-        return "configured"
-    return "partial"
-
-@app.route("/oauth", methods=["GET", "POST"])
-def oauth_page():
-    if request.method == "GET":
-        return redirect(url_for("tasks"))
-
-    ensure_data_dirs(ensure_downloads=False)
-
-    if request.method == "POST":
-        action = request.form.get("action", "")
-
-        if action == "save_tokens":
-            site = request.form.get("site", "").strip()
-            if site not in OAUTH_SITES:
-                flash("Unknown site.", "error")
-                return redirect(url_for("oauth_page"))
-            tokens = {}
-            for field in OAUTH_SITES[site]["fields"]:
-                tokens[field["key"]] = request.form.get(field["key"], "").strip()
-            try:
-                _write_gallerydl_tokens(site, tokens)
-                flash(f"{OAUTH_SITES[site]['label']} credentials saved.", "success")
-            except ValueError as exc:
-                flash(str(exc), "error")
-
-        elif action == "clear_tokens":
-            site = request.form.get("site", "").strip()
-            if site not in OAUTH_SITES:
-                flash("Unknown site.", "error")
-                return redirect(url_for("oauth_page"))
-            try:
-                empty = {f["key"]: "" for f in OAUTH_SITES[site]["fields"]}
-                _write_gallerydl_tokens(site, empty)
-                flash(f"{OAUTH_SITES[site]['label']} credentials cleared.", "success")
-            except ValueError as exc:
-                flash(str(exc), "error")
-
-        elif action == "run_oauth":
-            global _oauth_proc
-            site = request.form.get("site", "").strip()
-            if site not in OAUTH_SITES:
-                flash("Unknown site.", "error")
-                return redirect(url_for("oauth_page"))
-            if not OAUTH_SITES[site].get("oauth_cmd"):
-                flash("OAuth flow not available for this site.", "error")
-                return redirect(url_for("oauth_page"))
-            with _oauth_proc_lock:
-                if _oauth_proc and _oauth_proc.poll() is None:
-                    flash("An OAuth flow is already running — stop it first.", "error")
-                    return redirect(url_for("oauth_page"))
-                try:
-                    Path(_OAUTH_LOG_PATH).write_text(
-                        f"Starting gallery-dl OAuth for {site}...\n", encoding="utf-8"
-                    )
-                    log_fh = open(_OAUTH_LOG_PATH, "a", encoding="utf-8")
-                    _oauth_proc = subprocess.Popen(
-                        ["gallery-dl", f"oauth:{site}"],
-                        stdin=subprocess.PIPE,
-                        stdout=log_fh,
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        env={**os.environ, "GALLERY_DL_CONFIG": CONFIG_FILE},
-                    )
-                except FileNotFoundError:
-                    flash("gallery-dl not found in PATH inside the container.", "error")
-                    return redirect(url_for("oauth_page"))
-                except Exception as exc:
-                    flash(f"Failed to start OAuth: {exc}", "error")
-                    return redirect(url_for("oauth_page"))
-            flash(f"OAuth flow started for {OAUTH_SITES[site]['label']}. Watch the log below.", "success")
-
-        elif action == "stop_oauth":
-            with _oauth_proc_lock:
-                if _oauth_proc and _oauth_proc.poll() is None:
-                    _oauth_proc.terminate()
-                    flash("OAuth process stopped.", "success")
-                else:
-                    flash("No OAuth process is running.", "success")
-
-        return redirect(url_for("oauth_page"))
-
-    statuses = {site: _oauth_site_status(site) for site in OAUTH_SITES}
-    oauth_running = bool(_oauth_proc and _oauth_proc.poll() is None)
-    return render_template("oauth.html",
-        sites=OAUTH_SITES,
-        statuses=statuses,
-        oauth_running=oauth_running,
-    )
-
-@app.route("/oauth/run/input", methods=["POST"])
-def oauth_run_input():
-    """Send a line of text to the running OAuth subprocess stdin (for code-based flows)."""
-    code = request.form.get("code", "").strip()
-    if not code or not _OAUTH_TOKEN_RE.match(code):
-        return jsonify({"error": "Invalid input"}), 400
-    with _oauth_proc_lock:
-        if _oauth_proc and _oauth_proc.poll() is None and _oauth_proc.stdin:
-            try:
-                _oauth_proc.stdin.write(code + "\n")
-                _oauth_proc.stdin.flush()
-                return jsonify({"ok": True})
-            except Exception as exc:
-                return jsonify({"error": str(exc)}), 500
-    return jsonify({"error": "No OAuth process is running"}), 409
-
-@app.route("/oauth/run/log")
-def oauth_run_log():
-    """Poll endpoint: returns current OAuth log content and process status."""
-    try:
-        content = Path(_OAUTH_LOG_PATH).read_text(encoding="utf-8", errors="replace")
-    except FileNotFoundError:
-        content = ""
-    running = bool(_oauth_proc and _oauth_proc.poll() is None)
-    return jsonify({"content": content, "running": running})
-
-@app.route("/oauth/callback")
-def oauth_callback():
-    """Relay the OAuth callback from the user's browser to gallery-dl's local server.
-
-    gallery-dl starts an HTTP server on 127.0.0.1:6414 to receive the OAuth
-    redirect from the provider.  When Artillery runs in a container the
-    browser's 'localhost' is the host machine, not the container, so the
-    redirect never arrives.  This endpoint lets the user paste the failed
-    redirect URL here; Artillery forwards it to gallery-dl server-side where
-    127.0.0.1:6414 IS reachable.
-    """
-    import urllib.request as _urlreq
-    import urllib.error  as _urlerr
-    import html as _html
-
-    qs = request.query_string.decode("utf-8")
-    if not qs:
-        return ("<html><body style='font-family:sans-serif;padding:2em;'>"
-                "<h2>No parameters</h2>"
-                "<p>Open this page via the callback relay in Artillery.</p>"
-                "</body></html>"), 400
-
-    # Try 127.0.0.1 explicitly — avoids IPv4/IPv6 ambiguity with 'localhost'
-    local_url = f"http://127.0.0.1:6414/?{qs}"
-    try:
-        with _urlreq.urlopen(local_url, timeout=30) as _resp:
-            _resp.read()
-        return ("<html><body style='font-family:sans-serif;padding:2em;"
-                "max-width:520px;margin:2em auto;'>"
-                "<h2 style='color:#16a34a;'>&#10003; OAuth complete</h2>"
-                "<p>Tokens have been saved to <code>gallery-dl.conf</code>.</p>"
-                "<p>You can close this tab and return to Artillery.</p>"
-                "</body></html>")
-    except _urlerr.URLError as exc:
-        reason = _html.escape(str(exc.reason) if hasattr(exc, "reason") else str(exc))
-        return (f"<html><body style='font-family:sans-serif;padding:2em;"
-                f"max-width:520px;margin:2em auto;'>"
-                f"<h2 style='color:#dc2626;'>Relay failed</h2>"
-                f"<p>Could not reach gallery-dl on <code>127.0.0.1:6414</code>:<br>"
-                f"<code>{reason}</code></p>"
-                f"<p><strong>This usually means gallery-dl already stopped waiting.</strong><br>"
-                f"Go back to Artillery, click <strong>Stop</strong> then <strong>Start</strong>, "
-                f"and redo the flow — paste the callback URL here within ~60 seconds of "
-                f"clicking Allow on the site.</p>"
-                f"</body></html>"), 502
-    except Exception as exc:
-        app.logger.exception("oauth_callback relay error")
-        err = _html.escape(str(exc))
-        return (f"<html><body style='font-family:sans-serif;padding:2em;'>"
-                f"<h2>Error</h2><p>{err}</p></body></html>"), 500
 
 @app.route("/one-time", methods=["GET", "POST"])
 def one_time_download():
