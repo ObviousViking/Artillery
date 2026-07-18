@@ -32,7 +32,7 @@ from flask import (
     redirect, url_for, flash, send_from_directory, Response,
     send_file, jsonify,
 )
-from flask_wtf.csrf import CSRFProtect, csrf_exempt
+from flask_wtf.csrf import CSRFProtect
 from werkzeug.utils import secure_filename
 
 def _get_or_create_secret_key() -> str:
@@ -1320,7 +1320,7 @@ def oauth_page():
     return render_template("oauth.html", oauth_tasks=oauth_tasks, oauth_sites=OAUTH_SITES)
 
 
-@csrf_exempt
+@csrf.exempt
 @app.route("/api/oauth/start", methods=["POST"])
 def api_oauth_start():
     global _oauth_proc
@@ -1364,7 +1364,7 @@ def api_oauth_log():
     return jsonify({"running": running, "content": content})
 
 
-@csrf_exempt
+@csrf.exempt
 @app.route("/api/oauth/stop", methods=["POST"])
 def api_oauth_stop():
     global _oauth_proc
@@ -1384,7 +1384,7 @@ def api_oauth_stop():
     return jsonify({"ok": True})
 
 
-@csrf_exempt
+@csrf.exempt
 @app.route("/oauth/relay", methods=["POST"])
 def oauth_relay():
     import urllib.request as _urlreq
