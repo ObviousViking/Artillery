@@ -35,8 +35,33 @@ from flask import (
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.utils import secure_filename
 
+def _get_or_create_secret_key() -> str:
+    env_key = os.environ.get("SECRET_KEY")
+    if env_key:
+        return env_key
+    # No SECRET_KEY set — persist a generated one to the config volume so it
+    # survives restarts. Otherwise every restart invalidates all open tabs'
+    # session cookies and CSRF tokens (a tab left open across a restart would
+    # get a "CSRF token expired" error on its next click).
+    config_root = os.environ.get("CONFIG_DIR") or "/config"
+    key_path = os.path.join(config_root, ".secret_key")
+    try:
+        existing = Path(key_path).read_text().strip()
+        if existing:
+            return existing
+    except FileNotFoundError:
+        pass
+    new_key = secrets.token_hex(32)
+    try:
+        os.makedirs(config_root, exist_ok=True)
+        Path(key_path).write_text(new_key)
+    except Exception:
+        pass  # fall back to this run's in-memory key
+    return new_key
+
+
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", secrets.token_hex(32))
+app.config["SECRET_KEY"] = _get_or_create_secret_key()
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB max upload (covers bulk kiosk image uploads)
 
 csrf = CSRFProtect(app)
