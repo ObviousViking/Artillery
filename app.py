@@ -1833,6 +1833,15 @@ def run_task_background(task_folder: str):
         _release_task_slot()
         return
 
+    # Resolve relative --cache-file to an absolute path so gallery-dl finds it
+    # regardless of any internal CWD changes it may make after startup.
+    for _i, _part in enumerate(cmd_parts):
+        if _part == "--cache-file" and _i + 1 < len(cmd_parts):
+            _cf = cmd_parts[_i + 1]
+            if not os.path.isabs(_cf):
+                cmd_parts[_i + 1] = os.path.join(task_folder, _cf)
+            break
+
     env = os.environ.copy()
     env["GALLERY_DL_CONFIG"] = CONFIG_FILE
     env["PATH"] = env.get("PATH", "") + os.pathsep + "/usr/local/bin"
@@ -1842,6 +1851,11 @@ def run_task_background(task_folder: str):
             config_exists = os.path.exists(CONFIG_FILE)
             logf.write(f"\n\n==== Run at {now} ====\n")
             logf.write(f"Artillery: using config {CONFIG_FILE} (exists={config_exists})\n")
+            for _i, _part in enumerate(cmd_parts):
+                if _part == "--cache-file" and _i + 1 < len(cmd_parts):
+                    _cf = cmd_parts[_i + 1]
+                    logf.write(f"Artillery: cache file {_cf} (exists={os.path.exists(_cf)})\n")
+                    break
             logf.write(f"$ {' '.join(cmd_parts)}\n\n")
             logf.flush()
 
