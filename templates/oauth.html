@@ -18,9 +18,10 @@
   <div class="col-12">
     <div class="card shadow-sm border-secondary">
       <div class="card-body text-center py-5">
-        <p class="text-muted mb-2">No tasks are configured to use OAuth.</p>
+        <p class="text-muted mb-2">No tasks have OAuth cache enabled.</p>
         <p class="text-muted small mb-3">
-          Edit a task, tick <strong>Requires OAuth</strong>, choose the site, and save — it will appear here.
+          Edit a task, tick <strong>OAuth cache</strong> in the gallery-dl options, and save —
+          it will appear here.
         </p>
         <a href="{{ url_for('tasks') }}" class="btn btn-sm btn-neutral">Go to Tasks</a>
       </div>
@@ -46,9 +47,7 @@
           style="background:var(--bg-primary);border-color:var(--border-color);text-align:left;"
           data-slug="{{ task.slug|e }}"
           data-name="{{ task.name|e }}"
-          data-site="{{ task.oauth_site|e }}"
-          data-auth="{{ '1' if task.oauth_authenticated else '0' }}"
-          data-site-label="{{ oauth_sites.get(task.oauth_site, task.oauth_site)|e }}">
+          data-auth="{{ '1' if task.oauth_authenticated else '0' }}">
           <div class="d-flex justify-content-between align-items-start gap-1">
             <span class="small fw-semibold" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">{{ task.name }}</span>
             {% if task.oauth_authenticated %}
@@ -61,9 +60,7 @@
                      border:1px solid rgba(217,119,6,0.3);font-size:0.6rem;">Setup needed</span>
             {% endif %}
           </div>
-          <div class="text-muted" style="font-size:0.72rem;">
-            {{ oauth_sites.get(task.oauth_site, task.oauth_site) }}
-          </div>
+          <div class="text-muted" style="font-size:0.72rem;">{{ task.slug }}</div>
         </button>
         {% endfor %}
       </div>
@@ -85,24 +82,27 @@
       <div class="card-header py-2" style="background:var(--bg-tertiary);">
         <div class="d-flex align-items-center gap-2 flex-wrap">
           <span class="small fw-semibold" id="opTaskName">—</span>
-          <span class="text-muted small">·</span>
-          <span class="small text-muted" id="opSiteLabel">—</span>
           <span id="opAuthBadge" class="badge" style="display:none;font-size:0.62rem;"></span>
         </div>
       </div>
       <div class="card-body">
 
         <p class="text-muted small mb-3">
-          Click <strong>Start</strong> to launch the gallery-dl OAuth flow.
+          Select the site you want to authenticate for this task, then click <strong>Start</strong>.
           gallery-dl will print an authorisation URL — open it in your browser and approve access.
           The provider will then try to redirect to <code>localhost:6414</code>;
-          since this is a container, that redirect will fail in your browser.
-          Copy that failed URL from the address bar and paste it into the <strong>Relay</strong> box below —
+          since this is inside a container, that redirect will fail in your browser.
+          Copy that failed URL from the address bar and paste it into the <strong>Relay</strong> box —
           Artillery will forward it to gallery-dl inside the container.
         </p>
 
-        <!-- Start / Stop -->
-        <div class="d-flex align-items-center gap-2 mb-3">
+        <!-- Site + Start/Stop -->
+        <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+          <select id="opSite" class="form-select form-select-sm" style="max-width:180px;">
+            {% for sk, sl in oauth_sites.items() %}
+            <option value="{{ sk }}">{{ sl }}</option>
+            {% endfor %}
+          </select>
           <button type="button" id="btnOauthStart" class="btn btn-sm btn-go">&#9654; Start</button>
           <button type="button" id="btnOauthStop"  class="btn btn-sm btn-destruct" disabled>&#9632; Stop</button>
           <span id="opStatus" class="small text-muted">Idle</span>
@@ -120,15 +120,15 @@
                  min-height:170px;max-height:360px;overflow-y:auto;
                  white-space:pre-wrap;word-break:break-all;
                  background:var(--bg-secondary);color:var(--text-secondary);
-                 border-color:var(--border-input) !important;"></div>
+                 border-color:var(--border-input) !important;">No output yet. Click Start to begin.</div>
 
-        <!-- Callback relay -->
+        <!-- Relay -->
         <div class="border rounded p-3" style="border-color:var(--border-input) !important;background:var(--bg-secondary);">
           <label class="form-label small fw-semibold mb-1">Callback relay</label>
           <p class="text-muted small mb-2">
             When the provider redirects to <code>localhost:6414/?state=…&amp;code=…</code> and your
-            browser shows a connection error, copy that full URL and paste it below.
-            Artillery will relay it to gallery-dl server-side.
+            browser shows a connection error, copy that <strong>full URL</strong> and paste it below
+            — do this <strong>without</strong> stopping or restarting gallery-dl first.
           </p>
           <div class="input-group input-group-sm mb-2">
             <input type="text" id="opRelayInput" class="form-control font-monospace"
@@ -151,14 +151,24 @@
 (function () {
   'use strict';
 
+  var csrfToken = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+
+  function postFetch(url, fd) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrfToken },
+      body: fd,
+    });
+  }
+
   var taskList    = document.getElementById('oauthTaskList');
   var panelEmpty  = document.getElementById('oauthPanelEmpty');
   var panel       = document.getElementById('oauthPanel');
   if (!taskList || !panel) return;
 
   var opTaskName    = document.getElementById('opTaskName');
-  var opSiteLabel   = document.getElementById('opSiteLabel');
   var opAuthBadge   = document.getElementById('opAuthBadge');
+  var opSite        = document.getElementById('opSite');
   var opStatus      = document.getElementById('opStatus');
   var opSpinner     = document.getElementById('opSpinner');
   var opLog         = document.getElementById('opLog');
@@ -168,8 +178,8 @@
   var btnStop       = document.getElementById('btnOauthStop');
   var btnRelay      = document.getElementById('btnRelay');
 
-  var selSlug   = null;
-  var pollTimer = null;
+  var selSlug    = null;
+  var pollTimer  = null;
   var autoScroll = true;
 
   /* ── UI helpers ────────────────────────────────────────────────────── */
@@ -233,8 +243,7 @@
     taskList.querySelectorAll('.ot-item').forEach(function (b) {
       b.style.background = (b === btn) ? 'var(--bg-tertiary)' : 'var(--bg-primary)';
     });
-    opTaskName.textContent  = btn.dataset.name || btn.dataset.slug;
-    opSiteLabel.textContent = btn.dataset.siteLabel || btn.dataset.site;
+    opTaskName.textContent   = btn.dataset.name || btn.dataset.slug;
     setAuthBadge(btn.dataset.auth === '1');
     panelEmpty.style.display = 'none';
     panel.style.display      = '';
@@ -252,10 +261,13 @@
   /* ── Start ─────────────────────────────────────────────────────────── */
   btnStart.addEventListener('click', function () {
     if (!selSlug) return;
+    var site = opSite.value;
+    if (!site) { opLog.textContent = 'Select a site first.'; return; }
     opRelayStatus.textContent = '';
     var fd = new FormData();
     fd.append('task_slug', selSlug);
-    fetch('/api/oauth/start', { method: 'POST', body: fd })
+    fd.append('site', site);
+    postFetch('/api/oauth/start', fd)
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d.error) {
@@ -271,8 +283,7 @@
 
   /* ── Stop ──────────────────────────────────────────────────────────── */
   btnStop.addEventListener('click', function () {
-    var fd = new FormData();
-    fetch('/api/oauth/stop', { method: 'POST', body: fd })
+    postFetch('/api/oauth/stop', new FormData())
       .then(function (r) { return r.json(); })
       .then(function () { setRunning(false); })
       .catch(function () {});
@@ -297,12 +308,11 @@
     opRelayStatus.innerHTML = '<span class="text-muted">Relaying…</span>';
     var fd = new FormData();
     fd.append('qs', qs);
-    fetch('/oauth/relay', { method: 'POST', body: fd })
+    postFetch('/oauth/relay', fd)
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d.ok) {
           opRelayStatus.innerHTML = '<span style="color:#16a34a;">&#10003; Relay complete — tokens should now be saved. Check the output above.</span>';
-          // after a short delay, refresh auth badge by polling api/tasks
           setTimeout(function () {
             fetch('/api/tasks')
               .then(function (r) { return r.json(); })
