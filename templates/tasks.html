@@ -502,8 +502,7 @@ a.r-item:hover {
           data-next-run="{{ (task.next_run or '')|e }}"
           data-last-error="{{ (task.last_error or '')|e }}"
           data-timeout="{{ (task.timeout or '')|e }}"
-          data-history-api="/tasks/{{ task.slug|e }}/history"
-          data-oauth-auth="{{ '1' if task.oauth_authenticated else '0' }}">
+          data-history-api="/tasks/{{ task.slug|e }}/history">
           <div class="t-item-row">
             <span class="t-item-name">{{ task.name }}</span>
           </div>
@@ -611,7 +610,6 @@ a.r-item:hover {
                   <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc7" data-flag="--no-skip"><label class="form-check-label small" for="cc7">Don't skip existing</label></div>
                   <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc8" data-flag="-v"><label class="form-check-label small" for="cc8">Verbose</label></div>
                   <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc9" data-flag="--cookies cookies.txt"><label class="form-check-label small" for="cc9">Use cookies</label></div>
-                  <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc10" data-flag="--cache-file gallery-dl-cache.sqlite3"><label class="form-check-label small" for="cc10">OAuth cache</label></div>
                 </div>
               </div>
             </div>
@@ -619,9 +617,6 @@ a.r-item:hover {
               <label class="form-label" for="cCmd">Command</label>
               <textarea id="cCmd" class="form-control form-control-sm" rows="2" name="command_display"></textarea>
               <div class="form-text">Backend adds <code>--config</code> and <code>--destination</code> if missing.</div>
-              <div id="cOauthHint" class="form-text" style="display:none;color:#d97706;">
-                OAuth cache enabled &mdash; <a href="{{ url_for('oauth_page') }}">authenticate on the OAuth page</a> after creating this task.
-              </div>
             </div>
             <input type="hidden" id="cCmdH" name="command"/>
             <button type="submit" class="btn btn-sm btn-go">Create task</button>
@@ -780,9 +775,8 @@ a.r-item:hover {
                   <label class="form-label">Cookies <span class="text-muted fw-normal">(optional)</span></label>
                   <div id="eCookieStatus" class="mb-1" style="font-size:0.8rem;"></div>
                   <input type="file" id="eCookiesFile" name="cookies_file" class="form-control form-control-sm" accept=".txt"/>
-                    <div class="form-text">Upload to replace existing <code>cookies.txt</code>. gallery-dl uses it via <code>--cookies</code> automatically.</div>
+                  <div class="form-text">Upload to replace existing <code>cookies.txt</code>. gallery-dl uses it via <code>--cookies</code> automatically.</div>
                 </div>
-
               </div>
 
               <div class="col-md-7">
@@ -801,7 +795,6 @@ a.r-item:hover {
                       <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec7" data-flag="--no-skip"><label class="form-check-label small" for="ec7">Don't skip existing</label></div>
                       <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec8" data-flag="-v"><label class="form-check-label small" for="ec8">Verbose</label></div>
                       <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec9" data-flag="--cookies cookies.txt"><label class="form-check-label small" for="ec9">Use cookies</label></div>
-                      <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec10" data-flag="--cache-file gallery-dl-cache.sqlite3"><label class="form-check-label small" for="ec10">OAuth cache</label></div>
                     </div>
                   </div>
                 </div>
@@ -809,9 +802,6 @@ a.r-item:hover {
                   <label class="form-label" for="eCmd">Command</label>
                   <textarea id="eCmd" class="form-control form-control-sm" rows="2" name="command_display"></textarea>
                   <div class="form-text">Backend adds <code>--config</code> and <code>--destination</code> if missing.</div>
-                  <div id="eOauthHint" class="form-text" style="display:none;color:#d97706;">
-                    OAuth cache enabled &mdash; <a href="{{ url_for('oauth_page') }}">authenticate on the OAuth page</a> before running this task.
-                  </div>
                 </div>
                 <input type="hidden" id="eCmdH" name="command"/>
                 <button type="submit" class="btn btn-sm btn-go">Save changes</button>
@@ -1082,7 +1072,6 @@ a.r-item:hover {
         eUrlCntLbl.textContent = selUrlCount ? '— ' + fmtN(selUrlCount) : '';
         syncEditCbs(btn.dataset.command);
         if (changed) resetUrlGate();
-        updateCacheHint('eOauthHint', btn.dataset.command);
 
         showPanel('task');
         switchTab(activeTab);
@@ -1310,12 +1299,6 @@ a.r-item:hover {
         prev.value = hid.value = cmd.replace(/\s+/g, ' ').trim();
     }
 
-    /* ── Cache hint helper ────────────────────────────────────────────── */
-    function updateCacheHint(id, cmd) {
-        var el = $(id);
-        if (el) el.style.display = (cmd || '').includes('--cache-file') ? '' : 'none';
-    }
-
     /* ── Create form ──────────────────────────────────────────────────── */
     function buildCreateCmd() {
         var flags = [];
@@ -1324,7 +1307,6 @@ a.r-item:hover {
         });
         cCmd.value = cCmdH.value =
             'gallery-dl' + (flags.length ? ' ' + flags.join(' ') : '') + ' --input-file urls.txt';
-        updateCacheHint('cOauthHint', cCmd.value);
     }
 
     /* ── Status polling ───────────────────────────────────────────────── */
@@ -1406,23 +1388,14 @@ a.r-item:hover {
         });
 
         document.querySelectorAll('.gde').forEach(function (cb) {
-            cb.addEventListener('change', function () {
-                patchCmd(eCmd, eCmdH, this.dataset.flag, this.checked);
-                updateCacheHint('eOauthHint', eCmd.value);
-            });
+            cb.addEventListener('change', function () { patchCmd(eCmd, eCmdH, this.dataset.flag, this.checked); });
         });
-        eCmd.addEventListener('input', function () {
-            eCmdH.value = this.value;
-            updateCacheHint('eOauthHint', this.value);
-        });
+        eCmd.addEventListener('input', function () { eCmdH.value = this.value; });
 
         document.querySelectorAll('.gdc').forEach(function (cb) {
-            cb.addEventListener('change', function () { buildCreateCmd(); });
+            cb.addEventListener('change', buildCreateCmd);
         });
-        cCmd.addEventListener('input', function () {
-            cCmdH.value = this.value;
-            updateCacheHint('cOauthHint', this.value);
-        });
+        cCmd.addEventListener('input', function () { cCmdH.value = this.value; });
 
         logBox.addEventListener('scroll', function () {
             autoScroll = logBox.scrollTop + logBox.clientHeight >= logBox.scrollHeight - 10;
@@ -1555,4 +1528,5 @@ a.r-item:hover {
 
 }());
 </script>
+
 {% endblock %}

@@ -39,10 +39,8 @@ def _get_or_create_secret_key() -> str:
     env_key = os.environ.get("SECRET_KEY")
     if env_key:
         return env_key
-    # No SECRET_KEY set — persist a generated one to the config volume so it
-    # survives restarts. Otherwise every restart invalidates all open tabs'
-    # session cookies and CSRF tokens (a tab left open across a restart would
-    # get a "CSRF token expired" error on its next click).
+    # Persist a generated key to the config volume so it survives restarts.
+    # Without this, every restart invalidates open tabs' CSRF tokens.
     config_root = os.environ.get("CONFIG_DIR") or "/config"
     key_path = os.path.join(config_root, ".secret_key")
     try:
@@ -56,7 +54,7 @@ def _get_or_create_secret_key() -> str:
         os.makedirs(config_root, exist_ok=True)
         Path(key_path).write_text(new_key)
     except Exception:
-        pass  # fall back to this run's in-memory key
+        pass
     return new_key
 
 
@@ -111,21 +109,6 @@ MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 TASK_TIMEOUT_SECONDS = int(os.environ.get("TASK_TIMEOUT_SECONDS", "0") or "0")
 TASK_CONCURRENT_MAX  = int(os.environ.get("TASK_CONCURRENT_MAX", "5"))
 MAX_ROTATED_LOGS = 5
-
-OAUTH_SITES = {
-    "reddit":     "Reddit",
-    "twitter":    "Twitter / X",
-    "tumblr":     "Tumblr",
-    "pixiv":      "Pixiv",
-    "deviantart": "DeviantArt",
-    "flickr":     "Flickr",
-    "mastodon":   "Mastodon",
-}
-
-_OAUTH_LOG_PATH = os.path.join(CONFIG_ROOT, ".oauth_run.log")
-_oauth_proc: "subprocess.Popen | None" = None
-_oauth_proc_lock = threading.Lock()
-
 
 def _get_task_timeout(task_folder: str) -> Optional[int]:
     txt = read_text(os.path.join(task_folder, "timeout.txt"))
@@ -536,7 +519,6 @@ def _task_mtimes(task_path: str) -> dict:
         "cookies":    _mt(os.path.join(task_path, "cookies.txt")),
         "last_error": _mt(os.path.join(task_path, "last_error.txt")),
         "timeout":    _mt(os.path.join(task_path, "timeout.txt")),
-        "oauth_cache": _mt(os.path.join(task_path, "gallery-dl-cache.sqlite3")),
     }
 
 def _cache_name_for_relpath(relpath: str) -> str:
@@ -886,9 +868,6 @@ def load_tasks():
 
         timeout_val = read_text(os.path.join(task_path, "timeout.txt")) or ""
 
-        oauth_enabled = "--cache-file" in command
-        oauth_authenticated = os.path.exists(os.path.join(task_path, "gallery-dl-cache.sqlite3"))
-
         task = {
             "id": slug,
             "name": name,
@@ -905,8 +884,6 @@ def load_tasks():
             "has_cookies": has_cookies,
             "last_error": last_error,
             "timeout": timeout_val.strip(),
-            "oauth_enabled": oauth_enabled,
-            "oauth_authenticated": oauth_authenticated,
         }
         _TASK_CACHE[slug] = {"_mtimes": mtimes, "task": task}
         tasks.append(task)
@@ -1262,7 +1239,7 @@ def tasks():
 
     ensure_data_dirs(ensure_downloads=False)
     tasks_list = load_tasks()
-    return render_template("tasks.html", tasks=tasks_list, task_concurrent_max=_task_max_concurrent, oauth_sites=OAUTH_SITES)
+    return render_template("tasks.html", tasks=tasks_list, task_concurrent_max=_task_max_concurrent)
 
 
 @app.route("/api/disk")
@@ -1302,108 +1279,9 @@ def api_tasks():
             "last_run": t.get("last_run"),
             "has_archive": t.get("has_archive", False),
             "has_cookies": t.get("has_cookies", False),
-            "oauth_enabled": t.get("oauth_enabled", False),
-            "oauth_authenticated": t.get("oauth_authenticated", False),
         })
 
     return jsonify(out)
-
-# ---------------------------------------------------------------------
-# OAuth page + API
-# ---------------------------------------------------------------------
-
-@app.route("/oauth")
-def oauth_page():
-    ensure_data_dirs(ensure_downloads=False)
-    tasks_list = load_tasks()
-    oauth_tasks = [t for t in tasks_list if t.get("oauth_enabled")]
-    return render_template("oauth.html", oauth_tasks=oauth_tasks, oauth_sites=OAUTH_SITES)
-
-
-@csrf.exempt
-@app.route("/api/oauth/start", methods=["POST"])
-def api_oauth_start():
-    global _oauth_proc
-    task_slug = request.form.get("task_slug", "").strip()
-    site = request.form.get("site", "").strip()
-    if not task_slug:
-        return jsonify({"error": "No task_slug provided"}), 400
-    if not site or site not in OAUTH_SITES:
-        return jsonify({"error": "Select a valid site"}), 400
-    task_folder = os.path.join(TASKS_ROOT, task_slug)
-    if not os.path.isdir(task_folder):
-        return jsonify({"error": "Task not found"}), 404
-    with _oauth_proc_lock:
-        if _oauth_proc and _oauth_proc.poll() is None:
-            return jsonify({"error": "An OAuth process is already running — stop it first"}), 409
-        # Use relative path so it resolves to the task folder (cwd)
-        cmd = ["gallery-dl", f"oauth:{site}", "--cache-file", "gallery-dl-cache.sqlite3"]
-        env = {**os.environ, "PATH": os.environ.get("PATH", "") + os.pathsep + "/usr/local/bin"}
-        try:
-            with open(_OAUTH_LOG_PATH, "w", encoding="utf-8") as logf:
-                logf.write(f"Starting gallery-dl OAuth for {OAUTH_SITES[site]} (task: {task_slug})\n$ {' '.join(cmd)}\n\n")
-            logf = open(_OAUTH_LOG_PATH, "a", encoding="utf-8")
-            _oauth_proc = subprocess.Popen(
-                cmd, stdout=logf, stderr=subprocess.STDOUT,
-                text=True, env=env, cwd=task_folder,
-            )
-        except Exception as exc:
-            app.logger.exception("Failed to start OAuth process")
-            return jsonify({"error": str(exc)}), 500
-    return jsonify({"ok": True, "site": site, "task_slug": task_slug})
-
-
-@app.route("/api/oauth/log")
-def api_oauth_log():
-    global _oauth_proc
-    running = False
-    with _oauth_proc_lock:
-        if _oauth_proc is not None:
-            running = _oauth_proc.poll() is None
-    content = read_text(_OAUTH_LOG_PATH) or ""
-    return jsonify({"running": running, "content": content})
-
-
-@csrf.exempt
-@app.route("/api/oauth/stop", methods=["POST"])
-def api_oauth_stop():
-    global _oauth_proc
-    with _oauth_proc_lock:
-        if _oauth_proc and _oauth_proc.poll() is None:
-            _oauth_proc.terminate()
-            try:
-                _oauth_proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                _oauth_proc.kill()
-                _oauth_proc.wait()
-            try:
-                with open(_OAUTH_LOG_PATH, "a", encoding="utf-8") as logf:
-                    logf.write("\n[Stopped by user]\n")
-            except Exception:
-                pass
-    return jsonify({"ok": True})
-
-
-@csrf.exempt
-@app.route("/oauth/relay", methods=["POST"])
-def oauth_relay():
-    import urllib.request as _urlreq
-    import urllib.error as _urlerr
-    qs = request.form.get("qs", "").strip()
-    if not qs:
-        return jsonify({"error": "No query string provided"}), 400
-    local_url = f"http://127.0.0.1:6414/?{qs}"
-    try:
-        with _urlreq.urlopen(local_url, timeout=30) as resp:
-            resp.read()
-        return jsonify({"ok": True})
-    except _urlerr.URLError as exc:
-        reason = str(exc.reason) if hasattr(exc, "reason") else str(exc)
-        return jsonify({"error": reason}), 502
-    except Exception as exc:
-        app.logger.exception("oauth_relay error")
-        return jsonify({"error": str(exc)}), 500
-
 
 # ---------------------------------------------------------------------
 # Config page
@@ -1833,15 +1711,6 @@ def run_task_background(task_folder: str):
         _release_task_slot()
         return
 
-    # Resolve relative --cache-file to an absolute path so gallery-dl finds it
-    # regardless of any internal CWD changes it may make after startup.
-    for _i, _part in enumerate(cmd_parts):
-        if _part == "--cache-file" and _i + 1 < len(cmd_parts):
-            _cf = cmd_parts[_i + 1]
-            if not os.path.isabs(_cf):
-                cmd_parts[_i + 1] = os.path.join(task_folder, _cf)
-            break
-
     env = os.environ.copy()
     env["GALLERY_DL_CONFIG"] = CONFIG_FILE
     env["PATH"] = env.get("PATH", "") + os.pathsep + "/usr/local/bin"
@@ -1851,11 +1720,6 @@ def run_task_background(task_folder: str):
             config_exists = os.path.exists(CONFIG_FILE)
             logf.write(f"\n\n==== Run at {now} ====\n")
             logf.write(f"Artillery: using config {CONFIG_FILE} (exists={config_exists})\n")
-            for _i, _part in enumerate(cmd_parts):
-                if _part == "--cache-file" and _i + 1 < len(cmd_parts):
-                    _cf = cmd_parts[_i + 1]
-                    logf.write(f"Artillery: cache file {_cf} (exists={os.path.exists(_cf)})\n")
-                    break
             logf.write(f"$ {' '.join(cmd_parts)}\n\n")
             logf.flush()
 
