@@ -1335,6 +1335,135 @@ def config_page():
     )
 
 # ---------------------------------------------------------------------
+# Config update checker
+# ---------------------------------------------------------------------
+
+def _config_merge_section(user_section, github_section):
+    result = dict(user_section)
+    for key, github_value in github_section.items():
+        if key not in result:
+            continue
+        user_value = result[key]
+        if isinstance(github_value, dict) and isinstance(user_value, dict):
+            result[key] = _config_fill_options(user_value, github_value)
+    return result
+
+
+def _config_fill_options(user_options, github_options):
+    result = dict(user_options)
+    for key, github_value in github_options.items():
+        if key not in result:
+            if not isinstance(github_value, dict):
+                result[key] = github_value
+        elif isinstance(github_value, dict) and isinstance(result[key], dict):
+            result[key] = _config_fill_options(result[key], github_value)
+    return result
+
+
+def _config_merge_update(user_conf, github_conf):
+    result = dict(user_conf)
+    for key, github_value in github_conf.items():
+        if key not in result:
+            continue
+        user_value = result[key]
+        if isinstance(github_value, dict) and isinstance(user_value, dict):
+            result[key] = _config_merge_section(user_value, github_value)
+    return result
+
+
+def _collect_new_options(user_dict, github_dict):
+    new = []
+    for key, github_value in github_dict.items():
+        if key not in user_dict:
+            if not isinstance(github_value, dict):
+                new.append(key)
+        elif isinstance(github_value, dict) and isinstance(user_dict[key], dict):
+            new.extend(_collect_new_options(user_dict[key], github_value))
+    return new
+
+
+def _config_diff_new_options(user_conf, github_conf):
+    new_by_section = {}
+    for key, github_value in github_conf.items():
+        if key not in user_conf or not isinstance(github_value, dict) or not isinstance(user_conf[key], dict):
+            continue
+        for sub_key, github_sub in github_value.items():
+            if sub_key not in user_conf[key] or not isinstance(github_sub, dict) or not isinstance(user_conf[key][sub_key], dict):
+                continue
+            new_opts = _collect_new_options(user_conf[key][sub_key], github_sub)
+            if new_opts:
+                new_by_section[f"{key}.{sub_key}"] = new_opts
+    return new_by_section
+
+
+@app.route("/api/config/check-update")
+def api_config_check_update():
+    try:
+        with urllib.request.urlopen(DEFAULT_CONFIG_URL, timeout=10) as resp:
+            github_text = resp.read().decode("utf-8")
+        github_conf = json.loads(github_text)
+    except Exception as exc:
+        return jsonify({"error": str(exc)})
+
+    local_text = read_text(CONFIG_FILE) or "{}"
+    try:
+        local_conf = json.loads(local_text)
+    except json.JSONDecodeError as exc:
+        return jsonify({"error": f"Local config is not valid JSON: {exc}"})
+
+    new_by_section = _config_diff_new_options(local_conf, github_conf)
+    total = sum(len(v) for v in new_by_section.values())
+    if total == 0:
+        return jsonify({"up_to_date": True})
+
+    lines = []
+    for section, opts in sorted(new_by_section.items()):
+        sample = ", ".join(opts[:6])
+        if len(opts) > 6:
+            sample += f", … +{len(opts) - 6} more"
+        lines.append(f"<strong>{section}</strong>: {sample}")
+
+    return jsonify({
+        "up_to_date": False,
+        "total": total,
+        "section_count": len(new_by_section),
+        "summary_html": "<br>".join(lines),
+    })
+
+
+@app.route("/api/config/apply-update", methods=["POST"])
+def api_config_apply_update():
+    try:
+        with urllib.request.urlopen(DEFAULT_CONFIG_URL, timeout=10) as resp:
+            github_text = resp.read().decode("utf-8")
+        github_conf = json.loads(github_text)
+    except Exception as exc:
+        return jsonify({"error": str(exc)})
+
+    local_text = read_text(CONFIG_FILE) or "{}"
+    try:
+        local_conf = json.loads(local_text)
+    except json.JSONDecodeError as exc:
+        return jsonify({"error": f"Local config is not valid JSON: {exc}"})
+
+    stamp = dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    backup_path = CONFIG_FILE + f".bak.{stamp}"
+    try:
+        Path(backup_path).write_text(local_text, encoding="utf-8")
+    except Exception as exc:
+        return jsonify({"error": f"Failed to create backup: {exc}"})
+
+    merged = _config_merge_update(local_conf, github_conf)
+    try:
+        merged_text = json.dumps(merged, indent=4, ensure_ascii=False)
+        write_text(CONFIG_FILE, merged_text)
+    except Exception as exc:
+        return jsonify({"error": f"Failed to save config: {exc}"})
+
+    return jsonify({"ok": True, "backup": os.path.basename(backup_path)})
+
+
+# ---------------------------------------------------------------------
 # Backup / Restore
 # ---------------------------------------------------------------------
 
