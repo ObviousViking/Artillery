@@ -112,6 +112,20 @@ TASK_TIMEOUT_SECONDS = int(os.environ.get("TASK_TIMEOUT_SECONDS", "0") or "0")
 TASK_CONCURRENT_MAX  = int(os.environ.get("TASK_CONCURRENT_MAX", "5"))
 MAX_ROTATED_LOGS = 5
 
+OAUTH_SITES = {
+    "reddit":     "Reddit",
+    "twitter":    "Twitter / X",
+    "tumblr":     "Tumblr",
+    "pixiv":      "Pixiv",
+    "deviantart": "DeviantArt",
+    "flickr":     "Flickr",
+    "mastodon":   "Mastodon",
+}
+
+_OAUTH_LOG_PATH = os.path.join(CONFIG_ROOT, ".oauth_run.log")
+_oauth_proc: "subprocess.Popen | None" = None
+_oauth_proc_lock = threading.Lock()
+
 
 def _get_task_timeout(task_folder: str) -> Optional[int]:
     txt = read_text(os.path.join(task_folder, "timeout.txt"))
@@ -522,6 +536,8 @@ def _task_mtimes(task_path: str) -> dict:
         "cookies":    _mt(os.path.join(task_path, "cookies.txt")),
         "last_error": _mt(os.path.join(task_path, "last_error.txt")),
         "timeout":    _mt(os.path.join(task_path, "timeout.txt")),
+        "oauth_site": _mt(os.path.join(task_path, "oauth_site.txt")),
+        "oauth_cache": _mt(os.path.join(task_path, "gallery-dl-cache.sqlite3")),
     }
 
 def _cache_name_for_relpath(relpath: str) -> str:
@@ -871,6 +887,9 @@ def load_tasks():
 
         timeout_val = read_text(os.path.join(task_path, "timeout.txt")) or ""
 
+        oauth_site = (read_text(os.path.join(task_path, "oauth_site.txt")) or "").strip()
+        oauth_authenticated = os.path.exists(os.path.join(task_path, "gallery-dl-cache.sqlite3"))
+
         task = {
             "id": slug,
             "name": name,
@@ -887,6 +906,8 @@ def load_tasks():
             "has_cookies": has_cookies,
             "last_error": last_error,
             "timeout": timeout_val.strip(),
+            "oauth_site": oauth_site,
+            "oauth_authenticated": oauth_authenticated,
         }
         _TASK_CACHE[slug] = {"_mtimes": mtimes, "task": task}
         tasks.append(task)
@@ -1232,6 +1253,14 @@ def tasks():
         if not os.path.exists(logs_path):
             write_text(logs_path, "")
 
+        oauth_required = request.form.get("oauth_required") == "on"
+        oauth_site_field = request.form.get("oauth_site", "").strip()
+        oauth_site_file = os.path.join(task_folder, "oauth_site.txt")
+        if oauth_required and oauth_site_field in OAUTH_SITES:
+            write_text(oauth_site_file, oauth_site_field)
+        elif os.path.exists(oauth_site_file):
+            os.remove(oauth_site_file)
+
         if schedule:
             _reschedule_task(slug, schedule)
         else:
@@ -1242,7 +1271,7 @@ def tasks():
 
     ensure_data_dirs(ensure_downloads=False)
     tasks_list = load_tasks()
-    return render_template("tasks.html", tasks=tasks_list, task_concurrent_max=_task_max_concurrent)
+    return render_template("tasks.html", tasks=tasks_list, task_concurrent_max=_task_max_concurrent, oauth_sites=OAUTH_SITES)
 
 
 @app.route("/api/disk")
@@ -1282,9 +1311,104 @@ def api_tasks():
             "last_run": t.get("last_run"),
             "has_archive": t.get("has_archive", False),
             "has_cookies": t.get("has_cookies", False),
+            "oauth_site": t.get("oauth_site", ""),
+            "oauth_authenticated": t.get("oauth_authenticated", False),
         })
 
     return jsonify(out)
+
+# ---------------------------------------------------------------------
+# OAuth page + API
+# ---------------------------------------------------------------------
+
+@app.route("/oauth")
+def oauth_page():
+    ensure_data_dirs(ensure_downloads=False)
+    tasks_list = load_tasks()
+    oauth_tasks = [t for t in tasks_list if t.get("oauth_site")]
+    return render_template("oauth.html", oauth_tasks=oauth_tasks, oauth_sites=OAUTH_SITES)
+
+
+@app.route("/api/oauth/start", methods=["POST"])
+def api_oauth_start():
+    global _oauth_proc
+    task_slug = request.form.get("task_slug", "").strip()
+    if not task_slug:
+        return jsonify({"error": "No task_slug provided"}), 400
+    task_folder = os.path.join(TASKS_ROOT, task_slug)
+    if not os.path.isdir(task_folder):
+        return jsonify({"error": "Task not found"}), 404
+    site = (read_text(os.path.join(task_folder, "oauth_site.txt")) or "").strip()
+    if not site:
+        return jsonify({"error": "Task has no OAuth site configured"}), 400
+    if site not in OAUTH_SITES:
+        return jsonify({"error": f"Unknown OAuth site: {site}"}), 400
+    with _oauth_proc_lock:
+        if _oauth_proc and _oauth_proc.poll() is None:
+            return jsonify({"error": "An OAuth process is already running — stop it first"}), 409
+        cache_file = os.path.join(task_folder, "gallery-dl-cache.sqlite3")
+        cmd = ["gallery-dl", f"oauth:{site}", "--cache-file", cache_file]
+        env = {**os.environ, "PATH": os.environ.get("PATH", "") + os.pathsep + "/usr/local/bin"}
+        try:
+            with open(_OAUTH_LOG_PATH, "w", encoding="utf-8") as logf:
+                logf.write(f"Starting OAuth for {OAUTH_SITES[site]} (task: {task_slug})\n$ {' '.join(cmd)}\n\n")
+            logf = open(_OAUTH_LOG_PATH, "a", encoding="utf-8")
+            _oauth_proc = subprocess.Popen(cmd, stdout=logf, stderr=subprocess.STDOUT, text=True, env=env)
+        except Exception as exc:
+            app.logger.exception("Failed to start OAuth process")
+            return jsonify({"error": str(exc)}), 500
+    return jsonify({"ok": True, "site": site, "task_slug": task_slug})
+
+
+@app.route("/api/oauth/log")
+def api_oauth_log():
+    global _oauth_proc
+    running = False
+    with _oauth_proc_lock:
+        if _oauth_proc is not None:
+            running = _oauth_proc.poll() is None
+    content = read_text(_OAUTH_LOG_PATH) or ""
+    return jsonify({"running": running, "content": content})
+
+
+@app.route("/api/oauth/stop", methods=["POST"])
+def api_oauth_stop():
+    global _oauth_proc
+    with _oauth_proc_lock:
+        if _oauth_proc and _oauth_proc.poll() is None:
+            _oauth_proc.terminate()
+            try:
+                _oauth_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                _oauth_proc.kill()
+                _oauth_proc.wait()
+            try:
+                with open(_OAUTH_LOG_PATH, "a", encoding="utf-8") as logf:
+                    logf.write("\n[Stopped by user]\n")
+            except Exception:
+                pass
+    return jsonify({"ok": True})
+
+
+@app.route("/oauth/relay", methods=["POST"])
+def oauth_relay():
+    import urllib.request as _urlreq
+    import urllib.error as _urlerr
+    qs = request.form.get("qs", "").strip()
+    if not qs:
+        return jsonify({"error": "No query string provided"}), 400
+    local_url = f"http://127.0.0.1:6414/?{qs}"
+    try:
+        with _urlreq.urlopen(local_url, timeout=30) as resp:
+            resp.read()
+        return jsonify({"ok": True})
+    except _urlerr.URLError as exc:
+        reason = str(exc.reason) if hasattr(exc, "reason") else str(exc)
+        return jsonify({"error": reason}), 502
+    except Exception as exc:
+        app.logger.exception("oauth_relay error")
+        return jsonify({"error": str(exc)}), 500
+
 
 # ---------------------------------------------------------------------
 # Config page
@@ -1713,6 +1837,9 @@ def run_task_background(task_folder: str):
             os.remove(lock_path)
         _release_task_slot()
         return
+
+    if os.path.exists(os.path.join(task_folder, "oauth_site.txt")) and "--cache-file" not in cmd_parts:
+        cmd_parts.extend(["--cache-file", os.path.join(task_folder, "gallery-dl-cache.sqlite3")])
 
     env = os.environ.copy()
     env["GALLERY_DL_CONFIG"] = CONFIG_FILE

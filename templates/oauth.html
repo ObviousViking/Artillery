@@ -3,275 +3,324 @@
 {% block content %}
 
 <div class="row mt-2 mb-3">
-    <div class="col-12">
-        <h2 class="mb-1">OAuth &amp; Credentials</h2>
-        <p class="text-muted small mb-0">
-            Credentials are stored in <code>gallery-dl.conf</code> under the <code>/config</code>
-            volume — they persist across container updates automatically.
-            Secret fields are never sent back to the page after saving.
-        </p>
-    </div>
+  <div class="col-12">
+    <h2 class="mb-1">OAuth</h2>
+    <p class="text-muted small mb-0">
+      Authenticate tasks that require OAuth access. Tokens are saved to
+      <code>gallery-dl-cache.sqlite3</code> inside each task's folder —
+      they persist across container rebuilds automatically.
+    </p>
+  </div>
 </div>
+
+{% if not oauth_tasks %}
+<div class="row">
+  <div class="col-12">
+    <div class="card shadow-sm border-secondary">
+      <div class="card-body text-center py-5">
+        <p class="text-muted mb-2">No tasks are configured to use OAuth.</p>
+        <p class="text-muted small mb-3">
+          Edit a task, tick <strong>Requires OAuth</strong>, choose the site, and save — it will appear here.
+        </p>
+        <a href="{{ url_for('tasks') }}" class="btn btn-sm btn-neutral">Go to Tasks</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% else %}
 
 <div class="row g-4">
 
-    <!-- ── Left: site cards ──────────────────────────────────────────── -->
-    <div class="col-lg-7">
-        <div class="accordion" id="oauthAccordion">
-        {% for site_key, site in sites.items() %}
-        {% set status = statuses[site_key] %}
-        <div class="accordion-item border-secondary mb-2" style="border-radius:8px;overflow:hidden;">
-            <h2 class="accordion-header">
-                <button class="accordion-button {% if status == 'none' %}collapsed{% endif %}"
-                    type="button" data-bs-toggle="collapse"
-                    data-bs-target="#acc-{{ site_key }}"
-                    aria-expanded="{{ 'true' if status != 'none' else 'false' }}"
-                    aria-controls="acc-{{ site_key }}"
-                    style="background:var(--bg-tertiary);color:var(--text-primary);box-shadow:none;">
-                    <span class="fw-semibold">{{ site.label }}</span>
-                    {% if status == 'configured' %}
-                        <span class="badge ms-2" style="background:rgba(22,163,74,0.15);color:#16a34a;border:1px solid rgba(22,163,74,0.3);font-size:0.65rem;">Configured</span>
-                    {% elif status == 'partial' %}
-                        <span class="badge ms-2" style="background:rgba(217,119,6,0.15);color:#d97706;border:1px solid rgba(217,119,6,0.3);font-size:0.65rem;">Partial</span>
-                    {% else %}
-                        <span class="badge ms-2" style="background:var(--bg-secondary);color:var(--text-muted);border:1px solid var(--border-color);font-size:0.65rem;">Not set</span>
-                    {% endif %}
-                </button>
-            </h2>
-            <div id="acc-{{ site_key }}" class="accordion-collapse collapse {% if status != 'none' %}show{% endif %}"
-                data-bs-parent="#oauthAccordion">
-                <div class="accordion-body" style="background:var(--bg-primary);padding:1.25rem;">
-
-                    <p class="text-muted small mb-3">{{ site.description | safe }}</p>
-
-                    <form method="post" action="{{ url_for('oauth_page') }}" autocomplete="off">
-                        <input type="hidden" name="action" value="save_tokens">
-                        <input type="hidden" name="site" value="{{ site_key }}">
-
-                        {% for field in site.fields %}
-                        <div class="mb-3">
-                            <label class="form-label small fw-semibold mb-1" for="f-{{ site_key }}-{{ field.key }}">
-                                {{ field.label }}
-                                {% if field.secret %}
-                                <span class="text-muted fw-normal">(secret)</span>
-                                {% endif %}
-                            </label>
-                            <div class="input-group input-group-sm">
-                                <input
-                                    type="{{ 'password' if field.secret else 'text' }}"
-                                    class="form-control font-monospace"
-                                    id="f-{{ site_key }}-{{ field.key }}"
-                                    name="{{ field.key }}"
-                                    placeholder="{{ '••••••••••••' if field.secret else 'Not set' }}"
-                                    autocomplete="new-password"
-                                    style="font-size:0.8rem;">
-                                {% if field.secret %}
-                                <button type="button" class="btn btn-neutral btn-sm o-reveal"
-                                    data-target="f-{{ site_key }}-{{ field.key }}"
-                                    tabindex="-1" aria-label="Show/hide">
-                                    <span class="o-eye">&#128065;</span>
-                                </button>
-                                {% endif %}
-                            </div>
-                            {% if field.secret %}
-                            <div class="form-text">Leave blank to keep the existing saved value.</div>
-                            {% endif %}
-                        </div>
-                        {% endfor %}
-
-                        <div class="d-flex gap-2 mt-3 flex-wrap">
-                            <button type="submit" class="btn btn-sm btn-go">Save</button>
-                            <button type="submit" form="form-clear-{{ site_key }}" class="btn btn-sm btn-destruct"
-                                onclick="return confirm('Clear all {{ site.label }} credentials from gallery-dl.conf?')">
-                                Clear
-                            </button>
-                            {% if site.oauth_cmd %}
-                            <button type="button" class="btn btn-sm btn-neutral ms-auto o-run-btn"
-                                data-site="{{ site_key }}" data-label="{{ site.label }}">
-                                Run OAuth ↓
-                            </button>
-                            {% endif %}
-                        </div>
-                    </form>
-
-                    <!-- Hidden clear form (separate POST action) -->
-                    <form id="form-clear-{{ site_key }}" method="post" action="{{ url_for('oauth_page') }}" style="display:none;">
-                        <input type="hidden" name="action" value="clear_tokens">
-                        <input type="hidden" name="site" value="{{ site_key }}">
-                    </form>
-
-                </div>
-            </div>
-        </div>
+  <!-- ── Left: task list ────────────────────────────────────────────── -->
+  <div class="col-lg-4 col-xl-3">
+    <div class="card shadow-sm border-secondary">
+      <div class="card-header py-2"
+        style="background:var(--bg-tertiary);font-size:0.7rem;font-weight:700;
+               letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);">
+        OAuth Tasks
+      </div>
+      <div class="list-group list-group-flush" id="oauthTaskList">
+        {% for task in oauth_tasks %}
+        <button type="button"
+          class="list-group-item list-group-item-action ot-item py-2 px-3"
+          style="background:var(--bg-primary);border-color:var(--border-color);text-align:left;"
+          data-slug="{{ task.slug|e }}"
+          data-name="{{ task.name|e }}"
+          data-site="{{ task.oauth_site|e }}"
+          data-auth="{{ '1' if task.oauth_authenticated else '0' }}"
+          data-site-label="{{ oauth_sites.get(task.oauth_site, task.oauth_site)|e }}">
+          <div class="d-flex justify-content-between align-items-start gap-1">
+            <span class="small fw-semibold" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">{{ task.name }}</span>
+            {% if task.oauth_authenticated %}
+            <span class="badge flex-shrink-0"
+              style="background:rgba(22,163,74,0.15);color:#16a34a;
+                     border:1px solid rgba(22,163,74,0.3);font-size:0.6rem;">&#10003; Auth</span>
+            {% else %}
+            <span class="badge flex-shrink-0"
+              style="background:rgba(217,119,6,0.15);color:#d97706;
+                     border:1px solid rgba(217,119,6,0.3);font-size:0.6rem;">Setup needed</span>
+            {% endif %}
+          </div>
+          <div class="text-muted" style="font-size:0.72rem;">
+            {{ oauth_sites.get(task.oauth_site, task.oauth_site) }}
+          </div>
+        </button>
         {% endfor %}
-        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Right: flow panel ──────────────────────────────────────────── -->
+  <div class="col-lg-8 col-xl-9">
+
+    <!-- Placeholder -->
+    <div id="oauthPanelEmpty" class="card shadow-sm border-secondary">
+      <div class="card-body text-center py-5">
+        <p class="text-muted small mb-0">Select a task from the list to authenticate it.</p>
+      </div>
     </div>
 
-    <!-- ── Right: Run OAuth panel ─────────────────────────────────────── -->
-    <div class="col-lg-5">
-        <div class="card shadow-sm border-secondary position-sticky" style="top:80px;">
-            <div class="card-body">
-                <h5 class="card-title mb-1">Run OAuth in container</h5>
-                <p class="text-muted small mb-3">
-                    For sites that support it, this runs <code>gallery-dl oauth:&lt;site&gt;</code>
-                    inside the container and streams the output here.
-                    gallery-dl will print an authorisation URL — open it in your browser,
-                    approve access, then paste any code it asks for below.
-                    Tokens are written directly to <code>gallery-dl.conf</code>.
-                </p>
-                <p class="text-muted small mb-3">
-                    <strong>Note:</strong> This works best when Artillery is accessed from the same
-                    machine as the server. For remote access, use the credential form on the left
-                    with tokens obtained via <code>docker exec</code> or a local gallery-dl install.
-                </p>
-
-                <form method="post" action="{{ url_for('oauth_page') }}" class="mb-3">
-                    <input type="hidden" name="action" value="run_oauth">
-                    <div class="d-flex gap-2 align-items-center flex-wrap">
-                        <select name="site" class="form-select form-select-sm" style="max-width:180px;">
-                            {% for site_key, site in sites.items() %}
-                            {% if site.oauth_cmd %}
-                            <option value="{{ site_key }}">{{ site.label }}</option>
-                            {% endif %}
-                            {% endfor %}
-                        </select>
-                        <button type="submit" class="btn btn-sm btn-go"
-                            {% if oauth_running %}disabled{% endif %}>Start</button>
-                        <button type="submit" form="form-stop-oauth" class="btn btn-sm btn-destruct"
-                            {% if not oauth_running %}disabled{% endif %}>Stop</button>
-                    </div>
-                </form>
-                <form id="form-stop-oauth" method="post" action="{{ url_for('oauth_page') }}" style="display:none;">
-                    <input type="hidden" name="action" value="stop_oauth">
-                </form>
-
-                <!-- Log -->
-                <div id="oauthLog"
-                    class="border rounded p-2 mb-3"
-                    style="font-family:monospace;font-size:0.75rem;line-height:1.5;
-                           min-height:120px;max-height:320px;overflow-y:auto;
-                           white-space:pre-wrap;word-break:break-all;
-                           background:var(--bg-secondary);color:var(--text-secondary);
-                           border-color:var(--border-input) !important;">
-                    <span class="text-muted">No output yet.</span>
-                </div>
-
-                <!-- Code input (for Pixiv-style flows that ask for a code) -->
-                <div class="mb-2">
-                    <label class="form-label small fw-semibold mb-1">Paste code (if prompted)</label>
-                    <div class="input-group input-group-sm">
-                        <input type="text" id="oauthCodeInput" class="form-control font-monospace"
-                            placeholder="Paste the code gallery-dl is waiting for…"
-                            autocomplete="off" style="font-size:0.78rem;">
-                        <button type="button" id="btnSendCode" class="btn btn-neutral">Send</button>
-                    </div>
-                </div>
-
-                <div class="d-flex align-items-center gap-2 mt-2">
-                    <span id="oauthStatus" class="small text-muted">
-                        {% if oauth_running %}Running…{% else %}Idle{% endif %}
-                    </span>
-                    <span id="oauthSpinner" class="spinner-border spinner-border-sm text-secondary ms-1"
-                        role="status" style="display:{% if oauth_running %}inline-block{% else %}none{% endif %};
-                        width:0.75rem;height:0.75rem;border-width:0.15em;">
-                    </span>
-                </div>
-            </div>
+    <!-- Active panel -->
+    <div id="oauthPanel" class="card shadow-sm border-secondary" style="display:none;">
+      <div class="card-header py-2" style="background:var(--bg-tertiary);">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <span class="small fw-semibold" id="opTaskName">—</span>
+          <span class="text-muted small">·</span>
+          <span class="small text-muted" id="opSiteLabel">—</span>
+          <span id="opAuthBadge" class="badge" style="display:none;font-size:0.62rem;"></span>
         </div>
+      </div>
+      <div class="card-body">
+
+        <p class="text-muted small mb-3">
+          Click <strong>Start</strong> to launch the gallery-dl OAuth flow.
+          gallery-dl will print an authorisation URL — open it in your browser and approve access.
+          The provider will then try to redirect to <code>localhost:6414</code>;
+          since this is a container, that redirect will fail in your browser.
+          Copy that failed URL from the address bar and paste it into the <strong>Relay</strong> box below —
+          Artillery will forward it to gallery-dl inside the container.
+        </p>
+
+        <!-- Start / Stop -->
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <button type="button" id="btnOauthStart" class="btn btn-sm btn-go">&#9654; Start</button>
+          <button type="button" id="btnOauthStop"  class="btn btn-sm btn-destruct" disabled>&#9632; Stop</button>
+          <span id="opStatus" class="small text-muted">Idle</span>
+          <span id="opSpinner"
+            class="spinner-border spinner-border-sm text-secondary"
+            style="display:none;width:0.75rem;height:0.75rem;border-width:0.15em;"
+            role="status"></span>
+        </div>
+
+        <!-- Log -->
+        <label class="form-label small fw-semibold mb-1">Output</label>
+        <div id="opLog"
+          class="border rounded p-2 mb-3"
+          style="font-family:monospace;font-size:0.76rem;line-height:1.55;
+                 min-height:170px;max-height:360px;overflow-y:auto;
+                 white-space:pre-wrap;word-break:break-all;
+                 background:var(--bg-secondary);color:var(--text-secondary);
+                 border-color:var(--border-input) !important;"></div>
+
+        <!-- Callback relay -->
+        <div class="border rounded p-3" style="border-color:var(--border-input) !important;background:var(--bg-secondary);">
+          <label class="form-label small fw-semibold mb-1">Callback relay</label>
+          <p class="text-muted small mb-2">
+            When the provider redirects to <code>localhost:6414/?state=…&amp;code=…</code> and your
+            browser shows a connection error, copy that full URL and paste it below.
+            Artillery will relay it to gallery-dl server-side.
+          </p>
+          <div class="input-group input-group-sm mb-2">
+            <input type="text" id="opRelayInput" class="form-control font-monospace"
+              placeholder="http://localhost:6414/?state=…&code=…"
+              autocomplete="off" style="font-size:0.75rem;">
+            <button type="button" id="btnRelay" class="btn btn-neutral">Relay</button>
+          </div>
+          <div id="opRelayStatus" class="small" style="min-height:1.3em;"></div>
+        </div>
+
+      </div>
     </div>
+  </div>
 
-</div>
+</div><!-- /.row -->
 
-<style>
-.accordion-button::after { filter: var(--bs-accordion-btn-icon-filter, none); }
-.accordion-button:not(.collapsed) { color: var(--focus-color); }
-[data-bs-theme="dark"] .accordion-button::after,
-:root[data-theme="dark"] .accordion-button::after { filter: invert(1); }
-.o-eye { font-size: 0.9em; }
-</style>
+{% endif %}
 
 <script>
 (function () {
-    /* ── Show/hide secret fields ──────────────────────────────────────── */
-    document.querySelectorAll('.o-reveal').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            var inp = document.getElementById(btn.dataset.target);
-            if (!inp) return;
-            inp.type = inp.type === 'password' ? 'text' : 'password';
-        });
-    });
+  'use strict';
 
-    /* ── "Run OAuth ↓" scrolls to & pre-selects the site in the panel ── */
-    document.querySelectorAll('.o-run-btn').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            var site  = btn.dataset.site;
-            var panel = document.querySelector('.col-lg-5 .card');
-            var sel   = document.querySelector('select[name="site"]');
-            if (sel) sel.value = site;
-            if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        });
-    });
+  var taskList    = document.getElementById('oauthTaskList');
+  var panelEmpty  = document.getElementById('oauthPanelEmpty');
+  var panel       = document.getElementById('oauthPanel');
+  if (!taskList || !panel) return;
 
-    /* ── OAuth log polling ────────────────────────────────────────────── */
-    var logBox    = document.getElementById('oauthLog');
-    var statusEl  = document.getElementById('oauthStatus');
-    var spinner   = document.getElementById('oauthSpinner');
-    var autoScroll = true;
-    var pollTimer  = null;
+  var opTaskName    = document.getElementById('opTaskName');
+  var opSiteLabel   = document.getElementById('opSiteLabel');
+  var opAuthBadge   = document.getElementById('opAuthBadge');
+  var opStatus      = document.getElementById('opStatus');
+  var opSpinner     = document.getElementById('opSpinner');
+  var opLog         = document.getElementById('opLog');
+  var opRelayInput  = document.getElementById('opRelayInput');
+  var opRelayStatus = document.getElementById('opRelayStatus');
+  var btnStart      = document.getElementById('btnOauthStart');
+  var btnStop       = document.getElementById('btnOauthStop');
+  var btnRelay      = document.getElementById('btnRelay');
 
-    function setRunning(running) {
-        statusEl.textContent = running ? 'Running…' : 'Idle';
-        spinner.style.display = running ? 'inline-block' : 'none';
-        document.querySelector('button[name="action"][value="run_oauth"]') &&
-            (document.querySelector('button[name="action"][value="run_oauth"]').disabled = running);
-        var stopBtn = document.getElementById('form-stop-oauth');
-        // enable/disable Stop via the visible button
-        var stopVisible = document.querySelector('.btn-destruct[form="form-stop-oauth"]');
-        if (stopVisible) stopVisible.disabled = !running;
+  var selSlug   = null;
+  var pollTimer = null;
+  var autoScroll = true;
+
+  /* ── UI helpers ────────────────────────────────────────────────────── */
+  function setRunning(running) {
+    opStatus.textContent    = running ? 'Running…' : 'Idle';
+    opSpinner.style.display = running ? 'inline-block' : 'none';
+    btnStart.disabled       = running;
+    btnStop.disabled        = !running;
+  }
+
+  function setAuthBadge(auth) {
+    if (!opAuthBadge) return;
+    opAuthBadge.style.display = '';
+    if (auth) {
+      opAuthBadge.style.cssText = 'background:rgba(22,163,74,0.15);color:#16a34a;border:1px solid rgba(22,163,74,0.3);font-size:0.62rem;';
+      opAuthBadge.textContent = '✓ Authenticated';
+    } else {
+      opAuthBadge.style.cssText = 'background:rgba(217,119,6,0.15);color:#d97706;border:1px solid rgba(217,119,6,0.3);font-size:0.62rem;';
+      opAuthBadge.textContent = 'Setup needed';
     }
-
-    function pollLog() {
-        fetch('{{ url_for("oauth_run_log") }}')
-            .then(function (r) { return r.ok ? r.json() : null; })
-            .then(function (d) {
-                if (!d) return;
-                var txt = d.content || '';
-                logBox.textContent = txt || 'No output yet.';
-                if (autoScroll) logBox.scrollTop = logBox.scrollHeight;
-                setRunning(d.running);
-                pollTimer = d.running
-                    ? setTimeout(pollLog, 1500)
-                    : setTimeout(pollLog, 8000);
-            })
-            .catch(function () {
-                pollTimer = setTimeout(pollLog, 10000);
-            });
+    if (selSlug) {
+      var item = taskList.querySelector('.ot-item[data-slug="' + selSlug + '"]');
+      if (item) {
+        item.dataset.auth = auth ? '1' : '0';
+        var badge = item.querySelector('.badge');
+        if (badge) {
+          if (auth) {
+            badge.style.cssText = 'background:rgba(22,163,74,0.15);color:#16a34a;border:1px solid rgba(22,163,74,0.3);font-size:0.6rem;';
+            badge.textContent = '✓ Auth';
+          } else {
+            badge.style.cssText = 'background:rgba(217,119,6,0.15);color:#d97706;border:1px solid rgba(217,119,6,0.3);font-size:0.6rem;';
+            badge.textContent = 'Setup needed';
+          }
+        }
+      }
     }
+  }
 
-    logBox.addEventListener('scroll', function () {
-        autoScroll = logBox.scrollTop + logBox.clientHeight >= logBox.scrollHeight - 10;
+  /* ── Log polling ───────────────────────────────────────────────────── */
+  function pollLog() {
+    fetch('/api/oauth/log')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) return;
+        opLog.textContent = d.content || 'No output yet. Click Start to begin.';
+        if (autoScroll) opLog.scrollTop = opLog.scrollHeight;
+        setRunning(d.running);
+        pollTimer = d.running ? setTimeout(pollLog, 1500) : setTimeout(pollLog, 8000);
+      })
+      .catch(function () { pollTimer = setTimeout(pollLog, 10000); });
+  }
+
+  opLog.addEventListener('scroll', function () {
+    autoScroll = opLog.scrollTop + opLog.clientHeight >= opLog.scrollHeight - 10;
+  });
+
+  /* ── Task selection ────────────────────────────────────────────────── */
+  function selectTask(btn) {
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    selSlug = btn.dataset.slug;
+    taskList.querySelectorAll('.ot-item').forEach(function (b) {
+      b.style.background = (b === btn) ? 'var(--bg-tertiary)' : 'var(--bg-primary)';
     });
-
-    /* ── Send code to stdin ───────────────────────────────────────────── */
-    document.getElementById('btnSendCode').addEventListener('click', function () {
-        var code = document.getElementById('oauthCodeInput').value.trim();
-        if (!code) return;
-        var fd = new FormData();
-        fd.append('code', code);
-        fetch('{{ url_for("oauth_run_input") }}', { method: 'POST', body: fd })
-            .then(function (r) { return r.json(); })
-            .then(function (d) {
-                if (d.ok) {
-                    document.getElementById('oauthCodeInput').value = '';
-                } else {
-                    alert('Error: ' + (d.error || 'unknown'));
-                }
-            })
-            .catch(function (e) { alert('Error: ' + e.message); });
-    });
-
-    /* Start polling immediately */
+    opTaskName.textContent  = btn.dataset.name || btn.dataset.slug;
+    opSiteLabel.textContent = btn.dataset.siteLabel || btn.dataset.site;
+    setAuthBadge(btn.dataset.auth === '1');
+    panelEmpty.style.display = 'none';
+    panel.style.display      = '';
+    opLog.textContent        = 'No output yet. Click Start to begin.';
+    opRelayStatus.textContent = '';
+    opRelayInput.value        = '';
+    setRunning(false);
     pollLog();
+  }
+
+  taskList.querySelectorAll('.ot-item').forEach(function (btn) {
+    btn.addEventListener('click', function () { selectTask(this); });
+  });
+
+  /* ── Start ─────────────────────────────────────────────────────────── */
+  btnStart.addEventListener('click', function () {
+    if (!selSlug) return;
+    opRelayStatus.textContent = '';
+    var fd = new FormData();
+    fd.append('task_slug', selSlug);
+    fetch('/api/oauth/start', { method: 'POST', body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) {
+          opLog.textContent = 'Error: ' + d.error;
+        } else {
+          setRunning(true);
+          if (pollTimer) clearTimeout(pollTimer);
+          pollLog();
+        }
+      })
+      .catch(function (e) { opLog.textContent = 'Request failed: ' + e.message; });
+  });
+
+  /* ── Stop ──────────────────────────────────────────────────────────── */
+  btnStop.addEventListener('click', function () {
+    var fd = new FormData();
+    fetch('/api/oauth/stop', { method: 'POST', body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function () { setRunning(false); })
+      .catch(function () {});
+  });
+
+  /* ── Relay ─────────────────────────────────────────────────────────── */
+  btnRelay.addEventListener('click', function () {
+    var raw = opRelayInput.value.trim();
+    if (!raw) return;
+    var qs = '';
+    try {
+      var url = new URL(raw.startsWith('http') ? raw : 'http://x?' + raw);
+      qs = url.search.replace(/^\?/, '');
+    } catch (e) {
+      opRelayStatus.innerHTML = '<span class="text-danger">Could not parse URL: ' + e.message + '</span>';
+      return;
+    }
+    if (!qs) {
+      opRelayStatus.innerHTML = '<span class="text-danger">No query string found in that URL.</span>';
+      return;
+    }
+    opRelayStatus.innerHTML = '<span class="text-muted">Relaying…</span>';
+    var fd = new FormData();
+    fd.append('qs', qs);
+    fetch('/oauth/relay', { method: 'POST', body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.ok) {
+          opRelayStatus.innerHTML = '<span style="color:#16a34a;">&#10003; Relay complete — tokens should now be saved. Check the output above.</span>';
+          // after a short delay, refresh auth badge by polling api/tasks
+          setTimeout(function () {
+            fetch('/api/tasks')
+              .then(function (r) { return r.json(); })
+              .then(function (tasks) {
+                var t = tasks.find(function (x) { return x.slug === selSlug; });
+                if (t && t.oauth_authenticated) setAuthBadge(true);
+              })
+              .catch(function () {});
+          }, 2000);
+        } else {
+          opRelayStatus.innerHTML = '<span class="text-danger">Relay failed: ' + (d.error || 'unknown error') + '</span>';
+        }
+      })
+      .catch(function (e) {
+        opRelayStatus.innerHTML = '<span class="text-danger">Request failed: ' + e.message + '</span>';
+      });
+  });
+
 }());
 </script>
 
