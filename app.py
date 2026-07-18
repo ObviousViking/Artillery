@@ -330,6 +330,21 @@ def write_text(path: str, content: str):
         f.write(content)
 
 
+_tool_version_cache: dict = {}
+
+def _get_tool_version(cmd: str) -> str:
+    if cmd not in _tool_version_cache:
+        try:
+            out = subprocess.check_output(
+                [cmd, "--version"], stderr=subprocess.STDOUT, timeout=5
+            ).decode().strip()
+            _tool_version_cache[cmd] = out.splitlines()[0] if out else "unknown"
+        except Exception:
+            _tool_version_cache[cmd] = "not found"
+    return _tool_version_cache[cmd]
+
+
+
 def _is_process_running(pid: int) -> bool:
     try:
         if pid <= 0:
@@ -1078,35 +1093,6 @@ def home():
     )
 
 # ---------------------------------------------------------------------
-# Recent downloads (per task, based on logs)
-# ---------------------------------------------------------------------
-
-@app.route("/recent")
-def recent_downloads():
-    ensure_data_dirs(ensure_downloads=False)
-    tasks = load_tasks()
-
-    task_items = []
-    for task in tasks:
-        log_path = os.path.join(TASKS_ROOT, task["slug"], "logs.txt")
-        items = _recent_downloads_from_log(log_path, RECENT_DOWNLOADS_PER_TASK)
-        for item in items:
-            item["url"] = url_for("media_file", subpath=item["rel"])
-            item["is_image"] = item["ext"] in IMAGE_EXTS
-            item["is_video"] = item["ext"] in VIDEO_EXTS
-        task_items.append({
-            "name": task["name"],
-            "slug": task["slug"],
-            "recent_items": items,
-        })
-
-    return render_template(
-        "recent.html",
-        task_items=task_items,
-        per_task_limit=RECENT_DOWNLOADS_PER_TASK,
-    )
-
-# ---------------------------------------------------------------------
 # Tasks
 # ---------------------------------------------------------------------
 
@@ -1332,6 +1318,8 @@ def config_page():
         media_wall_scan_cron=scan_cron,
         task_concurrent_max=_task_max_concurrent,
         tasks=load_tasks(),
+        gdl_version=_get_tool_version("gallery-dl"),
+        ytdlp_version=_get_tool_version("yt-dlp"),
     )
 
 # ---------------------------------------------------------------------
