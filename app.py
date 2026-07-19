@@ -62,6 +62,13 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = _get_or_create_secret_key()
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB max upload (covers bulk kiosk image uploads)
 
+# No login/session system here, and tabs are routinely left open all day —
+# the default 1-hour CSRF token lifetime just breaks a stale tab's next click
+# ("The CSRF token has expired") with no real security benefit on a trusted
+# LAN app. The token itself (still tied to SECRET_KEY) keeps protecting
+# against cross-site form submission; it just never expires on a timer.
+app.config["WTF_CSRF_TIME_LIMIT"] = None
+
 csrf = CSRFProtect(app)
 
 # ---------------------------------------------------------------------
