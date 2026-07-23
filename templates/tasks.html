@@ -584,9 +584,18 @@ a.r-item:hover {
               </div>
             </div>
             <div class="mb-3">
-              <label class="form-label" for="cSched">Cron schedule <span class="text-muted fw-normal">(optional)</span></label>
-              <input type="text" id="cSched" name="schedule" class="form-control form-control-sm" placeholder="*/5 * * * *"/>
-              <div class="form-text"><code>*/5 * * * *</code> = every 5 min</div>
+              <label class="form-label d-block">Schedule</label>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="schedule_mode" id="cModeManual" value="manual" checked>
+                <label class="form-check-label small" for="cModeManual">Run once / on demand</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="schedule_mode" id="cModeCron" value="cron">
+                <label class="form-check-label small" for="cModeCron">Recurring (cron)</label>
+              </div>
+              <div class="form-text mb-2">On demand: the task sits idle until you click Run. It won't repeat unless you switch this to Recurring.</div>
+              <input type="text" id="cSched" name="schedule" class="form-control form-control-sm" placeholder="*/5 * * * *" style="display:none;" disabled/>
+              <div class="form-text" id="cSchedHelp" style="display:none;"><code>*/5 * * * *</code> = every 5 min</div>
             </div>
             <div class="mb-0">
               <label class="form-label">Cookies <span class="text-muted fw-normal">(optional)</span></label>
@@ -768,8 +777,17 @@ a.r-item:hover {
                 </div>
 
                 <div class="mb-3">
-                  <label class="form-label" for="eSched">Cron schedule <span class="text-muted fw-normal">(optional)</span></label>
-                  <input type="text" id="eSched" name="schedule" class="form-control form-control-sm"/>
+                  <label class="form-label d-block">Schedule</label>
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="schedule_mode" id="eModeManual" value="manual">
+                    <label class="form-check-label small" for="eModeManual">Run once / on demand</label>
+                  </div>
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="schedule_mode" id="eModeCron" value="cron">
+                    <label class="form-check-label small" for="eModeCron">Recurring (cron)</label>
+                  </div>
+                  <div class="form-text mb-2">On demand: the task sits idle until you click Run. It won't repeat unless you switch this to Recurring.</div>
+                  <input type="text" id="eSched" name="schedule" class="form-control form-control-sm" placeholder="*/5 * * * *"/>
                 </div>
                 <div class="mb-0">
                   <label class="form-label">Cookies <span class="text-muted fw-normal">(optional)</span></label>
@@ -855,6 +873,9 @@ a.r-item:hover {
     var dLastError = $('dLastError'), dLastErrorText = $('dLastErrorText');
     var statsContent = $('statsContent');
     var eName = $('eName'), eUrls = $('eUrls'), eSched = $('eSched');
+    var cSched = $('cSched');
+    var cModeManual = $('cModeManual'), cModeCron = $('cModeCron'), cSchedHelp = $('cSchedHelp');
+    var eModeManual = $('eModeManual'), eModeCron = $('eModeCron');
     var eCmd = $('eCmd'), eCmdH = $('eCmdH'), eKeepUrls = $('eKeepUrls');
     var eUrlCntLbl = $('eUrlCntLbl'), urlGate = $('urlGate');
     var urlGateMsg = $('urlGateMsg'), bLoadUrls = $('bLoadUrls');
@@ -1035,7 +1056,7 @@ a.r-item:hover {
         dStatus.textContent = st;
 
         /* Details tab */
-        dSched.textContent    = btn.dataset.schedule || '—';
+        dSched.textContent    = btn.dataset.schedule || 'Manual only (on demand)';
         dLastRun.textContent  = fmtDate(btn.dataset.lastRun);
         dUrlCount.textContent = fmtN(selUrlCount);
         dTimeout.textContent  = btn.dataset.timeout ? btn.dataset.timeout + 's' : '—';
@@ -1067,6 +1088,9 @@ a.r-item:hover {
         eOrigSlug.value      = btn.dataset.slug;
         eName.value          = btn.dataset.name;
         eSched.value         = btn.dataset.schedule || '';
+        eModeCron.checked    = !!btn.dataset.schedule;
+        eModeManual.checked  = !btn.dataset.schedule;
+        syncScheduleMode('e');
         eCmd.value           = btn.dataset.command;
         eCmdH.value          = btn.dataset.command;
         eUrlCntLbl.textContent = selUrlCount ? '— ' + fmtN(selUrlCount) : '';
@@ -1088,6 +1112,16 @@ a.r-item:hover {
             bPause.innerHTML = '&#9646;&#9646; Pause';
             bPause.className = 't-btn t-btn-pause';
         }
+    }
+
+    /* ── Schedule mode (create / edit forms) ─────────────────────────── */
+    function syncScheduleMode(prefix) {
+        var isCron   = prefix === 'c' ? cModeCron.checked : eModeCron.checked;
+        var schedEl  = prefix === 'c' ? cSched : eSched;
+        schedEl.style.display = isCron ? '' : 'none';
+        schedEl.disabled      = !isCron;
+        if (!isCron) schedEl.value = '';
+        if (prefix === 'c') cSchedHelp.style.display = isCron ? '' : 'none';
     }
 
     /* ── URL gate ─────────────────────────────────────────────────────── */
@@ -1367,10 +1401,18 @@ a.r-item:hover {
             document.querySelectorAll('.t-item').forEach(function (el) { el.classList.remove('sel'); });
             stopLog();
             $('fCreate').reset();
+            syncScheduleMode('c');
             buildCreateCmd();
             showPanel('new');
             if (window.innerWidth < 768)
                 $('pNew').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+
+        [cModeManual, cModeCron].forEach(function (el) {
+            el.addEventListener('change', function () { syncScheduleMode('c'); });
+        });
+        [eModeManual, eModeCron].forEach(function (el) {
+            el.addEventListener('change', function () { syncScheduleMode('e'); });
         });
 
         document.querySelectorAll('.t-tab').forEach(function (btn) {
