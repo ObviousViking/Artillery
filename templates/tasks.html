@@ -67,6 +67,37 @@ body { padding-top: 60px !important; }
     border-radius: 6px;
 }
 
+/* Status filter chips */
+.t-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 0 10px 7px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+.t-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-muted);
+    border-radius: 999px;
+    padding: 2px 9px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.t-filter-chip:hover { color: var(--text-primary); border-color: var(--text-muted); }
+.t-filter-chip.active {
+    background: rgba(249,115,22,0.12);
+    border-color: var(--focus-color);
+    color: var(--focus-color);
+}
+.t-filter-chip .t-dot { margin: 0; }
+
 /* Disk usage footer */
 .t-disk-box {
     flex-shrink: 0;
@@ -109,6 +140,7 @@ body { padding-top: 60px !important; }
     font-size: 0.7rem;
     color: var(--text-muted);
 }
+.t-queue-fill { background: #16a34a; }
 
 /* Task list item */
 .t-item {
@@ -439,6 +471,14 @@ a.r-item:hover {
                      color:var(--text-muted);cursor:pointer;" aria-label="Clear search">&#x2715;</button>
     </div>
 
+    <div class="t-filter-row" id="taskFilterRow" role="group" aria-label="Filter tasks by status">
+      <button type="button" class="t-filter-chip active" data-filter="all">All</button>
+      <button type="button" class="t-filter-chip" data-filter="running"><span class="t-dot running"></span>Running</button>
+      <button type="button" class="t-filter-chip" data-filter="idle"><span class="t-dot idle-ok"></span>Idle</button>
+      <button type="button" class="t-filter-chip" data-filter="paused"><span class="t-dot paused"></span>Paused</button>
+      <button type="button" class="t-filter-chip" data-filter="error"><span class="t-dot error"></span>Error</button>
+    </div>
+
     <div class="t-list">
       {% if tasks %}
         {% for task in tasks %}
@@ -487,6 +527,18 @@ a.r-item:hover {
       {% endif %}
     </div>
 
+    <!-- Task queue footer -->
+    <div class="t-disk-box" id="queueBox">
+        <div class="t-disk-label">
+            <span>Task queue</span>
+            <span class="t-disk-label-val" id="queueVal">0 / {{ task_concurrent_max }} running</span>
+        </div>
+        <div class="t-disk-track">
+            <div class="t-disk-fill t-queue-fill" id="queueFill" style="width:0%"></div>
+        </div>
+        <div class="t-disk-sub" id="queueSub">Idle</div>
+    </div>
+
     <!-- Disk usage footer -->
     <div class="t-disk-box" id="diskBox">
         <div class="t-disk-label">
@@ -532,9 +584,18 @@ a.r-item:hover {
               </div>
             </div>
             <div class="mb-3">
-              <label class="form-label" for="cSched">Cron schedule <span class="text-muted fw-normal">(optional)</span></label>
-              <input type="text" id="cSched" name="schedule" class="form-control form-control-sm" placeholder="*/5 * * * *"/>
-              <div class="form-text"><code>*/5 * * * *</code> = every 5 min</div>
+              <label class="form-label d-block">Schedule</label>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="schedule_mode" id="cModeManual" value="manual" checked>
+                <label class="form-check-label small" for="cModeManual">Run once / on demand</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="schedule_mode" id="cModeCron" value="cron">
+                <label class="form-check-label small" for="cModeCron">Recurring (cron)</label>
+              </div>
+              <div class="form-text mb-2">On demand: the task sits idle until you click Run. It won't repeat unless you switch this to Recurring.</div>
+              <input type="text" id="cSched" name="schedule" class="form-control form-control-sm" placeholder="*/5 * * * *" style="display:none;" disabled/>
+              <div class="form-text" id="cSchedHelp" style="display:none;"><code>*/5 * * * *</code> = every 5 min</div>
             </div>
             <div class="mb-0">
               <label class="form-label">Cookies <span class="text-muted fw-normal">(optional)</span></label>
@@ -716,8 +777,17 @@ a.r-item:hover {
                 </div>
 
                 <div class="mb-3">
-                  <label class="form-label" for="eSched">Cron schedule <span class="text-muted fw-normal">(optional)</span></label>
-                  <input type="text" id="eSched" name="schedule" class="form-control form-control-sm"/>
+                  <label class="form-label d-block">Schedule</label>
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="schedule_mode" id="eModeManual" value="manual">
+                    <label class="form-check-label small" for="eModeManual">Run once / on demand</label>
+                  </div>
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="schedule_mode" id="eModeCron" value="cron">
+                    <label class="form-check-label small" for="eModeCron">Recurring (cron)</label>
+                  </div>
+                  <div class="form-text mb-2">On demand: the task sits idle until you click Run. It won't repeat unless you switch this to Recurring.</div>
+                  <input type="text" id="eSched" name="schedule" class="form-control form-control-sm" placeholder="*/5 * * * *"/>
                 </div>
                 <div class="mb-0">
                   <label class="form-label">Cookies <span class="text-muted fw-normal">(optional)</span></label>
@@ -803,15 +873,44 @@ a.r-item:hover {
     var dLastError = $('dLastError'), dLastErrorText = $('dLastErrorText');
     var statsContent = $('statsContent');
     var eName = $('eName'), eUrls = $('eUrls'), eSched = $('eSched');
+    var cSched = $('cSched');
+    var cModeManual = $('cModeManual'), cModeCron = $('cModeCron'), cSchedHelp = $('cSchedHelp');
+    var eModeManual = $('eModeManual'), eModeCron = $('eModeCron');
     var eCmd = $('eCmd'), eCmdH = $('eCmdH'), eKeepUrls = $('eKeepUrls');
     var eUrlCntLbl = $('eUrlCntLbl'), urlGate = $('urlGate');
     var urlGateMsg = $('urlGateMsg'), bLoadUrls = $('bLoadUrls');
     var cCmd = $('cCmd'), cCmdH = $('cCmdH');
     var taskSearch = $('taskSearch');
+    var taskFilterRow = $('taskFilterRow');
 
     /* ── Helpers ──────────────────────────────────────────────────────── */
     function displaySt(status, lastRun) {
         return (status === 'idle' && lastRun) ? 'idle-ok' : status;
+    }
+
+    /* ── Status filter (persisted across page reloads) ─────────────────── */
+    var TASK_FILTER_KEY = 'artillery-task-filter';
+    var taskFilter = 'all';
+    try {
+        taskFilter = localStorage.getItem(TASK_FILTER_KEY) || 'all';
+    } catch (e) { /* localStorage unavailable (private mode etc.) — default to 'all' */ }
+
+    function applyFilters() {
+        var q = taskSearch.value.trim().toLowerCase();
+        document.querySelectorAll('.t-item').forEach(function (btn) {
+            var matchesSearch = !q || btn.dataset.name.toLowerCase().includes(q);
+            var matchesFilter = taskFilter === 'all' || btn.dataset.status === taskFilter;
+            btn.style.display = (matchesSearch && matchesFilter) ? '' : 'none';
+        });
+    }
+
+    function setTaskFilter(f) {
+        taskFilter = f;
+        try { localStorage.setItem(TASK_FILTER_KEY, f); } catch (e) { /* ignore */ }
+        taskFilterRow.querySelectorAll('.t-filter-chip').forEach(function (chip) {
+            chip.classList.toggle('active', chip.dataset.filter === f);
+        });
+        applyFilters();
     }
 
     function fmtNextRun(iso) {
@@ -957,7 +1056,7 @@ a.r-item:hover {
         dStatus.textContent = st;
 
         /* Details tab */
-        dSched.textContent    = btn.dataset.schedule || '—';
+        dSched.textContent    = btn.dataset.schedule || 'Manual only (on demand)';
         dLastRun.textContent  = fmtDate(btn.dataset.lastRun);
         dUrlCount.textContent = fmtN(selUrlCount);
         dTimeout.textContent  = btn.dataset.timeout ? btn.dataset.timeout + 's' : '—';
@@ -989,6 +1088,9 @@ a.r-item:hover {
         eOrigSlug.value      = btn.dataset.slug;
         eName.value          = btn.dataset.name;
         eSched.value         = btn.dataset.schedule || '';
+        eModeCron.checked    = !!btn.dataset.schedule;
+        eModeManual.checked  = !btn.dataset.schedule;
+        syncScheduleMode('e');
         eCmd.value           = btn.dataset.command;
         eCmdH.value          = btn.dataset.command;
         eUrlCntLbl.textContent = selUrlCount ? '— ' + fmtN(selUrlCount) : '';
@@ -1010,6 +1112,16 @@ a.r-item:hover {
             bPause.innerHTML = '&#9646;&#9646; Pause';
             bPause.className = 't-btn t-btn-pause';
         }
+    }
+
+    /* ── Schedule mode (create / edit forms) ─────────────────────────── */
+    function syncScheduleMode(prefix) {
+        var isCron   = prefix === 'c' ? cModeCron.checked : eModeCron.checked;
+        var schedEl  = prefix === 'c' ? cSched : eSched;
+        schedEl.style.display = isCron ? '' : 'none';
+        schedEl.disabled      = !isCron;
+        if (!isCron) schedEl.value = '';
+        if (prefix === 'c') cSchedHelp.style.display = isCron ? '' : 'none';
     }
 
     /* ── URL gate ─────────────────────────────────────────────────────── */
@@ -1270,6 +1382,7 @@ a.r-item:hover {
                             : '<span class="text-muted">No cookies file</span>';
                     }
                 });
+                applyFilters();
             })
             .catch(function () {});
     }
@@ -1288,10 +1401,18 @@ a.r-item:hover {
             document.querySelectorAll('.t-item').forEach(function (el) { el.classList.remove('sel'); });
             stopLog();
             $('fCreate').reset();
+            syncScheduleMode('c');
             buildCreateCmd();
             showPanel('new');
             if (window.innerWidth < 768)
                 $('pNew').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+
+        [cModeManual, cModeCron].forEach(function (el) {
+            el.addEventListener('change', function () { syncScheduleMode('c'); });
+        });
+        [eModeManual, eModeCron].forEach(function (el) {
+            el.addEventListener('change', function () { syncScheduleMode('e'); });
         });
 
         document.querySelectorAll('.t-tab').forEach(function (btn) {
@@ -1324,18 +1445,20 @@ a.r-item:hover {
 
         var taskSearchClear = $('taskSearchClear');
         taskSearch.addEventListener('input', function () {
-            var q = this.value.trim().toLowerCase();
-            taskSearchClear.style.display = q ? '' : 'none';
-            document.querySelectorAll('.t-item').forEach(function (btn) {
-                btn.style.display = (!q || btn.dataset.name.toLowerCase().includes(q)) ? '' : 'none';
-            });
+            taskSearchClear.style.display = this.value.trim() ? '' : 'none';
+            applyFilters();
         });
         taskSearchClear.addEventListener('click', function () {
             taskSearch.value = '';
             taskSearchClear.style.display = 'none';
-            document.querySelectorAll('.t-item').forEach(function (btn) { btn.style.display = ''; });
+            applyFilters();
             taskSearch.focus();
         });
+
+        taskFilterRow.querySelectorAll('.t-filter-chip').forEach(function (chip) {
+            chip.addEventListener('click', function () { setTaskFilter(chip.dataset.filter); });
+        });
+        setTaskFilter(taskFilter);
 
         /* ── Cookies validation on submit ─────────────────────────────── */
         var cCookiesErrEl = document.createElement('div');
@@ -1372,6 +1495,18 @@ a.r-item:hover {
             }
         });
 
+        /* Guard against double-submit: pause/resume (and the other action forms)
+           toggle server-side state, so a second click before the page navigates
+           away can flip the result right back. Disabling the button on submit
+           stops the resubmit. */
+        [fRun, fStop, fPause, fClearLogs, fDelete, fDeleteArchive].forEach(function (f) {
+            f.addEventListener('submit', function (e) {
+                if (e.defaultPrevented) return; /* confirm() was cancelled */
+                var b = f.querySelector('button[type="submit"]');
+                if (b) b.disabled = true;
+            });
+        });
+
         buildCreateCmd();
         updateLogStatusText();
         var selectedTask = getSelectedTaskFromQuery();
@@ -1384,7 +1519,28 @@ a.r-item:hover {
 
         loadDisk();
         setInterval(loadDisk, 60000);
+
+        loadQueue();
+        setInterval(loadQueue, 5000);
     });
+
+    /* ── Queue status ─────────────────────────────────────────────────── */
+    function loadQueue() {
+        fetch('/api/queue')
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(d) {
+                if (!d) return;
+                var running = d.running || 0;
+                var queued  = d.queued  || 0;
+                var max     = d.max_concurrent || 1;
+                var pct = max > 0 ? Math.min(100, (running / max) * 100) : 0;
+                document.getElementById('queueVal').textContent = running + ' / ' + max + ' running';
+                document.getElementById('queueFill').style.width = pct.toFixed(1) + '%';
+                document.getElementById('queueSub').textContent =
+                    queued > 0 ? (queued + ' task' + (queued !== 1 ? 's' : '') + ' queued') : 'Idle';
+            })
+            .catch(function() {});
+    }
 
     /* ── Disk usage ───────────────────────────────────────────────────── */
     function fmtBytes(b) {

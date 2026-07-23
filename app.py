@@ -35,9 +35,39 @@ from flask import (
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.utils import secure_filename
 
+def _get_or_create_secret_key() -> str:
+    env_key = os.environ.get("SECRET_KEY")
+    if env_key:
+        return env_key
+    # Persist a generated key to the config volume so it survives restarts.
+    # Without this, every restart invalidates open tabs' CSRF tokens.
+    config_root = os.environ.get("CONFIG_DIR") or "/config"
+    key_path = os.path.join(config_root, ".secret_key")
+    try:
+        existing = Path(key_path).read_text().strip()
+        if existing:
+            return existing
+    except FileNotFoundError:
+        pass
+    new_key = secrets.token_hex(32)
+    try:
+        os.makedirs(config_root, exist_ok=True)
+        Path(key_path).write_text(new_key)
+    except Exception:
+        pass
+    return new_key
+
+
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", secrets.token_hex(32))
+app.config["SECRET_KEY"] = _get_or_create_secret_key()
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB max upload (covers bulk kiosk image uploads)
+
+# No login/session system here, and tabs are routinely left open all day —
+# the default 1-hour CSRF token lifetime just breaks a stale tab's next click
+# ("The CSRF token has expired") with no real security benefit on a trusted
+# LAN app. The token itself (still tied to SECRET_KEY) keeps protecting
+# against cross-site form submission; it just never expires on a timer.
+app.config["WTF_CSRF_TIME_LIMIT"] = None
 
 csrf = CSRFProtect(app)
 
@@ -84,6 +114,7 @@ VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
 TASK_TIMEOUT_SECONDS = int(os.environ.get("TASK_TIMEOUT_SECONDS", "0") or "0")
+TASK_CONCURRENT_MAX  = int(os.environ.get("TASK_CONCURRENT_MAX", "5"))
 MAX_ROTATED_LOGS = 5
 
 def _get_task_timeout(task_folder: str) -> Optional[int]:
@@ -186,8 +217,13 @@ MEDIA_WALL_DIR = os.path.join(CONFIG_ROOT, "media_wall")
 MEDIA_WALL_SCAN_CRON_FILE = os.path.join(CONFIG_ROOT, "mediawall_scan_cron.txt")
 MEDIA_WALL_ENABLED_FILE = os.path.join(CONFIG_ROOT, "mediawall_enabled.txt")
 
-MEDIA_WALL_REFRESH_LOCK = threading.Lock()
-_HISTORY_LOCK          = threading.Lock()  # serialises concurrent run_history.jsonl writes
+MEDIA_WALL_REFRESH_LOCK   = threading.Lock()
+_HISTORY_LOCK             = threading.Lock()  # serialises concurrent run_history.jsonl writes
+_task_cond                = threading.Condition(threading.Lock())
+_task_max_concurrent: int = TASK_CONCURRENT_MAX  # overridden from saved file at startup
+_tasks_running: int       = 0   # currently executing gallery-dl processes
+_tasks_queued: int        = 0   # threads waiting for a concurrency slot
+_TASK_CONCURRENT_MAX_FILE = os.path.join(CONFIG_ROOT, "task_concurrent_max.txt")
 
 # Disable aggressive caching of send_from_directory responses
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
@@ -243,6 +279,15 @@ if DEBUG_REQUEST_TIMING:
                             request.method, request.path, resp.status_code, dt_ms)
         return resp
 
+# A pinned/backgrounded tab can sit idle for hours (including through OS
+# sleep), so any pooled keep-alive connection the browser reuses is long
+# dead server-side by then. Forcing a fresh connection per request avoids
+# gunicorn's sync worker misparsing a reused stale socket as "Bad Request".
+@app.after_request
+def _no_keepalive(resp):
+    resp.headers["Connection"] = "close"
+    return resp
+
 # ---------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------
@@ -290,6 +335,21 @@ def write_text(path: str, content: str):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
+
+
+_tool_version_cache: dict = {}
+
+def _get_tool_version(cmd: str) -> str:
+    if cmd not in _tool_version_cache:
+        try:
+            out = subprocess.check_output(
+                [cmd, "--version"], stderr=subprocess.STDOUT, timeout=5
+            ).decode().strip()
+            _tool_version_cache[cmd] = out.splitlines()[0] if out else "unknown"
+        except Exception:
+            _tool_version_cache[cmd] = "not found"
+    return _tool_version_cache[cmd]
+
 
 
 def _is_process_running(pid: int) -> bool:
@@ -341,6 +401,10 @@ def _set_media_wall_scan_cron(expr: str) -> None:
 
 # In-memory cache to reduce repeated disk reads on /tasks
 _TASK_CACHE = {}
+
+# Guards the pause/resume toggle below so two overlapping requests
+# (e.g. two open tabs) can't race the check-then-act and cancel each other out.
+_PAUSE_LOCK = threading.Lock()
 
 # Coarse TTL cache for the full task list — short-circuits per-task stat sweeps
 # when nothing has changed between requests (e.g. during the 5 s polling loop).
@@ -405,6 +469,47 @@ def _unschedule_task(slug: str) -> None:
         _bg_scheduler.remove_job(f"task_{slug}")
     except Exception:
         app.logger.debug("Scheduler job task_%s not found (already removed or never added)", slug)
+
+def _acquire_task_slot() -> None:
+    global _tasks_queued, _tasks_running
+    with _task_cond:
+        _tasks_queued += 1
+        while _tasks_running >= _task_max_concurrent:
+            _task_cond.wait()
+        _tasks_queued -= 1
+        _tasks_running += 1
+
+def _release_task_slot() -> None:
+    global _tasks_running
+    with _task_cond:
+        _tasks_running -= 1
+        _task_cond.notify()
+
+def _set_task_max_concurrent(n: int) -> None:
+    global _task_max_concurrent
+    n = max(1, min(n, 50))
+    with _task_cond:
+        _task_max_concurrent = n
+        _task_cond.notify_all()
+    try:
+        Path(_TASK_CONCURRENT_MAX_FILE).write_text(str(n))
+    except Exception:
+        app.logger.warning("Could not save task_concurrent_max setting", exc_info=True)
+
+def _load_task_concurrent_max_from_file() -> None:
+    global _task_max_concurrent
+    try:
+        val = Path(_TASK_CONCURRENT_MAX_FILE).read_text().strip()
+        if val.isdigit():
+            v = int(val)
+            if 1 <= v <= 50:
+                with _task_cond:
+                    _task_max_concurrent = v
+    except FileNotFoundError:
+        pass
+    except Exception:
+        app.logger.debug("Could not load task_concurrent_max from file", exc_info=True)
+
 
 def _load_all_schedules() -> None:
     if not os.path.isdir(TASKS_ROOT):
@@ -995,35 +1100,6 @@ def home():
     )
 
 # ---------------------------------------------------------------------
-# Recent downloads (per task, based on logs)
-# ---------------------------------------------------------------------
-
-@app.route("/recent")
-def recent_downloads():
-    ensure_data_dirs(ensure_downloads=False)
-    tasks = load_tasks()
-
-    task_items = []
-    for task in tasks:
-        log_path = os.path.join(TASKS_ROOT, task["slug"], "logs.txt")
-        items = _recent_downloads_from_log(log_path, RECENT_DOWNLOADS_PER_TASK)
-        for item in items:
-            item["url"] = url_for("media_file", subpath=item["rel"])
-            item["is_image"] = item["ext"] in IMAGE_EXTS
-            item["is_video"] = item["ext"] in VIDEO_EXTS
-        task_items.append({
-            "name": task["name"],
-            "slug": task["slug"],
-            "recent_items": items,
-        })
-
-    return render_template(
-        "recent.html",
-        task_items=task_items,
-        per_task_limit=RECENT_DOWNLOADS_PER_TASK,
-    )
-
-# ---------------------------------------------------------------------
 # Tasks
 # ---------------------------------------------------------------------
 
@@ -1156,7 +1232,7 @@ def tasks():
 
     ensure_data_dirs(ensure_downloads=False)
     tasks_list = load_tasks()
-    return render_template("tasks.html", tasks=tasks_list)
+    return render_template("tasks.html", tasks=tasks_list, task_concurrent_max=_task_max_concurrent)
 
 
 @app.route("/api/disk")
@@ -1167,6 +1243,15 @@ def api_disk():
     except Exception:
         app.logger.warning("Could not get disk usage for %s", DOWNLOADS_ROOT, exc_info=True)
         return jsonify({"error": "unavailable"}), 500
+
+
+@app.route("/api/queue")
+def api_queue():
+    return jsonify({
+        "running": _tasks_running,
+        "queued": _tasks_queued,
+        "max_concurrent": _task_max_concurrent,
+    })
 
 
 @app.route("/api/tasks")
@@ -1224,6 +1309,13 @@ def config_page():
                 flash("Media wall schedule saved.", "success")
             else:
                 flash("Invalid cron schedule.", "error")
+        elif action == "task_settings":
+            try:
+                v = int(request.form.get("task_concurrent_max", "5"))
+                _set_task_max_concurrent(v)
+                flash("Task concurrency limit updated.", "success")
+            except (ValueError, TypeError):
+                flash("Invalid value for concurrent task limit.", "error")
 
     return render_template(
         "config.html",
@@ -1231,8 +1323,140 @@ def config_page():
         config_path=CONFIG_FILE,
         media_wall_enabled=MEDIA_WALL_ENABLED,
         media_wall_scan_cron=scan_cron,
+        task_concurrent_max=_task_max_concurrent,
         tasks=load_tasks(),
+        gdl_version=_get_tool_version("gallery-dl"),
+        ytdlp_version=_get_tool_version("yt-dlp"),
     )
+
+# ---------------------------------------------------------------------
+# Config update checker
+# ---------------------------------------------------------------------
+
+def _config_merge_section(user_section, github_section):
+    result = dict(user_section)
+    for key, github_value in github_section.items():
+        if key not in result:
+            continue
+        user_value = result[key]
+        if isinstance(github_value, dict) and isinstance(user_value, dict):
+            result[key] = _config_fill_options(user_value, github_value)
+    return result
+
+
+def _config_fill_options(user_options, github_options):
+    result = dict(user_options)
+    for key, github_value in github_options.items():
+        if key not in result:
+            if not isinstance(github_value, dict):
+                result[key] = github_value
+        elif isinstance(github_value, dict) and isinstance(result[key], dict):
+            result[key] = _config_fill_options(result[key], github_value)
+    return result
+
+
+def _config_merge_update(user_conf, github_conf):
+    result = dict(user_conf)
+    for key, github_value in github_conf.items():
+        if key not in result:
+            continue
+        user_value = result[key]
+        if isinstance(github_value, dict) and isinstance(user_value, dict):
+            result[key] = _config_merge_section(user_value, github_value)
+    return result
+
+
+def _collect_new_options(user_dict, github_dict):
+    new = []
+    for key, github_value in github_dict.items():
+        if key not in user_dict:
+            if not isinstance(github_value, dict):
+                new.append(key)
+        elif isinstance(github_value, dict) and isinstance(user_dict[key], dict):
+            new.extend(_collect_new_options(user_dict[key], github_value))
+    return new
+
+
+def _config_diff_new_options(user_conf, github_conf):
+    new_by_section = {}
+    for key, github_value in github_conf.items():
+        if key not in user_conf or not isinstance(github_value, dict) or not isinstance(user_conf[key], dict):
+            continue
+        for sub_key, github_sub in github_value.items():
+            if sub_key not in user_conf[key] or not isinstance(github_sub, dict) or not isinstance(user_conf[key][sub_key], dict):
+                continue
+            new_opts = _collect_new_options(user_conf[key][sub_key], github_sub)
+            if new_opts:
+                new_by_section[f"{key}.{sub_key}"] = new_opts
+    return new_by_section
+
+
+@app.route("/api/config/check-update")
+def api_config_check_update():
+    try:
+        with urllib.request.urlopen(DEFAULT_CONFIG_URL, timeout=10) as resp:
+            github_text = resp.read().decode("utf-8")
+        github_conf = json.loads(github_text)
+    except Exception as exc:
+        return jsonify({"error": str(exc)})
+
+    local_text = read_text(CONFIG_FILE) or "{}"
+    try:
+        local_conf = json.loads(local_text)
+    except json.JSONDecodeError as exc:
+        return jsonify({"error": f"Local config is not valid JSON: {exc}"})
+
+    new_by_section = _config_diff_new_options(local_conf, github_conf)
+    total = sum(len(v) for v in new_by_section.values())
+    if total == 0:
+        return jsonify({"up_to_date": True})
+
+    lines = []
+    for section, opts in sorted(new_by_section.items()):
+        sample = ", ".join(opts[:6])
+        if len(opts) > 6:
+            sample += f", … +{len(opts) - 6} more"
+        lines.append(f"<strong>{section}</strong>: {sample}")
+
+    return jsonify({
+        "up_to_date": False,
+        "total": total,
+        "section_count": len(new_by_section),
+        "summary_html": "<br>".join(lines),
+    })
+
+
+@app.route("/api/config/apply-update", methods=["POST"])
+def api_config_apply_update():
+    try:
+        with urllib.request.urlopen(DEFAULT_CONFIG_URL, timeout=10) as resp:
+            github_text = resp.read().decode("utf-8")
+        github_conf = json.loads(github_text)
+    except Exception as exc:
+        return jsonify({"error": str(exc)})
+
+    local_text = read_text(CONFIG_FILE) or "{}"
+    try:
+        local_conf = json.loads(local_text)
+    except json.JSONDecodeError as exc:
+        return jsonify({"error": f"Local config is not valid JSON: {exc}"})
+
+    stamp = dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    backup_path = CONFIG_FILE + f".bak.{stamp}"
+    try:
+        Path(backup_path).write_text(local_text, encoding="utf-8")
+    except Exception as exc:
+        return jsonify({"error": f"Failed to create backup: {exc}"})
+
+    merged = _config_merge_update(local_conf, github_conf)
+    try:
+        merged_text = json.dumps(merged, indent=4, ensure_ascii=False)
+        write_text(CONFIG_FILE, merged_text)
+    except Exception as exc:
+        return jsonify({"error": f"Failed to save config: {exc}"})
+
+    return jsonify({"ok": True, "backup": os.path.basename(backup_path)})
+
 
 # ---------------------------------------------------------------------
 # Backup / Restore
@@ -1561,6 +1785,7 @@ def run_one_time_download(url: str):
 
 
 def run_task_background(task_folder: str):
+    _acquire_task_slot()
     ensure_data_dirs(ensure_downloads=True)
 
     lock_path     = os.path.join(task_folder, "lock")
@@ -1587,6 +1812,7 @@ def run_task_background(task_folder: str):
             logf.write("\nNo command configured for this task.\n")
         if os.path.exists(lock_path):
             os.remove(lock_path)
+        _release_task_slot()
         return
 
     if not os.path.exists(urls_file):
@@ -1594,6 +1820,7 @@ def run_task_background(task_folder: str):
             logf.write("\nurls.txt not found for this task.\n")
         if os.path.exists(lock_path):
             os.remove(lock_path)
+        _release_task_slot()
         return
 
     now = dt.datetime.utcnow().isoformat() + "Z"
@@ -1605,6 +1832,7 @@ def run_task_background(task_folder: str):
             logf.write(f"\nFailed to parse command: {exc}\n")
         if os.path.exists(lock_path):
             os.remove(lock_path)
+        _release_task_slot()
         return
 
     env = os.environ.copy()
@@ -1683,6 +1911,7 @@ def run_task_background(task_folder: str):
             app.logger.warning("Could not write error sentinel after task crash for %s", task_folder, exc_info=True)
         _record_run(task_folder, success=False, duration=0, stopped=False)
     finally:
+        _release_task_slot()
         for p in (lock_path, pid_path):
             try:
                 if os.path.exists(p):
@@ -1759,6 +1988,7 @@ def task_action(slug):
             flash("Task is already running.", "error")
             return redirect(url_for("tasks", selected=slug))
 
+        _invalidate_task_cache()
         t = threading.Thread(target=run_task_background, args=(task_folder,), daemon=True)
         t.start()
 
@@ -1767,12 +1997,14 @@ def task_action(slug):
 
     if action == "pause":
         paused_path = os.path.join(task_folder, "paused")
-        if os.path.exists(paused_path):
-            os.remove(paused_path)
-            flash("Task unpaused.", "success")
-        else:
-            Path(paused_path).touch()
-            flash("Task paused.", "success")
+        with _PAUSE_LOCK:
+            if os.path.exists(paused_path):
+                os.remove(paused_path)
+                flash("Task unpaused.", "success")
+            else:
+                Path(paused_path).touch()
+                flash("Task paused.", "success")
+        _invalidate_task_cache()
         return redirect(url_for("tasks", selected=slug))
 
     if action == "stop":
@@ -1791,6 +2023,7 @@ def task_action(slug):
             flash("Invalid PID file.", "error")
         except Exception as exc:
             flash(f"Failed to stop task: {exc}", "error")
+        _invalidate_task_cache()
         return redirect(url_for("tasks", selected=slug))
 
     if action == "clear_logs":
@@ -1807,6 +2040,7 @@ def task_action(slug):
         if os.path.exists(archive_path):
             try:
                 os.remove(archive_path)
+                _invalidate_task_cache()
                 flash("Archive deleted. gallery-dl will re-download previously seen items on next run.", "success")
             except Exception as exc:
                 flash(f"Failed to delete archive: {exc}", "error")
@@ -1820,6 +2054,7 @@ def task_action(slug):
         if os.path.exists(cookies_path):
             try:
                 os.remove(cookies_path)
+                _invalidate_task_cache()
                 flash("Cookies deleted.", "success")
             except Exception as exc:
                 flash(f"Failed to delete cookies: {exc}", "error")
@@ -2240,6 +2475,7 @@ def media_file(subpath):
 # ── Start APScheduler (skip double-start under Werkzeug reloader) ──────────────
 if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
     try:
+        _load_task_concurrent_max_from_file()
         _load_all_schedules()
         _bg_scheduler.start()
         atexit.register(lambda: _bg_scheduler.shutdown(wait=False))

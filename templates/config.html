@@ -5,7 +5,11 @@
     <div class="col-12">
         <div class="card shadow-sm border-secondary">
             <div class="card-body">
-                <h2 class="card-title mb-3">gallery-dl configuration</h2>
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <h2 class="card-title mb-0">gallery-dl configuration</h2>
+                    <span class="badge bg-secondary font-monospace fw-normal">gallery-dl {{ gdl_version }}</span>
+                    <span class="badge bg-secondary font-monospace fw-normal">yt-dlp {{ ytdlp_version }}</span>
+                </div>
 
                 <p class="text-muted small mb-3">
                     Editing global config at:
@@ -35,6 +39,38 @@
                         and overwrites the current file.
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Extractor updates -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-secondary">
+            <div class="card-body">
+                <h2 class="card-title mb-3">Extractor updates</h2>
+
+                <p class="text-muted small mb-3">
+                    Check if the gallery-dl example config on GitHub has new options for extractors
+                    you already have configured. Missing settings are filled in while keeping all
+                    your existing values. A timestamped backup is saved before any changes are made.
+                </p>
+
+                <div class="d-flex flex-wrap align-items-center gap-3 mb-2">
+                    <button type="button" class="btn btn-sm btn-neutral" id="btnCheckUpdate">
+                        Check for updates
+                    </button>
+                    <span id="updateSpinner" class="spinner-border spinner-border-sm text-secondary d-none" role="status"></span>
+                    <span id="updateStatus" class="small text-muted"></span>
+                </div>
+
+                <div id="updateDetails" class="d-none">
+                    <div id="updateSummary" class="small mb-3" style="line-height:1.7;"></div>
+                    <button type="button" class="btn btn-sm btn-caution" id="btnApplyUpdate">
+                        Backup &amp; apply updates
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -83,6 +119,46 @@
                     Toggle to enable/disable the media wall. When enabled, images in the
                     <code>/config/media_wall</code> folder will be displayed on the home page.
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Task Scheduler -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-secondary">
+            <div class="card-body">
+                <h2 class="card-title mb-3">Task Scheduler</h2>
+
+                <p class="text-muted small mb-3">
+                    Limit how many tasks run at the same time. Each task spawns a <code>gallery-dl</code>
+                    process — the real bottleneck is your download bandwidth and the risk of rate limiting
+                    or IP bans from target sites. Tasks beyond the limit queue up as threads and start
+                    automatically as slots free.
+                </p>
+
+                <form method="post" action="{{ url_for('config_page') }}" class="row g-2 align-items-end">
+                    <input type="hidden" name="action" value="task_settings">
+                    <div class="col-auto">
+                        <label class="form-label small mb-1" for="taskConcurrentMax">Max concurrent tasks</label>
+                        <input type="number" class="form-control form-control-sm" id="taskConcurrentMax"
+                            name="task_concurrent_max" value="{{ task_concurrent_max }}"
+                            min="1" max="50" style="width:80px;">
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-sm btn-neutral">Save</button>
+                    </div>
+                    <div class="col-12 mt-2">
+                        <div class="form-text">
+                            <strong>1–3</strong> — low-power devices (Raspberry Pi) or slow connections &nbsp;·&nbsp;
+                            <strong>5</strong> — typical home server (default) &nbsp;·&nbsp;
+                            <strong>8–10</strong> — 8+ core machine with fast network &nbsp;·&nbsp;
+                            <strong>15+</strong> — only if targets allow it (high rate-limit risk).
+                            Change applies immediately — no restart needed.
+                        </div>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -153,6 +229,73 @@ document.getElementById('bkSelectAll').addEventListener('click', function() {
 document.getElementById('bkDeselectAll').addEventListener('click', function() {
     document.querySelectorAll('.bk-task-cb').forEach(function(cb) { cb.checked = false; });
 });
+
+(function() {
+    var btnCheck  = document.getElementById('btnCheckUpdate');
+    var btnApply  = document.getElementById('btnApplyUpdate');
+    var spinner   = document.getElementById('updateSpinner');
+    var statusEl  = document.getElementById('updateStatus');
+    var detailsEl = document.getElementById('updateDetails');
+    var summaryEl = document.getElementById('updateSummary');
+    var csrfMeta  = document.querySelector('meta[name="csrf-token"]');
+    var csrfToken = csrfMeta ? csrfMeta.content : '';
+
+    function setStatus(msg, isError) {
+        statusEl.textContent = msg;
+        statusEl.className = 'small ' + (isError ? 'text-danger' : 'text-muted');
+    }
+
+    btnCheck.addEventListener('click', function() {
+        spinner.classList.remove('d-none');
+        btnCheck.disabled = true;
+        setStatus('Checking GitHub…', false);
+        detailsEl.classList.add('d-none');
+
+        fetch('/api/config/check-update')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                spinner.classList.add('d-none');
+                btnCheck.disabled = false;
+                if (d.error) { setStatus('Error: ' + d.error, true); return; }
+                if (d.up_to_date) {
+                    setStatus('Config is up to date.', false);
+                } else {
+                    setStatus(d.total + ' new setting(s) across ' + d.section_count + ' section(s).', false);
+                    summaryEl.innerHTML = d.summary_html;
+                    detailsEl.classList.remove('d-none');
+                }
+            })
+            .catch(function(e) {
+                spinner.classList.add('d-none');
+                btnCheck.disabled = false;
+                setStatus('Request failed: ' + e.message, true);
+            });
+    });
+
+    btnApply.addEventListener('click', function() {
+        spinner.classList.remove('d-none');
+        btnApply.disabled = true;
+        setStatus('Applying updates…', false);
+
+        fetch('/api/config/apply-update', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken }
+        })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                spinner.classList.add('d-none');
+                btnApply.disabled = false;
+                if (d.error) { setStatus('Error: ' + d.error, true); return; }
+                setStatus('Done. Backup saved as ' + d.backup + '. Reload the page to see the updated config.', false);
+                detailsEl.classList.add('d-none');
+            })
+            .catch(function(e) {
+                spinner.classList.add('d-none');
+                btnApply.disabled = false;
+                setStatus('Request failed: ' + e.message, true);
+            });
+    });
+})();
 </script>
 
 {% endblock %}
