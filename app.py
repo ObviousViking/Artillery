@@ -128,7 +128,7 @@ def _rotate_logs(task_folder: str) -> None:
     logs_path = os.path.join(task_folder, "logs.txt")
     if not os.path.exists(logs_path) or os.path.getsize(logs_path) == 0:
         return
-    stamp = dt.datetime.utcnow().strftime("%Y-%m-%dT%H%M%S")
+    stamp = dt.datetime.now().strftime("%Y-%m-%dT%H%M%S")
     archived = os.path.join(task_folder, f"logs-{stamp}.txt")
     try:
         os.rename(logs_path, archived)
@@ -192,7 +192,7 @@ def _clear_last_error(task_folder: str) -> None:
 def _record_run(task_folder: str, success: bool, duration: float, stopped: bool) -> None:
     history_path = os.path.join(task_folder, "run_history.jsonl")
     entry = json.dumps({
-        "ts": dt.datetime.utcnow().isoformat() + "Z",
+        "ts": dt.datetime.now().isoformat(),
         "success": success,
         "duration": round(duration, 1),
         "stopped": stopped,
@@ -1731,7 +1731,7 @@ def run_one_time_download(url: str):
         url,
     ]
 
-    now = dt.datetime.utcnow().isoformat() + "Z"
+    now = dt.datetime.now().isoformat()
     try:
         with open(ONE_TIME_LOG_FILE, "a", encoding="utf-8") as logf:
             logf.write(f"\n\n==== One-time download started at {now} ====\n")
@@ -1823,7 +1823,7 @@ def run_task_background(task_folder: str):
         _release_task_slot()
         return
 
-    now = dt.datetime.utcnow().isoformat() + "Z"
+    now = dt.datetime.now().isoformat()
 
     try:
         cmd_parts = shlex.split(command)
@@ -1872,8 +1872,8 @@ def run_task_background(task_folder: str):
                 logf.write(f"\nTask killed: exceeded {timeout}s timeout.\n")
                 logf.flush()
 
-        run_end = dt.datetime.utcnow()
-        duration = (run_end - dt.datetime.fromisoformat(now.rstrip("Z"))).total_seconds()
+        run_end = dt.datetime.now()
+        duration = (run_end - dt.datetime.fromisoformat(now)).total_seconds()
         write_text(last_run_path, now)
 
         was_stopped = os.path.exists(stopped_path)
