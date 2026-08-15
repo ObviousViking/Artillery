@@ -1289,9 +1289,24 @@ def config_page():
     if request.method == "POST":
         action = request.form.get("action")
         if action == "save":
-            config_text = request.form.get("config_text", "")
-            write_text(CONFIG_FILE, config_text)
-            flash("Config saved.", "success")
+            submitted_text = request.form.get("config_text", "")
+            config_text = submitted_text
+            invalid_json = None
+            if submitted_text.strip():
+                try:
+                    json.loads(submitted_text)
+                except json.JSONDecodeError as exc:
+                    invalid_json = exc
+            if invalid_json:
+                # Keep the user's edits in the form; don't touch the file on disk.
+                flash(
+                    f"Config not saved — invalid JSON: {invalid_json.msg} "
+                    f"(line {invalid_json.lineno}, column {invalid_json.colno}).",
+                    "error",
+                )
+            else:
+                write_text(CONFIG_FILE, config_text)
+                flash("Config saved.", "success")
         elif action == "reset":
             try:
                 with urllib.request.urlopen(DEFAULT_CONFIG_URL, timeout=10) as resp:

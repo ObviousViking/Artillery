@@ -17,11 +17,13 @@
                     This config is shared by all Artillery tasks.
                 </p>
 
-                <form method="post" action="{{ url_for('config_page') }}">
+                <form method="post" action="{{ url_for('config_page') }}" id="configForm">
                     <div class="mb-3">
                         <label class="form-label" for="config_text">Config contents</label>
                         <textarea id="config_text" name="config_text" class="form-control" rows="20"
                             spellcheck="false">{{ config_text }}</textarea>
+                        <div id="configEditor" style="display:none;"></div>
+                        <div id="configJsonStatus" class="form-text mt-1" style="display:none;"></div>
                     </div>
 
                     <div class="d-flex flex-wrap gap-2">
@@ -296,6 +298,147 @@ document.getElementById('bkDeselectAll').addEventListener('click', function() {
             });
     });
 })();
+</script>
+
+<!--
+  CodeMirror 6 config editor (progressive enhancement over the plain textarea above).
+  Loaded as ES modules from esm.sh, resolved through this import map so every
+  @codemirror/* sub-package shares one instance of @codemirror/state etc.
+  If the CDN is unreachable, the <script type="module"> below simply fails to
+  evaluate and the plain #config_text textarea (already in the DOM, already
+  wired to the form) keeps working exactly as before — nothing else on this
+  page depends on the editor mounting.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "@codemirror/state": "https://esm.sh/@codemirror/state@6",
+    "@codemirror/view": "https://esm.sh/@codemirror/view@6",
+    "@codemirror/language": "https://esm.sh/@codemirror/language@6",
+    "@codemirror/commands": "https://esm.sh/@codemirror/commands@6",
+    "@codemirror/search": "https://esm.sh/@codemirror/search@6",
+    "@codemirror/autocomplete": "https://esm.sh/@codemirror/autocomplete@6",
+    "@codemirror/lint": "https://esm.sh/@codemirror/lint@6",
+    "@codemirror/lang-json": "https://esm.sh/@codemirror/lang-json@6",
+    "@lezer/common": "https://esm.sh/@lezer/common@1",
+    "@lezer/highlight": "https://esm.sh/@lezer/highlight@1",
+    "@lezer/lr": "https://esm.sh/@lezer/lr@1",
+    "@lezer/json": "https://esm.sh/@lezer/json@1",
+    "codemirror": "https://esm.sh/codemirror@6",
+    "crelt": "https://esm.sh/crelt@1",
+    "style-mod": "https://esm.sh/style-mod@4",
+    "w3c-keyname": "https://esm.sh/w3c-keyname@2"
+  }
+}
+</script>
+<script type="module">
+import { EditorView, basicSetup } from "codemirror";
+import { EditorState } from "@codemirror/state";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { json, jsonParseLinter } from "@codemirror/lang-json";
+import { linter, lintGutter } from "@codemirror/lint";
+import { tags } from "@lezer/highlight";
+
+const textarea = document.getElementById('config_text');
+const mount    = document.getElementById('configEditor');
+const status   = document.getElementById('configJsonStatus');
+const form     = document.getElementById('configForm');
+
+// Token colors pulled from the app's own CSS variables so the editor matches
+// whichever theme (light/dark) is active — including live toggles, since
+// these are var() references resolved by the browser, not baked-in hex.
+const jsonHighlight = HighlightStyle.define([
+    { tag: tags.propertyName, color: "var(--focus-color)", fontWeight: "600" },
+    { tag: tags.string,       color: "var(--code-color)" },
+    { tag: tags.number,       color: "#38bdf8" },
+    { tag: [tags.bool, tags.null], color: "#a78bfa" },
+    { tag: [tags.brace, tags.squareBracket, tags.punctuation, tags.separator],
+      color: "var(--text-muted)" },
+]);
+
+const artilleryTheme = EditorView.theme({
+    "&": {
+        color: "var(--text-primary)",
+        backgroundColor: "var(--bg-tertiary)",
+        border: "1px solid var(--border-input)",
+        borderRadius: "0.375rem",
+        fontSize: "0.85rem",
+    },
+    ".cm-content": {
+        fontFamily: "SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace",
+        padding: "10px 0",
+    },
+    ".cm-scroller": { minHeight: "420px", maxHeight: "65vh", overflow: "auto" },
+    ".cm-gutters": {
+        backgroundColor: "var(--bg-tertiary)",
+        color: "var(--text-muted)",
+        border: "none",
+        borderRight: "1px solid var(--border-color)",
+    },
+    ".cm-activeLine": { backgroundColor: "rgba(249, 115, 22, 0.06)" },
+    ".cm-activeLineGutter": { backgroundColor: "rgba(249, 115, 22, 0.10)" },
+    "&.cm-focused": {
+        outline: "none",
+        borderColor: "var(--focus-color)",
+        boxShadow: "0 0 0 0.2rem var(--focus-shadow)",
+    },
+    ".cm-tooltip-lint": {
+        backgroundColor: "var(--bg-secondary)",
+        color: "var(--text-primary)",
+        border: "1px solid var(--border-color)",
+    },
+});
+
+function setJsonStatus(text, ok) {
+    status.textContent = text;
+    status.style.display = '';
+    status.style.color = ok ? '#22c55e' : '#ef4444';
+}
+
+function checkJson(text) {
+    if (!text.trim()) { setJsonStatus('Empty — nothing to validate.', true); return; }
+    try {
+        JSON.parse(text);
+        setJsonStatus('Valid JSON.', true);
+    } catch (e) {
+        setJsonStatus('Invalid JSON — ' + e.message, false);
+    }
+}
+
+const view = new EditorView({
+    state: EditorState.create({
+        doc: textarea.value,
+        extensions: [
+            basicSetup,
+            json(),
+            syntaxHighlighting(jsonHighlight),
+            linter(jsonParseLinter()),
+            lintGutter(),
+            artilleryTheme,
+            EditorView.updateListener.of(function (update) {
+                if (update.docChanged) {
+                    textarea.value = update.state.doc.toString();
+                    checkJson(textarea.value);
+                }
+            }),
+        ],
+    }),
+    parent: mount,
+});
+
+// Editor mounted successfully — swap it in for the plain textarea. The
+// textarea stays in the DOM (still named "config_text") so the form submits
+// its value unchanged; it's just visually hidden and kept in sync above.
+textarea.style.display = 'none';
+mount.style.display = '';
+checkJson(textarea.value);
+
+// Belt-and-suspenders: the server re-validates on save regardless, but keep
+// the hidden textarea in sync right before submit too (covers any edits the
+// updateListener hasn't flushed yet, e.g. IME composition).
+form.addEventListener('submit', function () {
+    textarea.value = view.state.doc.toString();
+});
 </script>
 
 {% endblock %}
