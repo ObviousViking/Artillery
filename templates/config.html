@@ -23,7 +23,10 @@
                         <textarea id="config_text" name="config_text" class="form-control" rows="20"
                             spellcheck="false">{{ config_text }}</textarea>
                         <div id="configEditor" style="display:none;"></div>
-                        <div id="configJsonStatus" class="form-text mt-1" style="display:none;"></div>
+                        <div id="configEditorFoot" class="d-flex justify-content-between align-items-center mt-1" style="display:none !important;">
+                            <span id="configJsonStatus" class="form-text mb-0"></span>
+                            <span id="configCursorPos" class="form-text mb-0 text-muted" style="font-family:monospace;"></span>
+                        </div>
                     </div>
 
                     <div class="d-flex flex-wrap gap-2">
@@ -339,10 +342,12 @@ import { json, jsonParseLinter } from "@codemirror/lang-json";
 import { linter, lintGutter } from "@codemirror/lint";
 import { tags } from "@lezer/highlight";
 
-const textarea = document.getElementById('config_text');
-const mount    = document.getElementById('configEditor');
-const status   = document.getElementById('configJsonStatus');
-const form     = document.getElementById('configForm');
+const textarea  = document.getElementById('config_text');
+const mount     = document.getElementById('configEditor');
+const foot      = document.getElementById('configEditorFoot');
+const status    = document.getElementById('configJsonStatus');
+const cursorPos = document.getElementById('configCursorPos');
+const form      = document.getElementById('configForm');
 
 // Token colors pulled from the app's own CSS variables so the editor matches
 // whichever theme (light/dark) is active — including live toggles, since
@@ -391,7 +396,6 @@ const artilleryTheme = EditorView.theme({
 
 function setJsonStatus(text, ok) {
     status.textContent = text;
-    status.style.display = '';
     status.style.color = ok ? '#22c55e' : '#ef4444';
 }
 
@@ -403,6 +407,15 @@ function checkJson(text) {
     } catch (e) {
         setJsonStatus('Invalid JSON — ' + e.message, false);
     }
+}
+
+function updateCursorPos(state) {
+    var pos  = state.selection.main.head;
+    var line = state.doc.lineAt(pos);
+    var col  = pos - line.from + 1;
+    var extra = state.selection.main.empty ? '' :
+        ' (' + Math.abs(state.selection.main.head - state.selection.main.anchor) + ' selected)';
+    cursorPos.textContent = 'Ln ' + line.number + ', Col ' + col + extra;
 }
 
 const view = new EditorView({
@@ -420,6 +433,9 @@ const view = new EditorView({
                     textarea.value = update.state.doc.toString();
                     checkJson(textarea.value);
                 }
+                if (update.docChanged || update.selectionSet) {
+                    updateCursorPos(update.state);
+                }
             }),
         ],
     }),
@@ -431,7 +447,9 @@ const view = new EditorView({
 // its value unchanged; it's just visually hidden and kept in sync above.
 textarea.style.display = 'none';
 mount.style.display = '';
+foot.style.setProperty('display', 'flex', 'important');
 checkJson(textarea.value);
+updateCursorPos(view.state);
 
 // Belt-and-suspenders: the server re-validates on save regardless, but keep
 // the hidden textarea in sync right before submit too (covers any edits the
