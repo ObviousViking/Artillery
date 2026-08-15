@@ -1285,6 +1285,8 @@ def config_page():
     ensure_data_dirs(ensure_downloads=False)
     config_text = read_text(CONFIG_FILE) or ""
     scan_cron = _get_media_wall_scan_cron()
+    config_error_line = None
+    config_error_col = None
 
     if request.method == "POST":
         action = request.form.get("action")
@@ -1299,6 +1301,8 @@ def config_page():
                     invalid_json = exc
             if invalid_json:
                 # Keep the user's edits in the form; don't touch the file on disk.
+                config_error_line = invalid_json.lineno
+                config_error_col = invalid_json.colno
                 flash(
                     f"Config not saved — invalid JSON: {invalid_json.msg} "
                     f"(line {invalid_json.lineno}, column {invalid_json.colno}).",
@@ -1342,6 +1346,8 @@ def config_page():
         tasks=load_tasks(),
         gdl_version=_get_tool_version("gallery-dl"),
         ytdlp_version=_get_tool_version("yt-dlp"),
+        config_error_line=config_error_line,
+        config_error_col=config_error_col,
     )
 
 # ---------------------------------------------------------------------

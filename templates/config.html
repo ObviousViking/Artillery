@@ -21,7 +21,9 @@
                     <div class="mb-3">
                         <label class="form-label" for="config_text">Config contents</label>
                         <textarea id="config_text" name="config_text" class="form-control" rows="20"
-                            spellcheck="false">{{ config_text }}</textarea>
+                            spellcheck="false"
+                            data-error-line="{{ config_error_line or '' }}"
+                            data-error-col="{{ config_error_col or '' }}">{{ config_text }}</textarea>
                         <div id="configEditor" style="display:none;"></div>
                         <div id="configEditorFoot" class="d-flex justify-content-between align-items-center mt-1" style="display:none !important;">
                             <span id="configJsonStatus" class="form-text mb-0"></span>
@@ -334,12 +336,23 @@ document.getElementById('bkDeselectAll').addEventListener('click', function() {
   }
 }
 </script>
+<style>
+/* One-shot pulse so a jump-to-error-line lands somewhere obvious, not just
+   scrolled-to-and-hoped-you-noticed. Plain CSS (not CodeMirror's theme()
+   CSS-in-JS) because @keyframes doesn't round-trip cleanly through that. */
+#configEditor .cm-error-flash { animation: cmErrorFlash 2.2s ease-out 1; }
+@keyframes cmErrorFlash {
+    0%   { background-color: rgba(239, 68, 68, 0.35); }
+    100% { background-color: transparent; }
+}
+</style>
 <script type="module">
 import { EditorView, basicSetup } from "codemirror";
-import { EditorState } from "@codemirror/state";
+import { EditorState, StateEffect, StateField } from "@codemirror/state";
+import { Decoration } from "@codemirror/view";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { json, jsonParseLinter } from "@codemirror/lang-json";
-import { linter, lintGutter } from "@codemirror/lint";
+import { linter, lintGutter, forceLinting } from "@codemirror/lint";
 import { tags } from "@lezer/highlight";
 
 const textarea  = document.getElementById('config_text');
@@ -418,6 +431,24 @@ function updateCursorPos(state) {
     cursorPos.textContent = 'Ln ' + line.number + ', Col ' + col + extra;
 }
 
+// Jump-to-error-line support: a StateField holding an optional one-line
+// decoration, driven by dispatching flashLineEffect.of(pos) / .of(null).
+const flashLineDeco   = Decoration.line({ attributes: { class: 'cm-error-flash' } });
+const flashLineEffect = StateEffect.define();
+const flashLineField  = StateField.define({
+    create() { return Decoration.none; },
+    update(deco, tr) {
+        deco = deco.map(tr.changes);
+        for (const e of tr.effects) {
+            if (e.is(flashLineEffect)) {
+                deco = (e.value != null) ? Decoration.set([flashLineDeco.range(e.value)]) : Decoration.none;
+            }
+        }
+        return deco;
+    },
+    provide: function (f) { return EditorView.decorations.from(f); },
+});
+
 const view = new EditorView({
     state: EditorState.create({
         doc: textarea.value,
@@ -427,6 +458,7 @@ const view = new EditorView({
             syntaxHighlighting(jsonHighlight),
             linter(jsonParseLinter()),
             lintGutter(),
+            flashLineField,
             artilleryTheme,
             EditorView.updateListener.of(function (update) {
                 if (update.docChanged) {
@@ -450,6 +482,27 @@ mount.style.display = '';
 foot.style.setProperty('display', 'flex', 'important');
 checkJson(textarea.value);
 updateCursorPos(view.state);
+
+// Run the linter immediately so gutter dots/underlines for existing errors
+// show up on load, not just after the next keystroke (matters most for the
+// case below — a save that failed server-side on a long file).
+forceLinting(view);
+
+// If the last save was rejected for invalid JSON, jump straight to the
+// reported line/column instead of leaving the user to scroll-and-count for
+// "line 156" by hand — this is the whole point of surfacing the error here.
+var errLine = parseInt(textarea.dataset.errorLine || '', 10);
+var errCol  = parseInt(textarea.dataset.errorCol  || '', 10);
+if (errLine >= 1 && errLine <= view.state.doc.lines) {
+    var ln  = view.state.doc.line(errLine);
+    var pos = Math.min(ln.from + Math.max((errCol || 1) - 1, 0), ln.to);
+    view.dispatch({
+        selection: { anchor: pos },
+        effects: [EditorView.scrollIntoView(pos, { y: 'center' }), flashLineEffect.of(pos)],
+    });
+    view.focus();
+    setTimeout(function () { view.dispatch({ effects: flashLineEffect.of(null) }); }, 2200);
+}
 
 // Belt-and-suspenders: the server re-validates on save regardless, but keep
 // the hidden textarea in sync right before submit too (covers any edits the
