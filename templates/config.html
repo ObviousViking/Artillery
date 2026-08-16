@@ -29,20 +29,7 @@
             <div class="col-12">
                 <div class="card shadow-sm border-secondary">
                     <div class="card-body">
-                        <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
-                            <h2 class="card-title mb-0">gallery-dl configuration</h2>
-                            <span class="badge bg-secondary font-monospace fw-normal" id="gdlVersionBadge">gallery-dl {{ gdl_version }}</span>
-                            <span class="badge bg-secondary font-monospace fw-normal" id="ytdlpVersionBadge">yt-dlp {{ ytdlp_version }}</span>
-                        </div>
-
-                        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-                            <button type="button" class="btn btn-sm btn-neutral" id="btnCheckToolUpdate">
-                                Check for tool updates
-                            </button>
-                            <span id="toolUpdateSpinner" class="spinner-border spinner-border-sm text-secondary d-none" role="status"></span>
-                            <span id="toolUpdateStatus" class="small text-muted"></span>
-                        </div>
-                        <div id="toolUpdateButtons" class="d-flex flex-wrap gap-2 mb-3"></div>
+                        <h2 class="card-title mb-3">gallery-dl configuration</h2>
 
                         <p class="text-muted small mb-3">
                             Editing global config at:
@@ -79,6 +66,36 @@
                                 and overwrites the current file.
                             </div>
                         </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tool versions -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card shadow-sm border-secondary">
+                    <div class="card-body">
+                        <h2 class="card-title mb-3">Tool versions</h2>
+
+                        <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+                            <span class="badge bg-secondary font-monospace fw-normal" id="gdlVersionBadge">gallery-dl {{ gdl_version }}</span>
+                            <span class="badge bg-secondary font-monospace fw-normal" id="ytdlpVersionBadge">yt-dlp {{ ytdlp_version }}</span>
+                        </div>
+
+                        <p class="text-muted small mb-3">
+                            These are normally refreshed with <code>pip install --upgrade</code> when the
+                            container starts. Check here to update them in place without a restart.
+                        </p>
+
+                        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                            <button type="button" class="btn btn-sm btn-neutral" id="btnCheckToolUpdate">
+                                Check for tool updates
+                            </button>
+                            <span id="toolUpdateSpinner" class="spinner-border spinner-border-sm text-secondary d-none" role="status"></span>
+                            <span id="toolUpdateStatus" class="small text-muted"></span>
+                        </div>
+                        <div id="toolUpdateButtons" class="d-flex flex-wrap gap-2"></div>
                     </div>
                 </div>
             </div>
