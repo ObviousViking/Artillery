@@ -1506,6 +1506,18 @@ def _get_latest_pypi_version(pkg: str) -> str:
     return data["info"]["version"]
 
 
+def _version_tuple(v: str):
+    """Numeric key for comparing version strings, e.g. "2026.07.04" == "2026.7.4"
+    (yt-dlp's `--version` prints zero-padded CalVer; PyPI reports the PEP 440-
+    normalized, unpadded form — same release, different string). Falls back to
+    None for anything that isn't cleanly dot-numeric, so callers can fall back
+    to a plain string comparison instead."""
+    try:
+        return tuple(int(p) for p in v.split("."))
+    except (ValueError, AttributeError):
+        return None
+
+
 def _busy_task_names() -> list:
     """Task names currently mid-run, plus the ad-hoc one-time downloader if active —
     used to warn before an in-place gallery-dl/yt-dlp upgrade."""
@@ -1524,9 +1536,10 @@ def api_tools_check_update():
         try:
             latest = _get_latest_pypi_version(tool)
             entry["latest"] = latest
-            # _get_tool_version() already returns a bare version token (e.g. "1.28.5").
+            current_v, latest_v = _version_tuple(current), _version_tuple(latest)
+            same = (current_v == latest_v) if (current_v is not None and latest_v is not None) else (current == latest)
             entry["update_available"] = (
-                bool(latest) and current not in ("not found", "unknown", "") and current != latest
+                bool(latest) and current not in ("not found", "unknown", "") and not same
             )
         except Exception as exc:
             entry["error"] = str(exc)
