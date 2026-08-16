@@ -976,7 +976,7 @@ def mediawall_toggle():
     status = "enabled" if new_value else "disabled"
     os.environ["MEDIA_WALL_ENABLED"] = "1" if new_value else "0"
     flash(f"Media wall {status}", "success")
-    return redirect(url_for("config_page"))
+    return redirect(url_for("config_page") + "#tabMediaWall")
 
 @app.route("/mediawall/refresh", methods=["POST"])
 def mediawall_refresh():
@@ -1480,6 +1480,75 @@ def api_config_apply_update():
 
 
 # ---------------------------------------------------------------------
+# Tool (gallery-dl / yt-dlp) version updates
+# ---------------------------------------------------------------------
+
+_UPDATABLE_TOOLS = ("gallery-dl", "yt-dlp")
+
+def _get_latest_pypi_version(pkg: str) -> str:
+    with urllib.request.urlopen(f"https://pypi.org/pypi/{pkg}/json", timeout=10) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    return data["info"]["version"]
+
+
+def _busy_task_names() -> list:
+    """Task names currently mid-run, plus the ad-hoc one-time downloader if active —
+    used to warn before an in-place gallery-dl/yt-dlp upgrade."""
+    names = [t["name"] for t in load_tasks() if t.get("status") == "running"]
+    if _get_one_time_status().get("running"):
+        names.append("One-time download")
+    return names
+
+
+@app.route("/api/tools/check-update")
+def api_tools_check_update():
+    out = {}
+    for tool in _UPDATABLE_TOOLS:
+        current = _get_tool_version(tool)
+        entry = {"current": current}
+        try:
+            latest = _get_latest_pypi_version(tool)
+            entry["latest"] = latest
+            # _get_tool_version()'s output is a free-text line like "gallery-dl 1.28.5" —
+            # the version number is always the last whitespace-separated token.
+            current_num = current.split()[-1] if current not in ("not found", "unknown", "") else ""
+            entry["update_available"] = bool(latest) and current_num != latest
+        except Exception as exc:
+            entry["error"] = str(exc)
+        out[tool] = entry
+    return jsonify(out)
+
+
+@app.route("/api/tools/update", methods=["POST"])
+def api_tools_update():
+    tool = request.form.get("tool", "").strip()
+    if tool not in _UPDATABLE_TOOLS:
+        return jsonify({"error": f"Unknown tool '{tool}'"}), 400
+
+    force = request.form.get("force") == "1"
+    busy = _busy_task_names()
+    if busy and not force:
+        return jsonify({"warning": True, "running": busy})
+
+    try:
+        proc = subprocess.run(
+            ["pip", "install", "--no-cache-dir", "--upgrade", tool],
+            capture_output=True, text=True, timeout=180,
+        )
+    except Exception as exc:
+        return jsonify({"error": f"Failed to run pip: {exc}"}), 500
+
+    output = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+    if proc.returncode != 0:
+        return jsonify({"error": "pip install failed", "output": output[-4000:]}), 500
+
+    _tool_version_cache.pop(tool, None)  # force a re-probe instead of serving the stale cached version
+    new_version = _get_tool_version(tool)
+    app.logger.info("Updated %s -> %s", tool, new_version)
+    return jsonify({"ok": True, "new_version": new_version, "output": output[-4000:]})
+
+
+# ---------------------------------------------------------------------
 # Backup / Restore
 # ---------------------------------------------------------------------
 
@@ -1532,12 +1601,12 @@ def config_restore():
     f = request.files.get("backup_zip")
     if not f or not f.filename.endswith(".zip"):
         flash("Please upload a valid .zip backup file.", "error")
-        return redirect(url_for("config_page"))
+        return redirect(url_for("config_page") + "#tabBackup")
 
     raw = f.read(200 * 1024 * 1024 + 1)
     if len(raw) > 200 * 1024 * 1024:
         flash("Backup file too large (max 200 MB).", "error")
-        return redirect(url_for("config_page"))
+        return redirect(url_for("config_page") + "#tabBackup")
 
     restored_tasks, restored_kiosks = [], []
     restored_config = False
@@ -1585,11 +1654,11 @@ def config_restore():
 
     except zipfile.BadZipFile:
         flash("Invalid or corrupted zip file.", "error")
-        return redirect(url_for("config_page"))
+        return redirect(url_for("config_page") + "#tabBackup")
     except Exception as exc:
         app.logger.exception("Backup restore failed")
         flash(f"Restore failed: {exc}", "error")
-        return redirect(url_for("config_page"))
+        return redirect(url_for("config_page") + "#tabBackup")
 
     for slug in restored_tasks:
         cron_expr = read_text(os.path.join(TASKS_ROOT, slug, "cron.txt"))
@@ -1605,7 +1674,7 @@ def config_restore():
     if restored_kiosks:
         parts.append(f"{len(restored_kiosks)} kiosk(s)")
     flash("Restored: " + ("; ".join(parts) if parts else "nothing found in zip."), "success")
-    return redirect(url_for("config_page"))
+    return redirect(url_for("config_page") + "#tabBackup")
 
 @app.route("/one-time", methods=["GET", "POST"])
 def one_time_download():

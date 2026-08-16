@@ -1,232 +1,274 @@
 {% extends "base.html" %}
 {% block main_class %}container-fluid px-4 pb-4{% endblock %}
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <div class="card shadow-sm border-secondary">
-            <div class="card-body">
-                <div class="d-flex align-items-center gap-2 mb-3">
-                    <h2 class="card-title mb-0">gallery-dl configuration</h2>
-                    <span class="badge bg-secondary font-monospace fw-normal">gallery-dl {{ gdl_version }}</span>
-                    <span class="badge bg-secondary font-monospace fw-normal">yt-dlp {{ ytdlp_version }}</span>
+
+<ul class="nav nav-tabs mb-3" id="configTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="tab-btn-config" data-bs-toggle="tab" data-bs-target="#tabConfig"
+            type="button" role="tab" aria-controls="tabConfig" aria-selected="true">Config</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-btn-mediawall" data-bs-toggle="tab" data-bs-target="#tabMediaWall"
+            type="button" role="tab" aria-controls="tabMediaWall" aria-selected="false">Media Wall</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-btn-scheduler" data-bs-toggle="tab" data-bs-target="#tabScheduler"
+            type="button" role="tab" aria-controls="tabScheduler" aria-selected="false">Task Scheduler</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-btn-backup" data-bs-toggle="tab" data-bs-target="#tabBackup"
+            type="button" role="tab" aria-controls="tabBackup" aria-selected="false">Backup &amp; Restore</button>
+    </li>
+</ul>
+
+<div class="tab-content" id="configTabsContent">
+
+    <!-- ══════════════════════ Config ══════════════════════ -->
+    <div class="tab-pane fade show active" id="tabConfig" role="tabpanel" aria-labelledby="tab-btn-config">
+        <div class="row">
+            <div class="col-12">
+                <div class="card shadow-sm border-secondary">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                            <h2 class="card-title mb-0">gallery-dl configuration</h2>
+                            <span class="badge bg-secondary font-monospace fw-normal" id="gdlVersionBadge">gallery-dl {{ gdl_version }}</span>
+                            <span class="badge bg-secondary font-monospace fw-normal" id="ytdlpVersionBadge">yt-dlp {{ ytdlp_version }}</span>
+                        </div>
+
+                        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                            <button type="button" class="btn btn-sm btn-neutral" id="btnCheckToolUpdate">
+                                Check for tool updates
+                            </button>
+                            <span id="toolUpdateSpinner" class="spinner-border spinner-border-sm text-secondary d-none" role="status"></span>
+                            <span id="toolUpdateStatus" class="small text-muted"></span>
+                        </div>
+                        <div id="toolUpdateButtons" class="d-flex flex-wrap gap-2 mb-3"></div>
+
+                        <p class="text-muted small mb-3">
+                            Editing global config at:
+                            <code>{{ config_path }}</code><br>
+                            This config is shared by all Artillery tasks.
+                        </p>
+
+                        <form method="post" action="{{ url_for('config_page') }}" id="configForm">
+                            <div class="mb-3">
+                                <label class="form-label" for="config_text">Config contents</label>
+                                <textarea id="config_text" name="config_text" class="form-control" rows="20"
+                                    spellcheck="false"
+                                    data-error-line="{{ config_error_line or '' }}"
+                                    data-error-col="{{ config_error_col or '' }}">{{ config_text }}</textarea>
+                                <div id="configEditor" style="display:none;"></div>
+                                <div id="configEditorFoot" class="d-flex justify-content-between align-items-center mt-1" style="display:none !important;">
+                                    <span id="configJsonStatus" class="form-text mb-0"></span>
+                                    <span id="configCursorPos" class="form-text mb-0 text-muted" style="font-family:monospace;"></span>
+                                </div>
+                            </div>
+
+                            <div class="d-flex flex-wrap gap-2">
+                                <button type="submit" name="action" value="save" class="btn btn-go">
+                                    Save config
+                                </button>
+                                <button type="submit" name="action" value="reset" class="btn btn-caution">
+                                    Load default config from GitHub
+                                </button>
+                            </div>
+
+                            <div class="form-text mt-2">
+                                “Load default config from GitHub” downloads the example
+                                <code>gallery-dl.conf</code> from the official gallery-dl repository
+                                and overwrites the current file.
+                            </div>
+                        </form>
+                    </div>
                 </div>
+            </div>
+        </div>
 
-                <p class="text-muted small mb-3">
-                    Editing global config at:
-                    <code>{{ config_path }}</code><br>
-                    This config is shared by all Artillery tasks.
-                </p>
+        <!-- Extractor updates -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card shadow-sm border-secondary">
+                    <div class="card-body">
+                        <h2 class="card-title mb-3">Extractor updates</h2>
 
-                <form method="post" action="{{ url_for('config_page') }}" id="configForm">
-                    <div class="mb-3">
-                        <label class="form-label" for="config_text">Config contents</label>
-                        <textarea id="config_text" name="config_text" class="form-control" rows="20"
-                            spellcheck="false"
-                            data-error-line="{{ config_error_line or '' }}"
-                            data-error-col="{{ config_error_col or '' }}">{{ config_text }}</textarea>
-                        <div id="configEditor" style="display:none;"></div>
-                        <div id="configEditorFoot" class="d-flex justify-content-between align-items-center mt-1" style="display:none !important;">
-                            <span id="configJsonStatus" class="form-text mb-0"></span>
-                            <span id="configCursorPos" class="form-text mb-0 text-muted" style="font-family:monospace;"></span>
+                        <p class="text-muted small mb-3">
+                            Check if the gallery-dl example config on GitHub has new options for extractors
+                            you already have configured. Missing settings are filled in while keeping all
+                            your existing values. A timestamped backup is saved before any changes are made.
+                        </p>
+
+                        <div class="d-flex flex-wrap align-items-center gap-3 mb-2">
+                            <button type="button" class="btn btn-sm btn-neutral" id="btnCheckUpdate">
+                                Check for updates
+                            </button>
+                            <span id="updateSpinner" class="spinner-border spinner-border-sm text-secondary d-none" role="status"></span>
+                            <span id="updateStatus" class="small text-muted"></span>
+                        </div>
+
+                        <div id="updateDetails" class="d-none">
+                            <div id="updateSummary" class="small mb-3" style="line-height:1.7;"></div>
+                            <button type="button" class="btn btn-sm btn-caution" id="btnApplyUpdate">
+                                Backup &amp; apply updates
+                            </button>
                         </div>
                     </div>
-
-                    <div class="d-flex flex-wrap gap-2">
-                        <button type="submit" name="action" value="save" class="btn btn-go">
-                            Save config
-                        </button>
-                        <button type="submit" name="action" value="reset" class="btn btn-caution">
-                            Load default config from GitHub
-                        </button>
-                    </div>
-
-                    <div class="form-text mt-2">
-                        “Load default config from GitHub” downloads the example
-                        <code>gallery-dl.conf</code> from the official gallery-dl repository
-                        and overwrites the current file.
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Extractor updates -->
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card shadow-sm border-secondary">
-            <div class="card-body">
-                <h2 class="card-title mb-3">Extractor updates</h2>
-
-                <p class="text-muted small mb-3">
-                    Check if the gallery-dl example config on GitHub has new options for extractors
-                    you already have configured. Missing settings are filled in while keeping all
-                    your existing values. A timestamped backup is saved before any changes are made.
-                </p>
-
-                <div class="d-flex flex-wrap align-items-center gap-3 mb-2">
-                    <button type="button" class="btn btn-sm btn-neutral" id="btnCheckUpdate">
-                        Check for updates
-                    </button>
-                    <span id="updateSpinner" class="spinner-border spinner-border-sm text-secondary d-none" role="status"></span>
-                    <span id="updateStatus" class="small text-muted"></span>
-                </div>
-
-                <div id="updateDetails" class="d-none">
-                    <div id="updateSummary" class="small mb-3" style="line-height:1.7;"></div>
-                    <button type="button" class="btn btn-sm btn-caution" id="btnApplyUpdate">
-                        Backup &amp; apply updates
-                    </button>
                 </div>
             </div>
         </div>
     </div>
-</div>
 
-<!-- Single Media wall controls -->
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card shadow-sm border-secondary">
-            <div class="card-body">
-                <h2 class="card-title mb-3">Media wall</h2>
+    <!-- ══════════════════════ Media Wall ══════════════════════ -->
+    <div class="tab-pane fade" id="tabMediaWall" role="tabpanel" aria-labelledby="tab-btn-mediawall">
+        <div class="row">
+            <div class="col-12">
+                <div class="card shadow-sm border-secondary">
+                    <div class="card-body">
+                        <h2 class="card-title mb-3">Media wall</h2>
 
-                <p class="text-muted small mb-3">
-                    Control the media wall dashboard displayed on the home page.
-                </p>
+                        <p class="text-muted small mb-3">
+                            Control the media wall dashboard displayed on the home page.
+                        </p>
 
-                <form method="post" action="{{ url_for('mediawall_toggle') }}" class="form-check form-switch mb-3">
-                    <input class="form-check-input" type="checkbox" role="switch" id="mediaWallToggle"
-                        {% if media_wall_enabled %}checked{% endif %}
-                        onchange="this.form.submit()">
-                    <label class="form-check-label" for="mediaWallToggle">
-                        {% if media_wall_enabled %}Media wall enabled{% else %}Media wall disabled{% endif %}
-                    </label>
-                </form>
+                        <form method="post" action="{{ url_for('mediawall_toggle') }}" class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" role="switch" id="mediaWallToggle"
+                                {% if media_wall_enabled %}checked{% endif %}
+                                onchange="this.form.submit()">
+                            <label class="form-check-label" for="mediaWallToggle">
+                                {% if media_wall_enabled %}Media wall enabled{% else %}Media wall disabled{% endif %}
+                            </label>
+                        </form>
 
-                <form method="post" action="{{ url_for('config_page') }}" class="row g-2 align-items-center">
-                    <input type="hidden" name="action" value="mediawall_settings">
-                    <div class="col-auto">
-                        <label class="form-label mb-0" for="mediaWallScanCron">Scan schedule (cron)</label>
-                    </div>
-                    <div class="col-auto">
-                        <input type="text" class="form-control form-control-sm" id="mediaWallScanCron"
-                            name="media_wall_scan_cron" value="{{ media_wall_scan_cron }}">
-                    </div>
-                    <div class="col-auto">
-                        <button type="submit" class="btn btn-sm btn-neutral">Save</button>
-                    </div>
-                </form>
+                        <form method="post" action="{{ url_for('config_page') }}#tabMediaWall" class="row g-2 align-items-center">
+                            <input type="hidden" name="action" value="mediawall_settings">
+                            <div class="col-auto">
+                                <label class="form-label mb-0" for="mediaWallScanCron">Scan schedule (cron)</label>
+                            </div>
+                            <div class="col-auto">
+                                <input type="text" class="form-control form-control-sm" id="mediaWallScanCron"
+                                    name="media_wall_scan_cron" value="{{ media_wall_scan_cron }}">
+                            </div>
+                            <div class="col-auto">
+                                <button type="submit" class="btn btn-sm btn-neutral">Save</button>
+                            </div>
+                        </form>
 
 
-                <div class="form-text mt-2">
-                    Example: <code>*/1 * * * *</code> (every minute), <code>*/5 * * * *</code> (every 5 minutes)
-                </div>
+                        <div class="form-text mt-2">
+                            Example: <code>*/1 * * * *</code> (every minute), <code>*/5 * * * *</code> (every 5 minutes)
+                        </div>
 
-                <div class="form-text mt-3">
-                    Toggle to enable/disable the media wall. When enabled, images in the
-                    <code>/config/media_wall</code> folder will be displayed on the home page.
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Task Scheduler -->
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card shadow-sm border-secondary">
-            <div class="card-body">
-                <h2 class="card-title mb-3">Task Scheduler</h2>
-
-                <p class="text-muted small mb-3">
-                    Limit how many tasks run at the same time. Each task spawns a <code>gallery-dl</code>
-                    process — the real bottleneck is your download bandwidth and the risk of rate limiting
-                    or IP bans from target sites. Tasks beyond the limit queue up as threads and start
-                    automatically as slots free.
-                </p>
-
-                <form method="post" action="{{ url_for('config_page') }}" class="row g-2 align-items-end">
-                    <input type="hidden" name="action" value="task_settings">
-                    <div class="col-auto">
-                        <label class="form-label small mb-1" for="taskConcurrentMax">Max concurrent tasks</label>
-                        <input type="number" class="form-control form-control-sm" id="taskConcurrentMax"
-                            name="task_concurrent_max" value="{{ task_concurrent_max }}"
-                            min="1" max="50" style="width:80px;">
-                    </div>
-                    <div class="col-auto">
-                        <button type="submit" class="btn btn-sm btn-neutral">Save</button>
-                    </div>
-                    <div class="col-12 mt-2">
-                        <div class="form-text">
-                            <strong>1–3</strong> — low-power devices (Raspberry Pi) or slow connections &nbsp;·&nbsp;
-                            <strong>5</strong> — typical home server (default) &nbsp;·&nbsp;
-                            <strong>8–10</strong> — 8+ core machine with fast network &nbsp;·&nbsp;
-                            <strong>15+</strong> — only if targets allow it (high rate-limit risk).
-                            Change applies immediately — no restart needed.
+                        <div class="form-text mt-3">
+                            Toggle to enable/disable the media wall. When enabled, images in the
+                            <code>/config/media_wall</code> folder will be displayed on the home page.
                         </div>
                     </div>
-                </form>
+                </div>
             </div>
         </div>
     </div>
-</div>
 
-<!-- Backup & Restore -->
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card shadow-sm border-secondary">
-            <div class="card-body">
-                <h2 class="card-title mb-3">Backup &amp; Restore</h2>
+    <!-- ══════════════════════ Task Scheduler ══════════════════════ -->
+    <div class="tab-pane fade" id="tabScheduler" role="tabpanel" aria-labelledby="tab-btn-scheduler">
+        <div class="row">
+            <div class="col-12">
+                <div class="card shadow-sm border-secondary">
+                    <div class="card-body">
+                        <h2 class="card-title mb-3">Task Scheduler</h2>
 
-                <p class="text-muted small mb-3">
-                    Create a zip of selected tasks and optionally the gallery-dl config.
-                    Restore by uploading a previous backup zip.
-                </p>
+                        <p class="text-muted small mb-3">
+                            Limit how many tasks run at the same time. Each task spawns a <code>gallery-dl</code>
+                            process — the real bottleneck is your download bandwidth and the risk of rate limiting
+                            or IP bans from target sites. Tasks beyond the limit queue up as threads and start
+                            automatically as slots free.
+                        </p>
 
-                <h6 class="mb-2">Backup</h6>
-                <form method="post" action="{{ url_for('config_backup') }}" id="backupForm">
-                    <div class="mb-2 d-flex gap-2">
-                        <button type="button" class="btn btn-sm btn-neutral" id="bkSelectAll">All</button>
-                        <button type="button" class="btn btn-sm btn-neutral" id="bkDeselectAll">None</button>
+                        <form method="post" action="{{ url_for('config_page') }}#tabScheduler" class="row g-2 align-items-end">
+                            <input type="hidden" name="action" value="task_settings">
+                            <div class="col-auto">
+                                <label class="form-label small mb-1" for="taskConcurrentMax">Max concurrent tasks</label>
+                                <input type="number" class="form-control form-control-sm" id="taskConcurrentMax"
+                                    name="task_concurrent_max" value="{{ task_concurrent_max }}"
+                                    min="1" max="50" style="width:80px;">
+                            </div>
+                            <div class="col-auto">
+                                <button type="submit" class="btn btn-sm btn-neutral">Save</button>
+                            </div>
+                            <div class="col-12 mt-2">
+                                <div class="form-text">
+                                    <strong>1–3</strong> — low-power devices (Raspberry Pi) or slow connections &nbsp;·&nbsp;
+                                    <strong>5</strong> — typical home server (default) &nbsp;·&nbsp;
+                                    <strong>8–10</strong> — 8+ core machine with fast network &nbsp;·&nbsp;
+                                    <strong>15+</strong> — only if targets allow it (high rate-limit risk).
+                                    Change applies immediately — no restart needed.
+                                </div>
+                            </div>
+                        </form>
                     </div>
-                    <div class="mb-3" style="max-height:220px;overflow-y:auto;border:1px solid var(--border-color);border-radius:6px;padding:0.5rem;">
-                        {% for task in tasks %}
-                        <div class="form-check">
-                            <input class="form-check-input bk-task-cb" type="checkbox" name="slugs"
-                                value="{{ task.slug }}" id="bk_{{ task.slug }}" checked>
-                            <label class="form-check-label small" for="bk_{{ task.slug }}">{{ task.name }}</label>
-                        </div>
-                        {% else %}
-                        <span class="text-muted small">No tasks yet.</span>
-                        {% endfor %}
-                    </div>
-                    <div class="form-check mb-3">
-                        <input class="form-check-input" type="checkbox" name="include_config" value="1"
-                            id="bkIncludeConfig" checked>
-                        <label class="form-check-label small" for="bkIncludeConfig">Include gallery-dl config</label>
-                    </div>
-                    <button type="submit" class="btn btn-sm btn-neutral">Download Backup</button>
-                </form>
-
-                <hr class="my-4">
-
-                <h6 class="mb-2">Restore</h6>
-                <p class="text-muted small mb-2">
-                    Upload a backup zip. Task folders are merged (existing files overwritten). Config is overwritten if present.
-                </p>
-                <form method="post" action="{{ url_for('config_restore') }}" enctype="multipart/form-data">
-                    <div class="d-flex flex-wrap gap-2 align-items-center">
-                        <input type="file" name="backup_zip" accept=".zip"
-                            class="form-control form-control-sm" style="max-width:320px;" required>
-                        <button type="submit" class="btn btn-sm btn-caution"
-                            onclick="return confirm('Restore will overwrite existing files. Continue?')">
-                            Restore
-                        </button>
-                    </div>
-                </form>
+                </div>
             </div>
         </div>
     </div>
+
+    <!-- ══════════════════════ Backup & Restore ══════════════════════ -->
+    <div class="tab-pane fade" id="tabBackup" role="tabpanel" aria-labelledby="tab-btn-backup">
+        <div class="row">
+            <div class="col-12">
+                <div class="card shadow-sm border-secondary">
+                    <div class="card-body">
+                        <h2 class="card-title mb-3">Backup &amp; Restore</h2>
+
+                        <p class="text-muted small mb-3">
+                            Create a zip of selected tasks and optionally the gallery-dl config.
+                            Restore by uploading a previous backup zip.
+                        </p>
+
+                        <h6 class="mb-2">Backup</h6>
+                        <form method="post" action="{{ url_for('config_backup') }}" id="backupForm">
+                            <div class="mb-2 d-flex gap-2">
+                                <button type="button" class="btn btn-sm btn-neutral" id="bkSelectAll">All</button>
+                                <button type="button" class="btn btn-sm btn-neutral" id="bkDeselectAll">None</button>
+                            </div>
+                            <div class="mb-3" style="max-height:220px;overflow-y:auto;border:1px solid var(--border-color);border-radius:6px;padding:0.5rem;">
+                                {% for task in tasks %}
+                                <div class="form-check">
+                                    <input class="form-check-input bk-task-cb" type="checkbox" name="slugs"
+                                        value="{{ task.slug }}" id="bk_{{ task.slug }}" checked>
+                                    <label class="form-check-label small" for="bk_{{ task.slug }}">{{ task.name }}</label>
+                                </div>
+                                {% else %}
+                                <span class="text-muted small">No tasks yet.</span>
+                                {% endfor %}
+                            </div>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" name="include_config" value="1"
+                                    id="bkIncludeConfig" checked>
+                                <label class="form-check-label small" for="bkIncludeConfig">Include gallery-dl config</label>
+                            </div>
+                            <button type="submit" class="btn btn-sm btn-neutral">Download Backup</button>
+                        </form>
+
+                        <hr class="my-4">
+
+                        <h6 class="mb-2">Restore</h6>
+                        <p class="text-muted small mb-2">
+                            Upload a backup zip. Task folders are merged (existing files overwritten). Config is overwritten if present.
+                        </p>
+                        <form method="post" action="{{ url_for('config_restore') }}" enctype="multipart/form-data">
+                            <div class="d-flex flex-wrap gap-2 align-items-center">
+                                <input type="file" name="backup_zip" accept=".zip"
+                                    class="form-control form-control-sm" style="max-width:320px;" required>
+                                <button type="submit" class="btn btn-sm btn-caution"
+                                    onclick="return confirm('Restore will overwrite existing files. Continue?')">
+                                    Restore
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 <script>
@@ -236,6 +278,18 @@ document.getElementById('bkSelectAll').addEventListener('click', function() {
 document.getElementById('bkDeselectAll').addEventListener('click', function() {
     document.querySelectorAll('.bk-task-cb').forEach(function(cb) { cb.checked = false; });
 });
+
+// Restore whichever tab was active before the last form submit / redirect —
+// forms that stay on this page point their action at "...#tabX", and the
+// browser keeps that fragment in the address bar across the POST.
+(function () {
+    var hash = window.location.hash;
+    if (!hash) return;
+    var trigger = document.querySelector('#configTabs [data-bs-target="' + hash + '"]');
+    if (trigger && window.bootstrap && window.bootstrap.Tab) {
+        new bootstrap.Tab(trigger).show();
+    }
+})();
 
 (function() {
     var btnCheck  = document.getElementById('btnCheckUpdate');
@@ -300,6 +354,116 @@ document.getElementById('bkDeselectAll').addEventListener('click', function() {
                 spinner.classList.add('d-none');
                 btnApply.disabled = false;
                 setStatus('Request failed: ' + e.message, true);
+            });
+    });
+})();
+
+// ── gallery-dl / yt-dlp in-place updates ────────────────────────────────
+(function() {
+    var btnCheck    = document.getElementById('btnCheckToolUpdate');
+    var spinner     = document.getElementById('toolUpdateSpinner');
+    var statusEl    = document.getElementById('toolUpdateStatus');
+    var buttonsRow  = document.getElementById('toolUpdateButtons');
+    var csrfMeta    = document.querySelector('meta[name="csrf-token"]');
+    var csrfToken   = csrfMeta ? csrfMeta.content : '';
+
+    var TOOL_LABEL = { 'gallery-dl': 'gallery-dl', 'yt-dlp': 'yt-dlp' };
+    var badgeFor = {
+        'gallery-dl': document.getElementById('gdlVersionBadge'),
+        'yt-dlp':     document.getElementById('ytdlpVersionBadge'),
+    };
+
+    function setStatus(msg, kind) {
+        statusEl.textContent = msg;
+        statusEl.className = 'small ' + (kind === 'error' ? 'text-danger' : kind === 'ok' ? 'text-success' : 'text-muted');
+    }
+
+    function runUpdate(tool, btn, force) {
+        btn.disabled = true;
+        setStatus('Updating ' + TOOL_LABEL[tool] + '…', null);
+
+        var body = new URLSearchParams({ tool: tool });
+        if (force) body.set('force', '1');
+
+        fetch('/api/tools/update', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrfToken,
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: body.toString(),
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (d.warning) {
+                    btn.disabled = false;
+                    var names = (d.running || []).join(', ') || 'a task';
+                    var ok = window.confirm(
+                        'Currently running: ' + names + '.\n\n' +
+                        'Updating ' + TOOL_LABEL[tool] + ' now changes the installed version while that ' +
+                        'run is still using it. Update anyway?'
+                    );
+                    if (ok) runUpdate(tool, btn, true);
+                    return;
+                }
+                if (d.error) {
+                    btn.disabled = false;
+                    setStatus(TOOL_LABEL[tool] + ' update failed: ' + d.error, 'error');
+                    return;
+                }
+                setStatus(TOOL_LABEL[tool] + ' updated to ' + d.new_version + '.', 'ok');
+                if (badgeFor[tool]) badgeFor[tool].textContent = d.new_version;
+                btn.remove();
+            })
+            .catch(function (e) {
+                btn.disabled = false;
+                setStatus('Request failed: ' + e.message, 'error');
+            });
+    }
+
+    function makeUpdateButton(tool, latest) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-sm btn-caution';
+        btn.textContent = 'Update ' + TOOL_LABEL[tool] + ' to ' + latest;
+        btn.addEventListener('click', function () { runUpdate(tool, btn, false); });
+        return btn;
+    }
+
+    btnCheck.addEventListener('click', function () {
+        spinner.classList.remove('d-none');
+        btnCheck.disabled = true;
+        setStatus('Checking PyPI…', null);
+        buttonsRow.innerHTML = '';
+
+        fetch('/api/tools/check-update')
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                spinner.classList.add('d-none');
+                btnCheck.disabled = false;
+                var upToDate = true;
+                var errs = [];
+                ['gallery-dl', 'yt-dlp'].forEach(function (tool) {
+                    var info = d[tool];
+                    if (!info) return;
+                    if (info.error) { errs.push(TOOL_LABEL[tool] + ': ' + info.error); return; }
+                    if (info.update_available) {
+                        upToDate = false;
+                        buttonsRow.appendChild(makeUpdateButton(tool, info.latest));
+                    }
+                });
+                if (errs.length) {
+                    setStatus(errs.join(' · '), 'error');
+                } else if (upToDate) {
+                    setStatus('Both tools are up to date.', 'ok');
+                } else {
+                    setStatus('Update available — see button(s) above.', null);
+                }
+            })
+            .catch(function (e) {
+                spinner.classList.add('d-none');
+                btnCheck.disabled = false;
+                setStatus('Request failed: ' + e.message, 'error');
             });
     });
 })();
