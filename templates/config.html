@@ -429,7 +429,10 @@ document.getElementById('bkDeselectAll').addEventListener('click', function() {
                     return;
                 }
                 setStatus(TOOL_LABEL[tool] + ' updated to ' + d.new_version + '.', 'ok');
-                if (badgeFor[tool]) badgeFor[tool].textContent = d.new_version;
+                // Badge text is "<tool name> <version>" (set that way by Jinja on
+                // load) — rebuild the same shape rather than clobbering the whole
+                // span with just the bare version.
+                if (badgeFor[tool]) badgeFor[tool].textContent = tool + ' ' + d.new_version;
                 btn.remove();
             })
             .catch(function (e) {

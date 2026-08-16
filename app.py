@@ -338,6 +338,9 @@ def write_text(path: str, content: str):
 
 
 _tool_version_cache: dict = {}
+# Requires 3-4 numeric groups (gallery-dl "1.28.5", yt-dlp "2026.07.04") so a
+# stray two-part number in a warning line — e.g. "Python 3.8" — can't match.
+_VERSION_TOKEN_RE = re.compile(r"^\d+\.\d+\.\d+(?:\.\d+)?$")
 
 def _get_tool_version(cmd: str) -> str:
     if cmd not in _tool_version_cache:
@@ -345,7 +348,19 @@ def _get_tool_version(cmd: str) -> str:
             out = subprocess.check_output(
                 [cmd, "--version"], stderr=subprocess.STDOUT, timeout=5
             ).decode().strip()
-            _tool_version_cache[cmd] = out.splitlines()[0] if out else "unknown"
+            version = None
+            for line in out.splitlines():
+                # Also handles yt-dlp's "2026.07.04 [abcdef1] (pip)" build-tag
+                # format — the version is always the first whitespace token.
+                for token in line.split():
+                    if _VERSION_TOKEN_RE.match(token):
+                        version = token
+                        break
+                if version:
+                    break
+            # Fall back to the raw first line if nothing looked version-shaped —
+            # better than "unknown" for a tool whose output we didn't anticipate.
+            _tool_version_cache[cmd] = version or (out.splitlines()[0] if out else "unknown")
         except Exception:
             _tool_version_cache[cmd] = "not found"
     return _tool_version_cache[cmd]
@@ -1509,10 +1524,10 @@ def api_tools_check_update():
         try:
             latest = _get_latest_pypi_version(tool)
             entry["latest"] = latest
-            # _get_tool_version()'s output is a free-text line like "gallery-dl 1.28.5" —
-            # the version number is always the last whitespace-separated token.
-            current_num = current.split()[-1] if current not in ("not found", "unknown", "") else ""
-            entry["update_available"] = bool(latest) and current_num != latest
+            # _get_tool_version() already returns a bare version token (e.g. "1.28.5").
+            entry["update_available"] = (
+                bool(latest) and current not in ("not found", "unknown", "") and current != latest
+            )
         except Exception as exc:
             entry["error"] = str(exc)
         out[tool] = entry
