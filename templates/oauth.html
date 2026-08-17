@@ -1,0 +1,338 @@
+{% extends "base.html" %}
+{% block main_class %}container-fluid px-4 pb-5{% endblock %}
+{% block content %}
+
+<div class="row mt-2 mb-3">
+  <div class="col-12">
+    <h2 class="mb-1">OAuth</h2>
+    <p class="text-muted small mb-0">
+      Authenticate tasks that require OAuth access. Tokens are saved to
+      <code>gallery-dl-cache.sqlite3</code> inside each task's folder —
+      they persist across container rebuilds automatically.
+    </p>
+  </div>
+</div>
+
+{% if not oauth_tasks %}
+<div class="row">
+  <div class="col-12">
+    <div class="card shadow-sm border-secondary">
+      <div class="card-body text-center py-5">
+        <p class="text-muted mb-2">No tasks have OAuth cache enabled.</p>
+        <p class="text-muted small mb-3">
+          Edit a task, tick <strong>OAuth cache</strong> in the gallery-dl options, and save —
+          it will appear here.
+        </p>
+        <a href="{{ url_for('tasks') }}" class="btn btn-sm btn-neutral">Go to Tasks</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% else %}
+
+<div class="row g-4">
+
+  <!-- ── Left: task list ────────────────────────────────────────────── -->
+  <div class="col-lg-4 col-xl-3">
+    <div class="card shadow-sm border-secondary">
+      <div class="card-header py-2"
+        style="background:var(--bg-tertiary);font-size:0.7rem;font-weight:700;
+               letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);">
+        OAuth Tasks
+      </div>
+      <div class="list-group list-group-flush" id="oauthTaskList">
+        {% for task in oauth_tasks %}
+        <button type="button"
+          class="list-group-item list-group-item-action ot-item py-2 px-3"
+          style="background:var(--bg-primary);border-color:var(--border-color);text-align:left;"
+          data-slug="{{ task.slug|e }}"
+          data-name="{{ task.name|e }}"
+          data-auth="{{ '1' if task.oauth_authenticated else '0' }}">
+          <div class="d-flex justify-content-between align-items-start gap-1">
+            <span class="small fw-semibold" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">{{ task.name }}</span>
+            {% if task.oauth_authenticated %}
+            <span class="badge flex-shrink-0"
+              style="background:rgba(22,163,74,0.15);color:#16a34a;
+                     border:1px solid rgba(22,163,74,0.3);font-size:0.6rem;">&#10003; Auth</span>
+            {% else %}
+            <span class="badge flex-shrink-0"
+              style="background:rgba(217,119,6,0.15);color:#d97706;
+                     border:1px solid rgba(217,119,6,0.3);font-size:0.6rem;">Setup needed</span>
+            {% endif %}
+          </div>
+          <div class="text-muted" style="font-size:0.72rem;">{{ task.slug }}</div>
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Right: flow panel ──────────────────────────────────────────── -->
+  <div class="col-lg-8 col-xl-9">
+
+    <!-- Placeholder -->
+    <div id="oauthPanelEmpty" class="card shadow-sm border-secondary">
+      <div class="card-body text-center py-5">
+        <p class="text-muted small mb-0">Select a task from the list to authenticate it.</p>
+      </div>
+    </div>
+
+    <!-- Active panel -->
+    <div id="oauthPanel" class="card shadow-sm border-secondary" style="display:none;">
+      <div class="card-header py-2" style="background:var(--bg-tertiary);">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <span class="small fw-semibold" id="opTaskName">—</span>
+          <span id="opAuthBadge" class="badge" style="display:none;font-size:0.62rem;"></span>
+        </div>
+      </div>
+      <div class="card-body">
+
+        <p class="text-muted small mb-3">
+          Pick the site, click <strong>Start</strong>, then open the authorization URL that appears
+          in the output below and approve access. The provider will try to redirect your browser to
+          <code>localhost:6414</code> — that page will fail to load (expected, even for remote
+          instances), but the code stays visible in your browser's address bar. Copy the full URL
+          (or just the <code>code=</code> value) from there and paste it below, then click
+          <strong>Submit code</strong>. This works the same whether you're on the same machine as
+          Artillery or accessing it remotely — no port forwarding or tunnel required.
+        </p>
+
+        <!-- Site + Start/Stop -->
+        <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+          <select id="opSite" class="form-select form-select-sm" style="max-width:180px;">
+            {% for sk, sl in oauth_sites.items() %}
+            <option value="{{ sk }}">{{ sl }}</option>
+            {% endfor %}
+          </select>
+          <button type="button" id="btnOauthStart" class="btn btn-sm btn-go">&#9654; Start</button>
+          <button type="button" id="btnOauthStop"  class="btn btn-sm btn-destruct" disabled>&#9632; Stop</button>
+          <span id="opStatus" class="small text-muted">Idle</span>
+          <span id="opSpinner"
+            class="spinner-border spinner-border-sm text-secondary"
+            style="display:none;width:0.75rem;height:0.75rem;border-width:0.15em;"
+            role="status"></span>
+        </div>
+
+        <!-- Log -->
+        <label class="form-label small fw-semibold mb-1">Output</label>
+        <div id="opLog"
+          class="border rounded p-2 mb-3"
+          style="font-family:monospace;font-size:0.76rem;line-height:1.55;
+                 min-height:170px;max-height:360px;overflow-y:auto;
+                 white-space:pre-wrap;word-break:break-all;
+                 background:var(--bg-secondary);color:var(--text-secondary);
+                 border-color:var(--border-input) !important;">No output yet. Click Start to begin.</div>
+
+        <!-- Code submit -->
+        <div class="border rounded p-3" style="border-color:var(--border-input) !important;background:var(--bg-secondary);">
+          <label class="form-label small fw-semibold mb-1">Authorization code</label>
+          <p class="text-muted small mb-2">
+            After approving access, the provider redirects to a failed <code>localhost:6414</code> page.
+            Paste that <strong>full URL</strong> (or just the code) here — do this
+            <strong>without</strong> stopping gallery-dl first, it's still waiting.
+          </p>
+          <div class="input-group input-group-sm mb-2">
+            <input type="text" id="opCodeInput" class="form-control font-monospace"
+              placeholder="http://localhost:6414/?state=…&code=… (or just the code)"
+              autocomplete="off" style="font-size:0.75rem;">
+            <button type="button" id="btnSubmitCode" class="btn btn-neutral">Submit code</button>
+          </div>
+          <div id="opSubmitStatus" class="small" style="min-height:1.3em;"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div><!-- /.row -->
+
+{% endif %}
+
+<script>
+(function () {
+  'use strict';
+
+  var csrfToken = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+
+  function postFetch(url, fd) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrfToken },
+      body: fd,
+    });
+  }
+
+  var taskList    = document.getElementById('oauthTaskList');
+  var panelEmpty  = document.getElementById('oauthPanelEmpty');
+  var panel       = document.getElementById('oauthPanel');
+  if (!taskList || !panel) return;
+
+  var opTaskName     = document.getElementById('opTaskName');
+  var opAuthBadge    = document.getElementById('opAuthBadge');
+  var opSite         = document.getElementById('opSite');
+  var opStatus       = document.getElementById('opStatus');
+  var opSpinner      = document.getElementById('opSpinner');
+  var opLog          = document.getElementById('opLog');
+  var opCodeInput    = document.getElementById('opCodeInput');
+  var opSubmitStatus = document.getElementById('opSubmitStatus');
+  var btnStart       = document.getElementById('btnOauthStart');
+  var btnStop        = document.getElementById('btnOauthStop');
+  var btnSubmit      = document.getElementById('btnSubmitCode');
+
+  var selSlug    = null;
+  var pollTimer  = null;
+  var autoScroll = true;
+
+  /* ── UI helpers ────────────────────────────────────────────────────── */
+  function setRunning(running) {
+    opStatus.textContent    = running ? 'Running…' : 'Idle';
+    opSpinner.style.display = running ? 'inline-block' : 'none';
+    btnStart.disabled       = running;
+    btnStop.disabled        = !running;
+    btnSubmit.disabled      = !running;
+  }
+
+  function setAuthBadge(auth) {
+    if (!opAuthBadge) return;
+    opAuthBadge.style.display = '';
+    if (auth) {
+      opAuthBadge.style.cssText = 'background:rgba(22,163,74,0.15);color:#16a34a;border:1px solid rgba(22,163,74,0.3);font-size:0.62rem;';
+      opAuthBadge.textContent = '✓ Authenticated';
+    } else {
+      opAuthBadge.style.cssText = 'background:rgba(217,119,6,0.15);color:#d97706;border:1px solid rgba(217,119,6,0.3);font-size:0.62rem;';
+      opAuthBadge.textContent = 'Setup needed';
+    }
+    if (selSlug) {
+      var item = taskList.querySelector('.ot-item[data-slug="' + selSlug + '"]');
+      if (item) {
+        item.dataset.auth = auth ? '1' : '0';
+        var badge = item.querySelector('.badge');
+        if (badge) {
+          if (auth) {
+            badge.style.cssText = 'background:rgba(22,163,74,0.15);color:#16a34a;border:1px solid rgba(22,163,74,0.3);font-size:0.6rem;';
+            badge.textContent = '✓ Auth';
+          } else {
+            badge.style.cssText = 'background:rgba(217,119,6,0.15);color:#d97706;border:1px solid rgba(217,119,6,0.3);font-size:0.6rem;';
+            badge.textContent = 'Setup needed';
+          }
+        }
+      }
+    }
+  }
+
+  /* ── Log polling ───────────────────────────────────────────────────── */
+  function pollLog() {
+    fetch('/api/oauth/log')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) return;
+        opLog.textContent = d.content || 'No output yet. Click Start to begin.';
+        if (autoScroll) opLog.scrollTop = opLog.scrollHeight;
+        setRunning(d.running);
+        pollTimer = d.running ? setTimeout(pollLog, 1500) : setTimeout(pollLog, 8000);
+      })
+      .catch(function () { pollTimer = setTimeout(pollLog, 10000); });
+  }
+
+  opLog.addEventListener('scroll', function () {
+    autoScroll = opLog.scrollTop + opLog.clientHeight >= opLog.scrollHeight - 10;
+  });
+
+  /* ── Task selection ────────────────────────────────────────────────── */
+  function selectTask(btn) {
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    selSlug = btn.dataset.slug;
+    taskList.querySelectorAll('.ot-item').forEach(function (b) {
+      b.style.background = (b === btn) ? 'var(--bg-tertiary)' : 'var(--bg-primary)';
+    });
+    opTaskName.textContent   = btn.dataset.name || btn.dataset.slug;
+    setAuthBadge(btn.dataset.auth === '1');
+    panelEmpty.style.display = 'none';
+    panel.style.display      = '';
+    opLog.textContent         = 'No output yet. Click Start to begin.';
+    opSubmitStatus.textContent = '';
+    opCodeInput.value          = '';
+    setRunning(false);
+    pollLog();
+  }
+
+  taskList.querySelectorAll('.ot-item').forEach(function (btn) {
+    btn.addEventListener('click', function () { selectTask(this); });
+  });
+
+  /* ── Start ─────────────────────────────────────────────────────────── */
+  btnStart.addEventListener('click', function () {
+    if (!selSlug) return;
+    var site = opSite.value;
+    if (!site) { opLog.textContent = 'Select a site first.'; return; }
+    opSubmitStatus.textContent = '';
+    var fd = new FormData();
+    fd.append('task_slug', selSlug);
+    fd.append('site', site);
+    postFetch('/api/oauth/start', fd)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) {
+          opLog.textContent = 'Error: ' + d.error;
+        } else {
+          setRunning(true);
+          if (pollTimer) clearTimeout(pollTimer);
+          pollLog();
+        }
+      })
+      .catch(function (e) { opLog.textContent = 'Request failed: ' + e.message; });
+  });
+
+  /* ── Stop ──────────────────────────────────────────────────────────── */
+  btnStop.addEventListener('click', function () {
+    postFetch('/api/oauth/stop', new FormData())
+      .then(function (r) { return r.json(); })
+      .then(function () { setRunning(false); })
+      .catch(function () {});
+  });
+
+  /* ── Submit code ───────────────────────────────────────────────────── */
+  btnSubmit.addEventListener('click', function () {
+    var payload = opCodeInput.value.trim();
+    if (!payload) return;
+    opSubmitStatus.innerHTML = '<span class="text-muted">Submitting…</span>';
+    var fd = new FormData();
+    fd.append('payload', payload);
+    postFetch('/api/oauth/submit', fd)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.ok) {
+          opSubmitStatus.innerHTML = '<span style="color:#16a34a;">&#10003; Sent — check the output above for confirmation.</span>';
+          setTimeout(function () {
+            fetch('/api/tasks')
+              .then(function (r) { return r.json(); })
+              .then(function (tasks) {
+                var t = tasks.find(function (x) { return x.slug === selSlug; });
+                if (t && t.oauth_authenticated) setAuthBadge(true);
+              })
+              .catch(function () {});
+          }, 2500);
+        } else {
+          opSubmitStatus.innerHTML = '<span class="text-danger">' + (d.error || 'Unknown error') + '</span>';
+        }
+      })
+      .catch(function (e) {
+        opSubmitStatus.innerHTML = '<span class="text-danger">Request failed: ' + e.message + '</span>';
+      });
+  });
+
+  /* ── Restore state if a flow is already running (e.g. after reload) ─── */
+  {% if active_task_slug %}
+  (function () {
+    var btn = taskList.querySelector('.ot-item[data-slug="{{ active_task_slug|e }}"]');
+    if (btn) {
+      selectTask(btn);
+      opSite.value = "{{ active_site|e }}";
+    }
+  })();
+  {% endif %}
+
+}());
+</script>
+
+{% endblock %}
