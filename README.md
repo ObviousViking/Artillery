@@ -34,6 +34,7 @@ docker run -d \
   -p 8088:80 \
   -e PUID=99 \
   -e PGID=100 \
+  -e TZ=America/New_York \
   -v /mnt/user/appdata/artillery/config:/config \
   -v /mnt/user/appdata/artillery/tasks:/tasks \
   -v /mnt/user/pictures:/downloads \
@@ -48,11 +49,15 @@ docker run -d \
 
 gallery-dl updates itself on container start.
 
+`TZ` (e.g. `Asia/Seoul`, `America/New_York`) controls the timezone used for scheduling and for timestamps shown in the UI (Stats/History, last run, logs). If it's not set, the container defaults to UTC.
+
 ---
 
 ## Unraid
 
 Install from Community Applications. Map `/config` and `/tasks` to appdata, `/downloads` to wherever your media lives. Set PUID/PGID to match your Unraid user (usually 99/100).
+
+Unraid injects `TZ` automatically from your server's Date/Time settings, even though it's not a field on the template — so timestamps normally just match your Unraid server's configured timezone with no extra setup. To run Artillery on a different timezone than the rest of your server, add a variable manually: container **Edit** → *Add another Path, Port, Variable, Label or Device* → Variable, key `TZ`, value e.g. `Asia/Seoul`.
 
 ---
 
