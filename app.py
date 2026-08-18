@@ -117,6 +117,32 @@ TASK_TIMEOUT_SECONDS = int(os.environ.get("TASK_TIMEOUT_SECONDS", "0") or "0")
 TASK_CONCURRENT_MAX  = int(os.environ.get("TASK_CONCURRENT_MAX", "5"))
 MAX_ROTATED_LOGS = 5
 
+# ── OAuth ────────────────────────────────────────────────────────────────
+# gallery-dl's oauth:<site> flow starts a local HTTP server on
+# 127.0.0.1:6414 inside the container and waits (indefinitely — it has no
+# built-in timeout) for the provider to redirect back to it with a code.
+# That redirect target is hardcoded in gallery-dl itself and can't be
+# changed, so it's never reachable from wherever the admin's browser is —
+# local or remote makes no difference. Instead of trying to make the
+# browser reach it, we let the redirect fail in the browser (the code is
+# still sitting in the address bar) and have the admin paste that back
+# into Artillery, which relays it to 127.0.0.1:6414 itself — that request
+# is server-side, made from inside the container, so it always lands.
+OAUTH_SITES = {
+    "reddit":     "Reddit",
+    "twitter":    "Twitter / X",
+    "tumblr":     "Tumblr",
+    "pixiv":      "Pixiv",
+    "deviantart": "DeviantArt",
+    "flickr":     "Flickr",
+    "mastodon":   "Mastodon",
+}
+
+_OAUTH_LOG_PATH = os.path.join(CONFIG_ROOT, ".oauth_run.log")
+_oauth_proc: "subprocess.Popen | None" = None
+_oauth_proc_lock = threading.Lock()
+_oauth_active = {"task_slug": None, "site": None}
+
 def _get_task_timeout(task_folder: str) -> Optional[int]:
     txt = read_text(os.path.join(task_folder, "timeout.txt"))
     if txt and txt.strip().isdigit():
@@ -338,6 +364,9 @@ def write_text(path: str, content: str):
 
 
 _tool_version_cache: dict = {}
+# Requires 3-4 numeric groups (gallery-dl "1.28.5", yt-dlp "2026.07.04") so a
+# stray two-part number in a warning line — e.g. "Python 3.8" — can't match.
+_VERSION_TOKEN_RE = re.compile(r"^\d+\.\d+\.\d+(?:\.\d+)?$")
 
 def _get_tool_version(cmd: str) -> str:
     if cmd not in _tool_version_cache:
@@ -345,7 +374,19 @@ def _get_tool_version(cmd: str) -> str:
             out = subprocess.check_output(
                 [cmd, "--version"], stderr=subprocess.STDOUT, timeout=5
             ).decode().strip()
-            _tool_version_cache[cmd] = out.splitlines()[0] if out else "unknown"
+            version = None
+            for line in out.splitlines():
+                # Also handles yt-dlp's "2026.07.04 [abcdef1] (pip)" build-tag
+                # format — the version is always the first whitespace token.
+                for token in line.split():
+                    if _VERSION_TOKEN_RE.match(token):
+                        version = token
+                        break
+                if version:
+                    break
+            # Fall back to the raw first line if nothing looked version-shaped —
+            # better than "unknown" for a tool whose output we didn't anticipate.
+            _tool_version_cache[cmd] = version or (out.splitlines()[0] if out else "unknown")
         except Exception:
             _tool_version_cache[cmd] = "not found"
     return _tool_version_cache[cmd]
@@ -541,6 +582,7 @@ def _task_mtimes(task_path: str) -> dict:
         "cookies":    _mt(os.path.join(task_path, "cookies.txt")),
         "last_error": _mt(os.path.join(task_path, "last_error.txt")),
         "timeout":    _mt(os.path.join(task_path, "timeout.txt")),
+        "oauth_cache": _mt(os.path.join(task_path, "gallery-dl-cache.sqlite3")),
     }
 
 def _cache_name_for_relpath(relpath: str) -> str:
@@ -890,6 +932,9 @@ def load_tasks():
 
         timeout_val = read_text(os.path.join(task_path, "timeout.txt")) or ""
 
+        oauth_enabled = "--cache-file" in command
+        oauth_authenticated = os.path.exists(os.path.join(task_path, "gallery-dl-cache.sqlite3"))
+
         task = {
             "id": slug,
             "name": name,
@@ -906,6 +951,8 @@ def load_tasks():
             "has_cookies": has_cookies,
             "last_error": last_error,
             "timeout": timeout_val.strip(),
+            "oauth_enabled": oauth_enabled,
+            "oauth_authenticated": oauth_authenticated,
         }
         _TASK_CACHE[slug] = {"_mtimes": mtimes, "task": task}
         tasks.append(task)
@@ -976,7 +1023,7 @@ def mediawall_toggle():
     status = "enabled" if new_value else "disabled"
     os.environ["MEDIA_WALL_ENABLED"] = "1" if new_value else "0"
     flash(f"Media wall {status}", "success")
-    return redirect(url_for("config_page"))
+    return redirect(url_for("config_page") + "#tabMediaWall")
 
 @app.route("/mediawall/refresh", methods=["POST"])
 def mediawall_refresh():
@@ -1272,9 +1319,167 @@ def api_tasks():
             "last_run": t.get("last_run"),
             "has_archive": t.get("has_archive", False),
             "has_cookies": t.get("has_cookies", False),
+            "oauth_enabled": t.get("oauth_enabled", False),
+            "oauth_authenticated": t.get("oauth_authenticated", False),
         })
 
     return jsonify(out)
+
+# ---------------------------------------------------------------------
+# OAuth page + API
+# ---------------------------------------------------------------------
+#
+# Flow:
+#   1. Start  -> spawn `gallery-dl oauth:<site> --cache-file ...` in the
+#      task folder. It prints an authorization URL and blocks waiting on
+#      127.0.0.1:6414 for the provider's redirect (indefinitely — gallery-dl
+#      has no timeout of its own here).
+#   2. Admin opens that URL, approves access. The provider redirects the
+#      browser to a dead localhost:6414 — it fails to load, but the code
+#      is still visible in the address bar.
+#   3. Admin pastes that back into Artillery. We relay it server-side to
+#      127.0.0.1:6414, which IS reachable from inside the container
+#      regardless of where the admin's browser actually is.
+
+@app.route("/oauth")
+def oauth_page():
+    ensure_data_dirs(ensure_downloads=False)
+    tasks_list = load_tasks()
+    oauth_tasks = [t for t in tasks_list if t.get("oauth_enabled")]
+    with _oauth_proc_lock:
+        active = dict(_oauth_active) if (_oauth_proc and _oauth_proc.poll() is None) else {"task_slug": None, "site": None}
+    return render_template(
+        "oauth.html",
+        oauth_tasks=oauth_tasks,
+        oauth_sites=OAUTH_SITES,
+        active_task_slug=active["task_slug"],
+        active_site=active["site"],
+    )
+
+
+@app.route("/api/oauth/start", methods=["POST"])
+def api_oauth_start():
+    global _oauth_proc
+    task_slug = request.form.get("task_slug", "").strip()
+    site = request.form.get("site", "").strip()
+    if not task_slug:
+        return jsonify({"error": "No task selected"}), 400
+    if not site or site not in OAUTH_SITES:
+        return jsonify({"error": "Select a valid site"}), 400
+    task_folder = os.path.join(TASKS_ROOT, task_slug)
+    if not os.path.isdir(task_folder):
+        return jsonify({"error": "Task not found"}), 404
+
+    with _oauth_proc_lock:
+        if _oauth_proc and _oauth_proc.poll() is None:
+            return jsonify({"error": "An OAuth flow is already running — stop it first"}), 409
+
+        cmd = ["gallery-dl", f"oauth:{site}", "--cache-file", "gallery-dl-cache.sqlite3"]
+        env = os.environ.copy()
+        env["GALLERY_DL_CONFIG"] = CONFIG_FILE
+        env["PATH"] = env.get("PATH", "") + os.pathsep + "/usr/local/bin"
+        try:
+            with open(_OAUTH_LOG_PATH, "w", encoding="utf-8") as logf:
+                logf.write(f"Starting gallery-dl OAuth for {OAUTH_SITES[site]} (task: {task_slug})\n$ {' '.join(cmd)}\n\n")
+            logf = open(_OAUTH_LOG_PATH, "a", encoding="utf-8")
+            _oauth_proc = subprocess.Popen(
+                cmd, stdout=logf, stderr=subprocess.STDOUT,
+                text=True, env=env, cwd=task_folder,
+            )
+        except Exception as exc:
+            app.logger.exception("Failed to start OAuth process")
+            return jsonify({"error": str(exc)}), 500
+        _oauth_active["task_slug"] = task_slug
+        _oauth_active["site"] = site
+    return jsonify({"ok": True, "site": site, "task_slug": task_slug})
+
+
+@app.route("/api/oauth/log")
+def api_oauth_log():
+    global _oauth_proc
+    running = False
+    exit_code = None
+    with _oauth_proc_lock:
+        active = dict(_oauth_active)
+        if _oauth_proc is not None:
+            exit_code = _oauth_proc.poll()
+            running = exit_code is None
+    content = read_text(_OAUTH_LOG_PATH) or ""
+    return jsonify({
+        "running": running,
+        "exit_code": exit_code,
+        "content": content,
+        "task_slug": active["task_slug"] if running else None,
+        "site": active["site"] if running else None,
+    })
+
+
+@app.route("/api/oauth/submit", methods=["POST"])
+def api_oauth_submit():
+    """Take the code the admin pasted back from their browser and hand it
+    to gallery-dl's local listener from inside the container."""
+    import urllib.request as _urlreq
+    import urllib.parse as _urlparse
+    import urllib.error as _urlerr
+
+    raw = request.form.get("payload", "").strip()
+    if not raw:
+        return jsonify({"error": "Paste the redirect URL (or the code) first"}), 400
+
+    # Accept a full URL, a bare query string, or just a raw code.
+    qs = ""
+    if "://" in raw:
+        qs = _urlparse.urlsplit(raw).query
+    elif "=" in raw:
+        qs = raw.lstrip("?")
+    else:
+        qs = _urlparse.urlencode({"code": raw})
+    if not qs:
+        return jsonify({"error": "Couldn't find a code in that — paste the full redirect URL if unsure"}), 400
+
+    with _oauth_proc_lock:
+        proc = _oauth_proc
+        exit_code = proc.poll() if proc else "no-process"
+        if proc is None or exit_code is not None:
+            return jsonify({
+                "error": f"gallery-dl isn't running anymore (exit code: {exit_code}) — "
+                         "check the Output log below for why, then Start again."
+            }), 409
+
+    local_url = f"http://127.0.0.1:6414/?{qs}"
+    try:
+        with _urlreq.urlopen(local_url, timeout=15) as resp:
+            resp.read()
+        return jsonify({"ok": True})
+    except _urlerr.URLError as exc:
+        reason = str(exc.reason) if hasattr(exc, "reason") else str(exc)
+        app.logger.warning("oauth relay to 127.0.0.1:6414 failed: %s", reason)
+        return jsonify({"error": f"Could not reach gallery-dl on 127.0.0.1:6414: {reason}"}), 502
+    except Exception as exc:
+        app.logger.exception("oauth_submit relay error")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/oauth/stop", methods=["POST"])
+def api_oauth_stop():
+    global _oauth_proc
+    with _oauth_proc_lock:
+        if _oauth_proc and _oauth_proc.poll() is None:
+            _oauth_proc.terminate()
+            try:
+                _oauth_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                _oauth_proc.kill()
+                _oauth_proc.wait()
+            try:
+                with open(_OAUTH_LOG_PATH, "a", encoding="utf-8") as logf:
+                    logf.write("\n[Stopped by user]\n")
+            except Exception:
+                app.logger.warning("Could not append stop marker to oauth log", exc_info=True)
+        _oauth_active["task_slug"] = None
+        _oauth_active["site"] = None
+    return jsonify({"ok": True})
+
 
 # ---------------------------------------------------------------------
 # Config page
@@ -1285,13 +1490,32 @@ def config_page():
     ensure_data_dirs(ensure_downloads=False)
     config_text = read_text(CONFIG_FILE) or ""
     scan_cron = _get_media_wall_scan_cron()
+    config_error_line = None
+    config_error_col = None
 
     if request.method == "POST":
         action = request.form.get("action")
         if action == "save":
-            config_text = request.form.get("config_text", "")
-            write_text(CONFIG_FILE, config_text)
-            flash("Config saved.", "success")
+            submitted_text = request.form.get("config_text", "")
+            config_text = submitted_text
+            invalid_json = None
+            if submitted_text.strip():
+                try:
+                    json.loads(submitted_text)
+                except json.JSONDecodeError as exc:
+                    invalid_json = exc
+            if invalid_json:
+                # Keep the user's edits in the form; don't touch the file on disk.
+                config_error_line = invalid_json.lineno
+                config_error_col = invalid_json.colno
+                flash(
+                    f"Config not saved — invalid JSON: {invalid_json.msg} "
+                    f"(line {invalid_json.lineno}, column {invalid_json.colno}).",
+                    "error",
+                )
+            else:
+                write_text(CONFIG_FILE, config_text)
+                flash("Config saved.", "success")
         elif action == "reset":
             try:
                 with urllib.request.urlopen(DEFAULT_CONFIG_URL, timeout=10) as resp:
@@ -1327,6 +1551,8 @@ def config_page():
         tasks=load_tasks(),
         gdl_version=_get_tool_version("gallery-dl"),
         ytdlp_version=_get_tool_version("yt-dlp"),
+        config_error_line=config_error_line,
+        config_error_col=config_error_col,
     )
 
 # ---------------------------------------------------------------------
@@ -1459,6 +1685,88 @@ def api_config_apply_update():
 
 
 # ---------------------------------------------------------------------
+# Tool (gallery-dl / yt-dlp) version updates
+# ---------------------------------------------------------------------
+
+_UPDATABLE_TOOLS = ("gallery-dl", "yt-dlp")
+
+def _get_latest_pypi_version(pkg: str) -> str:
+    with urllib.request.urlopen(f"https://pypi.org/pypi/{pkg}/json", timeout=10) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    return data["info"]["version"]
+
+
+def _version_tuple(v: str):
+    """Numeric key for comparing version strings, e.g. "2026.07.04" == "2026.7.4"
+    (yt-dlp's `--version` prints zero-padded CalVer; PyPI reports the PEP 440-
+    normalized, unpadded form — same release, different string). Falls back to
+    None for anything that isn't cleanly dot-numeric, so callers can fall back
+    to a plain string comparison instead."""
+    try:
+        return tuple(int(p) for p in v.split("."))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _busy_task_names() -> list:
+    """Task names currently mid-run, plus the ad-hoc one-time downloader if active —
+    used to warn before an in-place gallery-dl/yt-dlp upgrade."""
+    names = [t["name"] for t in load_tasks() if t.get("status") == "running"]
+    if _get_one_time_status().get("running"):
+        names.append("One-time download")
+    return names
+
+
+@app.route("/api/tools/check-update")
+def api_tools_check_update():
+    out = {}
+    for tool in _UPDATABLE_TOOLS:
+        current = _get_tool_version(tool)
+        entry = {"current": current}
+        try:
+            latest = _get_latest_pypi_version(tool)
+            entry["latest"] = latest
+            current_v, latest_v = _version_tuple(current), _version_tuple(latest)
+            same = (current_v == latest_v) if (current_v is not None and latest_v is not None) else (current == latest)
+            entry["update_available"] = (
+                bool(latest) and current not in ("not found", "unknown", "") and not same
+            )
+        except Exception as exc:
+            entry["error"] = str(exc)
+        out[tool] = entry
+    return jsonify(out)
+
+
+@app.route("/api/tools/update", methods=["POST"])
+def api_tools_update():
+    tool = request.form.get("tool", "").strip()
+    if tool not in _UPDATABLE_TOOLS:
+        return jsonify({"error": f"Unknown tool '{tool}'"}), 400
+
+    force = request.form.get("force") == "1"
+    busy = _busy_task_names()
+    if busy and not force:
+        return jsonify({"warning": True, "running": busy})
+
+    try:
+        proc = subprocess.run(
+            ["pip", "install", "--no-cache-dir", "--upgrade", tool],
+            capture_output=True, text=True, timeout=180,
+        )
+    except Exception as exc:
+        return jsonify({"error": f"Failed to run pip: {exc}"}), 500
+
+    output = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+    if proc.returncode != 0:
+        return jsonify({"error": "pip install failed", "output": output[-4000:]}), 500
+
+    _tool_version_cache.pop(tool, None)  # force a re-probe instead of serving the stale cached version
+    new_version = _get_tool_version(tool)
+    app.logger.info("Updated %s -> %s", tool, new_version)
+    return jsonify({"ok": True, "new_version": new_version, "output": output[-4000:]})
+
+
+# ---------------------------------------------------------------------
 # Backup / Restore
 # ---------------------------------------------------------------------
 
@@ -1511,12 +1819,12 @@ def config_restore():
     f = request.files.get("backup_zip")
     if not f or not f.filename.endswith(".zip"):
         flash("Please upload a valid .zip backup file.", "error")
-        return redirect(url_for("config_page"))
+        return redirect(url_for("config_page") + "#tabBackup")
 
     raw = f.read(200 * 1024 * 1024 + 1)
     if len(raw) > 200 * 1024 * 1024:
         flash("Backup file too large (max 200 MB).", "error")
-        return redirect(url_for("config_page"))
+        return redirect(url_for("config_page") + "#tabBackup")
 
     restored_tasks, restored_kiosks = [], []
     restored_config = False
@@ -1564,11 +1872,11 @@ def config_restore():
 
     except zipfile.BadZipFile:
         flash("Invalid or corrupted zip file.", "error")
-        return redirect(url_for("config_page"))
+        return redirect(url_for("config_page") + "#tabBackup")
     except Exception as exc:
         app.logger.exception("Backup restore failed")
         flash(f"Restore failed: {exc}", "error")
-        return redirect(url_for("config_page"))
+        return redirect(url_for("config_page") + "#tabBackup")
 
     for slug in restored_tasks:
         cron_expr = read_text(os.path.join(TASKS_ROOT, slug, "cron.txt"))
@@ -1584,7 +1892,7 @@ def config_restore():
     if restored_kiosks:
         parts.append(f"{len(restored_kiosks)} kiosk(s)")
     flash("Restored: " + ("; ".join(parts) if parts else "nothing found in zip."), "success")
-    return redirect(url_for("config_page"))
+    return redirect(url_for("config_page") + "#tabBackup")
 
 @app.route("/one-time", methods=["GET", "POST"])
 def one_time_download():
