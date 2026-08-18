@@ -51,6 +51,34 @@ gallery-dl updates itself on container start.
 
 `TZ` (e.g. `Asia/Seoul`, `America/New_York`) controls the timezone used for scheduling and for timestamps shown in the UI (Stats/History, last run, logs). If it's not set, the container defaults to UTC.
 
+### Docker Compose
+
+Prefer Compose? Same setup:
+
+```yaml
+services:
+  artillery:
+    image: obviousviking/artillery
+    container_name: artillery
+    ports:
+      - "8088:80"
+    environment:
+      - PUID=99
+      - PGID=100
+      - TZ=America/New_York
+    volumes:
+      - ./config:/config
+      - ./tasks:/tasks
+      - ./downloads:/downloads
+    restart: unless-stopped
+```
+
+```bash
+docker compose up -d
+```
+
+(Windows: point the volumes at whatever local paths you're using, e.g. `C:/artillery/config:/config`, and drop `PUID`/`PGID` — those only matter on Linux hosts.)
+
 ---
 
 ## Unraid
