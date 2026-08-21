@@ -502,6 +502,7 @@ a.r-item:hover {
           data-next-run="{{ (task.next_run or '')|e }}"
           data-last-error="{{ (task.last_error or '')|e }}"
           data-timeout="{{ (task.timeout or '')|e }}"
+          data-oauth-site="{{ (task.oauth_site or '')|e }}"
           data-history-api="/tasks/{{ task.slug|e }}/history">
           <div class="t-item-row">
             <span class="t-item-name">{{ task.name }}</span>
@@ -597,10 +598,23 @@ a.r-item:hover {
               <input type="text" id="cSched" name="schedule" class="form-control form-control-sm" placeholder="*/5 * * * *" style="display:none;" disabled/>
               <div class="form-text" id="cSchedHelp" style="display:none;"><code>*/5 * * * *</code> = every 5 min</div>
             </div>
-            <div class="mb-0">
+            <div class="mb-3">
               <label class="form-label">Cookies <span class="text-muted fw-normal">(optional)</span></label>
               <input type="file" name="cookies_file" class="form-control form-control-sm" accept=".txt"/>
               <div class="form-text">Upload <code>cookies.txt</code> — passed to gallery-dl via <code>--cookies</code> automatically.</div>
+            </div>
+            <div class="mb-0">
+              <label class="form-label" for="cOauthSite">OAuth site <span class="text-muted fw-normal">(optional)</span></label>
+              <select id="cOauthSite" name="oauth_site" class="form-select form-select-sm">
+                <option value="">None</option>
+                {% for key, label in oauth_sites.items() %}
+                <option value="{{ key }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text">
+                Adds <code>--cache-file</code> to the command automatically — authenticate on the
+                <a href="{{ url_for('oauth_page') }}">OAuth page</a> after saving.
+              </div>
             </div>
           </div>
           <div class="col-md-7">
@@ -789,11 +803,24 @@ a.r-item:hover {
                   <div class="form-text mb-2">On demand: the task sits idle until you click Run. It won't repeat unless you switch this to Recurring.</div>
                   <input type="text" id="eSched" name="schedule" class="form-control form-control-sm" placeholder="*/5 * * * *"/>
                 </div>
-                <div class="mb-0">
+                <div class="mb-3">
                   <label class="form-label">Cookies <span class="text-muted fw-normal">(optional)</span></label>
                   <div id="eCookieStatus" class="mb-1" style="font-size:0.8rem;"></div>
                   <input type="file" id="eCookiesFile" name="cookies_file" class="form-control form-control-sm" accept=".txt"/>
                   <div class="form-text">Upload to replace existing <code>cookies.txt</code>. gallery-dl uses it via <code>--cookies</code> automatically.</div>
+                </div>
+                <div class="mb-0">
+                  <label class="form-label" for="eOauthSite">OAuth site <span class="text-muted fw-normal">(optional)</span></label>
+                  <select id="eOauthSite" name="oauth_site" class="form-select form-select-sm">
+                    <option value="">None</option>
+                    {% for key, label in oauth_sites.items() %}
+                    <option value="{{ key }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                  <div class="form-text">
+                    Adds <code>--cache-file</code> to the command automatically — authenticate on the
+                    <a href="{{ url_for('oauth_page') }}">OAuth page</a> after saving.
+                  </div>
                 </div>
               </div>
 
@@ -877,6 +904,7 @@ a.r-item:hover {
     var cModeManual = $('cModeManual'), cModeCron = $('cModeCron'), cSchedHelp = $('cSchedHelp');
     var eModeManual = $('eModeManual'), eModeCron = $('eModeCron');
     var eCmd = $('eCmd'), eCmdH = $('eCmdH'), eKeepUrls = $('eKeepUrls');
+    var eOauthSite = $('eOauthSite');
     var eUrlCntLbl = $('eUrlCntLbl'), urlGate = $('urlGate');
     var urlGateMsg = $('urlGateMsg'), bLoadUrls = $('bLoadUrls');
     var cCmd = $('cCmd'), cCmdH = $('cCmdH');
@@ -1091,6 +1119,7 @@ a.r-item:hover {
         eModeCron.checked    = !!btn.dataset.schedule;
         eModeManual.checked  = !btn.dataset.schedule;
         syncScheduleMode('e');
+        eOauthSite.value      = btn.dataset.oauthSite || '';
         eCmd.value           = btn.dataset.command;
         eCmdH.value          = btn.dataset.command;
         eUrlCntLbl.textContent = selUrlCount ? '— ' + fmtN(selUrlCount) : '';

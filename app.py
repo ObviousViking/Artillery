@@ -6,6 +6,8 @@ import mimetypes
 import datetime as dt
 import re
 import urllib.request
+import urllib.error
+import http.client
 import subprocess
 import shlex
 import shutil
@@ -112,6 +114,18 @@ DEFAULT_CONFIG_URL = os.environ.get(
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 VIDEO_EXTS = {".mp4", ".webm", ".mkv"}
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
+
+# Sites gallery-dl can OAuth-authenticate against interactively (`gallery-dl
+# oauth:<site>`). Label is shown in the UI; the key is both the gallery-dl
+# extractor category and the `oauth:<key>` pseudo-extractor name.
+OAUTH_SITES = {
+    "deviantart": "DeviantArt",
+    "reddit":     "Reddit",
+    "tumblr":     "Tumblr",
+    "flickr":     "Flickr",
+    "mastodon":   "Mastodon",
+    "pixiv":      "Pixiv",
+}
 
 TASK_TIMEOUT_SECONDS = int(os.environ.get("TASK_TIMEOUT_SECONDS", "0") or "0")
 TASK_CONCURRENT_MAX  = int(os.environ.get("TASK_CONCURRENT_MAX", "5"))
@@ -556,6 +570,8 @@ def _task_mtimes(task_path: str) -> dict:
         "cookies":    _mt(os.path.join(task_path, "cookies.txt")),
         "last_error": _mt(os.path.join(task_path, "last_error.txt")),
         "timeout":    _mt(os.path.join(task_path, "timeout.txt")),
+        "oauth_site":  _mt(os.path.join(task_path, "oauth_site.txt")),
+        "oauth_cache": _mt(os.path.join(task_path, "gallery-dl-cache.sqlite3")),
     }
 
 def _cache_name_for_relpath(relpath: str) -> str:
@@ -905,6 +921,10 @@ def load_tasks():
 
         timeout_val = read_text(os.path.join(task_path, "timeout.txt")) or ""
 
+        oauth_site = (read_text(os.path.join(task_path, "oauth_site.txt")) or "").strip()
+        oauth_authenticated = os.path.getsize(os.path.join(task_path, "gallery-dl-cache.sqlite3")) > 0 \
+            if os.path.exists(os.path.join(task_path, "gallery-dl-cache.sqlite3")) else False
+
         task = {
             "id": slug,
             "name": name,
@@ -921,6 +941,8 @@ def load_tasks():
             "has_cookies": has_cookies,
             "last_error": last_error,
             "timeout": timeout_val.strip(),
+            "oauth_site": oauth_site,
+            "oauth_authenticated": oauth_authenticated,
         }
         _TASK_CACHE[slug] = {"_mtimes": mtimes, "task": task}
         tasks.append(task)
@@ -1128,6 +1150,9 @@ def tasks():
         urls_text = request.form.get("urls", "").strip()
         schedule = request.form.get("schedule", "").strip()
         command = request.form.get("command", "").strip()
+        oauth_site = request.form.get("oauth_site", "").strip()
+        if oauth_site not in OAUTH_SITES:
+            oauth_site = ""
 
         if not name:
             flash("Task name is required.", "error")
@@ -1198,6 +1223,9 @@ def tasks():
                 has_dest_flag = any(
                     (p in ("-d", "--destination") or p.startswith("--destination=")) for p in parts
                 )
+                has_cache_flag = any(
+                    (p == "--cache-file" or p.startswith("--cache-file=")) for p in parts
+                )
 
                 insert_index = 1
                 if not has_config_flag:
@@ -1208,12 +1236,25 @@ def tasks():
                 if not has_dest_flag:
                     parts.insert(insert_index, "--destination")
                     parts.insert(insert_index + 1, DOWNLOADS_ROOT)
+                    insert_index += 2
+
+                # Only ever ADD this — never remove it on a later edit, in case
+                # the user tuned the command by hand after turning OAuth off.
+                if oauth_site and not has_cache_flag:
+                    parts.insert(insert_index, "--cache-file")
+                    parts.insert(insert_index + 1, "gallery-dl-cache.sqlite3")
 
                 command = " ".join(shlex.quote(p) for p in parts)
         except ValueError as exc:
             app.logger.warning("Could not parse task command '%s': %s", command, exc)
 
         write_text(os.path.join(task_folder, "command.txt"), command)
+
+        oauth_site_path = os.path.join(task_folder, "oauth_site.txt")
+        if oauth_site:
+            write_text(oauth_site_path, oauth_site)
+        elif os.path.exists(oauth_site_path):
+            os.remove(oauth_site_path)
 
         cookies_file = request.files.get("cookies_file")
         cookies_path = os.path.join(task_folder, "cookies.txt")
@@ -1247,7 +1288,9 @@ def tasks():
 
     ensure_data_dirs(ensure_downloads=False)
     tasks_list = load_tasks()
-    return render_template("tasks.html", tasks=tasks_list, task_concurrent_max=_task_max_concurrent)
+    return render_template(
+        "tasks.html", tasks=tasks_list, task_concurrent_max=_task_max_concurrent, oauth_sites=OAUTH_SITES,
+    )
 
 
 @app.route("/api/disk")
@@ -2382,6 +2425,162 @@ def download_task_log_archived(slug, filename):
         return send_file(fp, as_attachment=True, download_name=f"{slug}-{filename}")
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+# ---------------------------------------------------------------------
+# OAuth (interactive `gallery-dl oauth:<site>` flow, per task)
+# ---------------------------------------------------------------------
+#
+# gallery-dl's interactive OAuth client always finishes by waiting for an
+# HTTP callback on 127.0.0.1:6414 — inside this container, not on whatever
+# machine the browser completing the provider's consent screen happens to be
+# on. There is no way around that (it's how gallery-dl's OAuthBase.recv() is
+# built), so this flow still needs one manual step: the browser's redirect
+# back to localhost:6414 fails (nothing listens there on YOUR machine), but
+# the failed URL in the address bar still carries the `code`/`state` — paste
+# that here and we relay it, server-side, to the real listener next to it in
+# this same container.
+_OAUTH_LOG_PATH = os.path.join(CONFIG_ROOT, ".oauth_run.log")
+_oauth_proc: "subprocess.Popen | None" = None
+_oauth_proc_task: str = ""
+_oauth_proc_lock = threading.Lock()
+
+
+def _oauth_client_id_configured(site: str) -> bool:
+    try:
+        conf = json.loads(read_text(CONFIG_FILE) or "{}")
+        return bool(conf.get("extractor", {}).get(site, {}).get("client-id"))
+    except Exception:
+        return False
+
+
+def _parse_oauth_paste(raw: str) -> str:
+    """Accepts a full failed-redirect URL, a bare query string (with or
+    without a leading '?'), or just "code=...&state=..." and normalizes to
+    a plain query string."""
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    if "://" in raw:
+        return raw.split("?", 1)[1] if "?" in raw else ""
+    if raw.startswith("?"):
+        return raw[1:]
+    return raw
+
+
+@app.route("/oauth")
+def oauth_page():
+    ensure_data_dirs(ensure_downloads=False)
+    tasks_list = load_tasks()
+    oauth_tasks = [t for t in tasks_list if t.get("oauth_site")]
+    client_ids = {site: _oauth_client_id_configured(site) for site in OAUTH_SITES}
+    with _oauth_proc_lock:
+        active_task = _oauth_proc_task if (_oauth_proc and _oauth_proc.poll() is None) else ""
+    return render_template(
+        "oauth.html",
+        oauth_tasks=oauth_tasks,
+        oauth_sites=OAUTH_SITES,
+        client_ids=client_ids,
+        active_task=active_task,
+    )
+
+
+@app.route("/api/oauth/start", methods=["POST"])
+def api_oauth_start():
+    global _oauth_proc, _oauth_proc_task
+    task_slug = request.form.get("task_slug", "").strip()
+    if not is_valid_slug(task_slug):
+        return jsonify({"error": "Invalid task"}), 400
+    task_folder = os.path.join(TASKS_ROOT, task_slug)
+    if not os.path.isdir(task_folder):
+        return jsonify({"error": "Task not found"}), 404
+    site = (read_text(os.path.join(task_folder, "oauth_site.txt")) or "").strip()
+    if site not in OAUTH_SITES:
+        return jsonify({"error": "Task has no OAuth site configured"}), 400
+
+    with _oauth_proc_lock:
+        if _oauth_proc and _oauth_proc.poll() is None:
+            return jsonify({"error": f"An OAuth flow for '{_oauth_proc_task}' is already running. Stop it before starting another one."}), 409
+
+        cache_file = os.path.join(task_folder, "gallery-dl-cache.sqlite3")
+        cmd = ["gallery-dl", "--config", CONFIG_FILE, f"oauth:{site}", "--cache-file", cache_file]
+        env = os.environ.copy()
+        env["PATH"] = env.get("PATH", "") + os.pathsep + "/usr/local/bin"
+        try:
+            with open(_OAUTH_LOG_PATH, "w", encoding="utf-8") as logf:
+                logf.write(f"Starting OAuth for {OAUTH_SITES[site]} (task: {task_slug})\n$ {' '.join(cmd)}\n\n")
+            logf = open(_OAUTH_LOG_PATH, "a", encoding="utf-8")
+            _oauth_proc = subprocess.Popen(
+                cmd, stdout=logf, stderr=subprocess.STDOUT, text=True, env=env, cwd=task_folder,
+            )
+            _oauth_proc_task = task_slug
+        except Exception as exc:
+            app.logger.exception("Failed to start OAuth process")
+            return jsonify({"error": str(exc)}), 500
+    return jsonify({"ok": True, "site": site, "task_slug": task_slug})
+
+
+@app.route("/api/oauth/log")
+def api_oauth_log():
+    running = False
+    with _oauth_proc_lock:
+        if _oauth_proc is not None:
+            running = _oauth_proc.poll() is None
+    content = read_text(_OAUTH_LOG_PATH) or ""
+    return jsonify({"running": running, "content": _ANSI_RE.sub('', content)})
+
+
+@app.route("/api/oauth/paste", methods=["POST"])
+def api_oauth_paste():
+    with _oauth_proc_lock:
+        running = bool(_oauth_proc and _oauth_proc.poll() is None)
+    if not running:
+        return jsonify({"error": "No OAuth flow is currently running. Click Start first."}), 400
+
+    qs = _parse_oauth_paste(request.form.get("value", ""))
+    if not qs or "code=" not in qs:
+        return jsonify({"error": "That doesn't look like it contains a 'code' value. Paste the full failed URL, or just the query string from it."}), 400
+
+    local_url = f"http://127.0.0.1:6414/?{qs}"
+    try:
+        with urllib.request.urlopen(local_url, timeout=15) as resp:
+            resp.read()
+        return jsonify({"ok": True})
+    except http.client.RemoteDisconnected:
+        # gallery-dl's local callback server tears down the connection as soon
+        # as it's accepted the request (often before finishing the token
+        # exchange with the provider) — confirmed by testing: the request
+        # still lands and gallery-dl proceeds normally, this exception alone
+        # doesn't mean delivery failed. Treat it as "sent" and let the log
+        # (polled right after on the client side) show the real outcome.
+        return jsonify({"ok": True, "note": "Delivered. Check the log for the result."})
+    except urllib.error.URLError as exc:
+        reason = str(getattr(exc, "reason", exc))
+        return jsonify({"error": f"Could not deliver code to gallery-dl: {reason}"}), 502
+    except Exception as exc:
+        app.logger.exception("oauth paste-relay error")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/oauth/stop", methods=["POST"])
+def api_oauth_stop():
+    global _oauth_proc, _oauth_proc_task
+    with _oauth_proc_lock:
+        if _oauth_proc and _oauth_proc.poll() is None:
+            _oauth_proc.terminate()
+            try:
+                _oauth_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                _oauth_proc.kill()
+                _oauth_proc.wait()
+            try:
+                with open(_OAUTH_LOG_PATH, "a", encoding="utf-8") as logf:
+                    logf.write("\n[Stopped by user]\n")
+            except Exception:
+                pass
+        _oauth_proc_task = ""
+    _invalidate_task_cache()
+    return jsonify({"ok": True})
+
 
 # ── Kiosk management ────────────────────────────────────────────────────────
 

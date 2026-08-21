@@ -114,6 +114,12 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'oauth_page' %}active{% endif %}"
+                            href="{{ url_for('oauth_page') }}">
+                            OAuth
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'config_page' %}active{% endif %}"
                             href="{{ url_for('config_page') }}">
                             Config
