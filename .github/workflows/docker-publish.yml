@@ -38,7 +38,12 @@ jobs:
     needs: version
     # Runs on dev/manual pushes too (where `version` is deliberately
     # skipped, not failed) — only actually skips if `version` itself fails.
-    if: needs.version.result == 'success' || needs.version.result == 'skipped'
+    # `always()` is required here: GitHub Actions applies an implicit "all
+    # needed jobs must succeed" gate on top of ANY custom `if:`, even one
+    # that already accounts for a skip — without always() that gate skips
+    # this job outright whenever `version` was skipped, before this
+    # condition is even evaluated.
+    if: always() && (needs.version.result == 'success' || needs.version.result == 'skipped')
     runs-on: ubuntu-latest
 
     steps:
@@ -88,6 +93,7 @@ jobs:
   release:
     needs: [version, build]
     if: >
+      always() &&
       github.ref == 'refs/heads/main' &&
       needs.version.result == 'success' &&
       needs.build.result == 'success'
