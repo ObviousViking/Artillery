@@ -1330,6 +1330,8 @@ def api_tasks():
             "last_run": t.get("last_run"),
             "has_archive": t.get("has_archive", False),
             "has_cookies": t.get("has_cookies", False),
+            "oauth_site": t.get("oauth_site", ""),
+            "oauth_authenticated": t.get("oauth_authenticated", False),
         })
 
     return jsonify(out)
@@ -2532,9 +2534,15 @@ def api_oauth_log():
 @app.route("/api/oauth/paste", methods=["POST"])
 def api_oauth_paste():
     with _oauth_proc_lock:
-        running = bool(_oauth_proc and _oauth_proc.poll() is None)
+        exit_code = _oauth_proc.poll() if _oauth_proc else None
+        running = bool(_oauth_proc and exit_code is None)
     if not running:
-        return jsonify({"error": "No OAuth flow is currently running. Click Start first."}), 400
+        if _oauth_proc is None:
+            return jsonify({"error": "No OAuth flow is currently running. Click Start first."}), 400
+        return jsonify({
+            "error": f"gallery-dl isn't running anymore (exit code: {exit_code}). "
+                     "Check the log below for why, then click Start again."
+        }), 400
 
     qs = _parse_oauth_paste(request.form.get("value", ""))
     if not qs or "code=" not in qs:
