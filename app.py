@@ -2540,6 +2540,14 @@ def api_oauth_start():
 
         cache_file = os.path.join(task_folder, "gallery-dl-cache.sqlite3")
         cmd = ["gallery-dl", "--config", CONFIG_FILE, f"oauth:{site}", "--cache-file", cache_file]
+        if site in OAUTH_STDIN_SITES:
+            # This subprocess's stdin is a pipe, not a real terminal, so
+            # gallery-dl's input() guard (Extractor._check_input_allowed,
+            # gated on sys.stdin.isatty()) would otherwise abort the flow
+            # the instant it tries to read the code — right after printing
+            # the login URL, before we ever get a chance to paste anything.
+            # This tells it explicitly that stdin input is allowed.
+            cmd += ["-o", "input=true"]
         env = os.environ.copy()
         env["PATH"] = env.get("PATH", "") + os.pathsep + "/usr/local/bin"
         try:
@@ -2651,6 +2659,35 @@ def api_oauth_stop():
                 pass
         _oauth_proc_task = ""
         _oauth_proc_site = ""
+    _invalidate_task_cache()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/oauth/reset", methods=["POST"])
+def api_oauth_reset():
+    """Forget a task's cached OAuth state so it can be re-authenticated from
+    scratch — clears the "Auth" badge and lets a fresh 'gallery-dl oauth:...'
+    run write a new token. This deletes the task's whole cache db (it only
+    ever holds gallery-dl's own session/token cache, never the download
+    archive, which lives in a separate archive.sqlite)."""
+    task_slug = request.form.get("task_slug", "").strip()
+    if not is_valid_slug(task_slug):
+        return jsonify({"error": "Invalid task"}), 400
+    task_folder = os.path.join(TASKS_ROOT, task_slug)
+    if not os.path.isdir(task_folder):
+        return jsonify({"error": "Task not found"}), 404
+
+    with _oauth_proc_lock:
+        if _oauth_proc_task == task_slug and _oauth_proc and _oauth_proc.poll() is None:
+            return jsonify({"error": "An OAuth flow is currently running for this task. Stop it first."}), 409
+
+    cache_file = os.path.join(task_folder, "gallery-dl-cache.sqlite3")
+    try:
+        if os.path.exists(cache_file):
+            os.remove(cache_file)
+    except OSError as exc:
+        return jsonify({"error": f"Could not remove cache file: {exc}"}), 500
+
     _invalidate_task_cache()
     return jsonify({"ok": True})
 
