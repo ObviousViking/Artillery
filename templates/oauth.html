@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+{% block main_class %}container-fluid px-4 pb-4{% endblock %}
+{% block content %}
+
+<div class="row mt-2 mb-3">
+  <div class="col-12">
+    <h2 class="mb-1">OAuth</h2>
+    <p class="text-muted small mb-0">
+      Authenticate tasks that need a logged-in session (DeviantArt, Reddit, etc).
+      Tokens are cached in <code>gallery-dl-cache.sqlite3</code> inside each task's folder,
+      so they persist across restarts.
+    </p>
+  </div>
+</div>
+
+{% if not oauth_tasks %}
+<div class="row">
+  <div class="col-12">
+    <div class="card shadow-sm border-secondary">
+      <div class="card-body text-center py-5">
+        <p class="text-muted mb-2">No tasks are set up for OAuth yet.</p>
+        <p class="text-muted small mb-3">
+          Edit a task, set <strong>OAuth site</strong>, and save it, and it'll show up here.
+        </p>
+        <a href="{{ url_for('tasks') }}" class="btn btn-sm btn-neutral">Go to Tasks</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% else %}
+
+<div class="row g-4">
+
+  <!-- ── Left: task list ────────────────────────────────────────────── -->
+  <div class="col-lg-4 col-xl-3">
+    <div class="card shadow-sm border-secondary">
+      <div class="card-header py-2"
+        style="background:var(--bg-tertiary);font-size:0.7rem;font-weight:700;
+               letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);">
+        OAuth Tasks
+      </div>
+      <div class="list-group list-group-flush" id="oauthTaskList">
+        {% for task in oauth_tasks %}
+        <button type="button"
+          class="list-group-item list-group-item-action ot-item py-2 px-3"
+          style="background:var(--bg-primary);border-color:var(--border-color);text-align:left;"
+          data-slug="{{ task.slug|e }}"
+          data-name="{{ task.name|e }}"
+          data-site="{{ task.oauth_site|e }}"
+          data-auth="{{ '1' if task.oauth_authenticated else '0' }}"
+          data-site-label="{{ oauth_sites.get(task.oauth_site, task.oauth_site)|e }}"
+          data-has-client-id="{{ '1' if client_ids.get(task.oauth_site) else '0' }}"
+          data-active="{{ '1' if task.slug == active_task else '0' }}">
+          <div class="d-flex justify-content-between align-items-start gap-1">
+            <span class="small fw-semibold" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">{{ task.name }}</span>
+            {% if task.oauth_authenticated %}
+            <span class="badge flex-shrink-0"
+              style="background:rgba(22,163,74,0.15);color:#16a34a;
+                     border:1px solid rgba(22,163,74,0.3);font-size:0.6rem;">&#10003; Auth</span>
+            {% else %}
+            <span class="badge flex-shrink-0"
+              style="background:rgba(217,119,6,0.15);color:#d97706;
+                     border:1px solid rgba(217,119,6,0.3);font-size:0.6rem;">Setup needed</span>
+            {% endif %}
+          </div>
+          <div class="text-muted" style="font-size:0.72rem;">
+            {{ oauth_sites.get(task.oauth_site, task.oauth_site) }}
+          </div>
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Right: flow panel ──────────────────────────────────────────── -->
+  <div class="col-lg-8 col-xl-9">
+
+    <!-- Placeholder -->
+    <div id="oauthPanelEmpty" class="card shadow-sm border-secondary">
+      <div class="card-body text-center py-5">
+        <p class="text-muted small mb-0">Select a task from the list to authenticate it.</p>
+      </div>
+    </div>
+
+    <!-- Active panel -->
+    <div id="oauthPanel" class="card shadow-sm border-secondary" style="display:none;">
+      <div class="card-header py-2" style="background:var(--bg-tertiary);">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <span class="small fw-semibold" id="opTaskName">—</span>
+          <span class="text-muted small">&middot;</span>
+          <span class="small text-muted" id="opSiteLabel">—</span>
+          <span id="opAuthBadge" class="badge" style="display:none;font-size:0.62rem;"></span>
+        </div>
+      </div>
+      <div class="card-body">
+
+        <!-- Shared client-id hint -->
+        <div id="opClientIdHint" class="alert alert-warning small py-2 px-3 mb-3" style="display:none;">
+          There's no <code>client-id</code> configured for this site yet, so this will use
+          gallery-dl's default shared app. That app is used by every gallery-dl install out
+          there, and it commonly hits shared quota limits (DeviantArt's "Free download limit
+          reached" is a good example). It's strongly recommended that you register your own app
+          on the site first, then add <code>client-id</code> and <code>client-secret</code>
+          under <code>extractor.&lt;site&gt;</code> in the <a href="{{ url_for('config_page') }}">Config</a> editor.
+        </div>
+
+        <p class="text-muted small mb-3">
+          Click <strong>Start</strong>, then open the authorization URL that shows up in the log
+          below and approve access. The provider will try to send your browser back to
+          <code>localhost:6414</code>, which is gallery-dl's callback listener running
+          <em>inside this container</em>, so that redirect is going to fail in your browser.
+          That's expected. The page it lands on will still have the code in its address bar even
+          though it failed to load. Copy that URL (or just the part after the question mark) and
+          paste it into the box below, and Artillery will deliver it to the listener for you.
+        </p>
+
+        <!-- Start / Stop -->
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <button type="button" id="btnOauthStart" class="btn btn-sm btn-go">&#9654; Start</button>
+          <button type="button" id="btnOauthStop"  class="btn btn-sm btn-destruct" disabled>&#9632; Stop</button>
+          <span id="opStatus" class="small text-muted">Idle</span>
+          <span id="opSpinner"
+            class="spinner-border spinner-border-sm text-secondary"
+            style="display:none;width:0.75rem;height:0.75rem;border-width:0.15em;"
+            role="status"></span>
+        </div>
+
+        <!-- Log -->
+        <label class="form-label small fw-semibold mb-1">Output</label>
+        <div id="opLog"
+          class="border rounded p-2 mb-3"
+          style="font-family:monospace;font-size:0.76rem;line-height:1.55;
+                 min-height:170px;max-height:360px;overflow-y:auto;
+                 background:var(--bg-tertiary);border-color:var(--border-color) !important;
+                 white-space:pre-wrap;word-break:break-all;"><span class="text-muted">Not started.</span></div>
+
+        <!-- Paste-back -->
+        <label class="form-label small fw-semibold mb-1" for="opPaste">Paste the failed redirect URL (or its query string)</label>
+        <div class="d-flex flex-wrap gap-2 mb-2">
+          <input type="text" id="opPaste" class="form-control form-control-sm" style="max-width:520px;"
+            placeholder="http://localhost:6414/?code=...&amp;state=..." disabled>
+          <button type="button" id="btnOauthPaste" class="btn btn-sm btn-caution" disabled>Complete authentication</button>
+        </div>
+        <div id="opPasteStatus" class="small mb-3"></div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{% endif %}
+
+<script>
+(function () {
+    'use strict';
+    if (!document.getElementById('oauthTaskList')) return; // no oauth tasks
+
+    var csrfMeta  = document.querySelector('meta[name="csrf-token"]');
+    var csrfToken = csrfMeta ? csrfMeta.content : '';
+
+    var panelEmpty = document.getElementById('oauthPanelEmpty');
+    var panel      = document.getElementById('oauthPanel');
+    var opTaskName = document.getElementById('opTaskName');
+    var opSiteLabel = document.getElementById('opSiteLabel');
+    var opAuthBadge = document.getElementById('opAuthBadge');
+    var opClientIdHint = document.getElementById('opClientIdHint');
+    var btnStart = document.getElementById('btnOauthStart');
+    var btnStop  = document.getElementById('btnOauthStop');
+    var opStatus = document.getElementById('opStatus');
+    var opSpinner = document.getElementById('opSpinner');
+    var opLog = document.getElementById('opLog');
+    var opPaste = document.getElementById('opPaste');
+    var btnPaste = document.getElementById('btnOauthPaste');
+    var opPasteStatus = document.getElementById('opPasteStatus');
+
+    var selSlug = null;
+    var pollTimer = null;
+
+    function escapeHtml(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function linkify(text) {
+        var esc = escapeHtml(text);
+        return esc.replace(/https?:\/\/\S+/g, function (url) {
+            // Trailing punctuation commonly left over from log formatting.
+            var trail = '';
+            var m = url.match(/[),.;:'"]+$/);
+            if (m) { trail = m[0]; url = url.slice(0, -trail.length); }
+            return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>' + trail;
+        });
+    }
+
+    function setStatus(text, cls) {
+        opStatus.textContent = text;
+        opStatus.className = 'small ' + (cls || 'text-muted');
+    }
+
+    function selectTask(btn) {
+        selSlug = btn.dataset.slug;
+        document.querySelectorAll('.ot-item').forEach(function (el) {
+            el.classList.toggle('active', el === btn);
+        });
+
+        opTaskName.textContent = btn.dataset.name;
+        opSiteLabel.textContent = btn.dataset.siteLabel;
+
+        var authed = btn.dataset.auth === '1';
+        opAuthBadge.style.display = '';
+        if (authed) {
+            opAuthBadge.textContent = '✓ Authenticated';
+            opAuthBadge.style.background = 'rgba(22,163,74,0.15)';
+            opAuthBadge.style.color = '#16a34a';
+            opAuthBadge.style.border = '1px solid rgba(22,163,74,0.3)';
+        } else {
+            opAuthBadge.textContent = 'Setup needed';
+            opAuthBadge.style.background = 'rgba(217,119,6,0.15)';
+            opAuthBadge.style.color = '#d97706';
+            opAuthBadge.style.border = '1px solid rgba(217,119,6,0.3)';
+        }
+
+        opClientIdHint.style.display = (btn.dataset.hasClientId === '1') ? 'none' : '';
+
+        opLog.innerHTML = '<span class="text-muted">Not started.</span>';
+        opPasteStatus.textContent = '';
+        opPaste.value = '';
+
+        var isActive = btn.dataset.active === '1';
+        setRunningUi(isActive);
+        if (isActive) refreshLog();
+
+        panelEmpty.style.display = 'none';
+        panel.style.display = '';
+    }
+
+    function setRunningUi(running) {
+        btnStart.disabled = running;
+        btnStop.disabled = !running;
+        opPaste.disabled = !running;
+        btnPaste.disabled = !running;
+        opSpinner.style.display = running ? '' : 'none';
+        if (running) setStatus('Running…');
+    }
+
+    function refreshLog() {
+        fetch('/api/oauth/log')
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                opLog.innerHTML = d.content ? linkify(d.content) : '<span class="text-muted">No output yet.</span>';
+                opLog.scrollTop = opLog.scrollHeight;
+                setRunningUi(d.running);
+                if (!d.running) {
+                    setStatus(/token cached|success/i.test(d.content) ? 'Finished.' : 'Stopped.',
+                        /token cached|success/i.test(d.content) ? 'text-success' : 'text-muted');
+                    stopPolling();
+                }
+            })
+            .catch(function () { /* transient — next poll retries */ });
+    }
+
+    function startPolling() {
+        stopPolling();
+        pollTimer = setInterval(refreshLog, 1500);
+    }
+    function stopPolling() {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    document.querySelectorAll('.ot-item').forEach(function (btn) {
+        btn.addEventListener('click', function () { selectTask(btn); });
+    });
+
+    // Land on whichever task's flow is already running, if any.
+    var preActive = document.querySelector('.ot-item[data-active="1"]');
+    if (preActive) selectTask(preActive);
+
+    btnStart.addEventListener('click', function () {
+        if (!selSlug) return;
+        btnStart.disabled = true;
+        setStatus('Starting…');
+        fetch('/api/oauth/start', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'task_slug=' + encodeURIComponent(selSlug),
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (d.error) { btnStart.disabled = false; setStatus(d.error, 'text-danger'); return; }
+                setRunningUi(true);
+                startPolling();
+                refreshLog();
+            })
+            .catch(function (e) { btnStart.disabled = false; setStatus('Request failed: ' + e.message, 'text-danger'); });
+    });
+
+    btnStop.addEventListener('click', function () {
+        btnStop.disabled = true;
+        fetch('/api/oauth/stop', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+        })
+            .then(function (r) { return r.json(); })
+            .then(function () { stopPolling(); refreshLog(); })
+            .catch(function () { stopPolling(); });
+    });
+
+    btnPaste.addEventListener('click', function () {
+        var val = opPaste.value.trim();
+        if (!val) { opPasteStatus.textContent = 'Paste something first.'; opPasteStatus.className = 'small text-danger mb-3'; return; }
+        btnPaste.disabled = true;
+        opPasteStatus.textContent = 'Delivering…';
+        opPasteStatus.className = 'small text-muted mb-3';
+        fetch('/api/oauth/paste', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'value=' + encodeURIComponent(val),
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                btnPaste.disabled = false;
+                if (d.error) { opPasteStatus.textContent = d.error; opPasteStatus.className = 'small text-danger mb-3'; return; }
+                opPasteStatus.textContent = 'Delivered. Check the log below to see how it went.';
+                opPasteStatus.className = 'small text-success mb-3';
+                opPaste.value = '';
+                setTimeout(refreshLog, 800);
+            })
+            .catch(function (e) {
+                btnPaste.disabled = false;
+                opPasteStatus.textContent = 'Request failed: ' + e.message;
+                opPasteStatus.className = 'small text-danger mb-3';
+            });
+    });
+})();
+</script>
+
+{% endblock %}

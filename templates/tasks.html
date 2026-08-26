@@ -502,6 +502,7 @@ a.r-item:hover {
           data-next-run="{{ (task.next_run or '')|e }}"
           data-last-error="{{ (task.last_error or '')|e }}"
           data-timeout="{{ (task.timeout or '')|e }}"
+          data-oauth-site="{{ (task.oauth_site or '')|e }}"
           data-history-api="/tasks/{{ task.slug|e }}/history">
           <div class="t-item-row">
             <span class="t-item-name">{{ task.name }}</span>
@@ -597,10 +598,23 @@ a.r-item:hover {
               <input type="text" id="cSched" name="schedule" class="form-control form-control-sm" placeholder="*/5 * * * *" style="display:none;" disabled/>
               <div class="form-text" id="cSchedHelp" style="display:none;"><code>*/5 * * * *</code> = every 5 min</div>
             </div>
-            <div class="mb-0">
+            <div class="mb-3">
               <label class="form-label">Cookies <span class="text-muted fw-normal">(optional)</span></label>
               <input type="file" name="cookies_file" class="form-control form-control-sm" accept=".txt"/>
               <div class="form-text">Upload <code>cookies.txt</code> — passed to gallery-dl via <code>--cookies</code> automatically.</div>
+            </div>
+            <div class="mb-0">
+              <label class="form-label" for="cOauthSite">OAuth site <span class="text-muted fw-normal">(optional)</span></label>
+              <select id="cOauthSite" name="oauth_site" class="form-select form-select-sm">
+                <option value="">None</option>
+                {% for key, label in oauth_sites.items() %}
+                <option value="{{ key }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text">
+                Adds <code>--cache-file</code> to the command automatically — authenticate on the
+                <a href="{{ url_for('oauth_page') }}">OAuth page</a> after saving.
+              </div>
             </div>
           </div>
           <div class="col-md-7">
@@ -619,13 +633,14 @@ a.r-item:hover {
                   <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc7" data-flag="--no-skip"><label class="form-check-label small" for="cc7">Don't skip existing</label></div>
                   <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc8" data-flag="-v"><label class="form-check-label small" for="cc8">Verbose</label></div>
                   <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc9" data-flag="--cookies cookies.txt"><label class="form-check-label small" for="cc9">Use cookies</label></div>
+                  <div class="form-check"><input class="form-check-input gdc" type="checkbox" id="cc10" data-flag="--cache-file gallery-dl-cache.sqlite3"><label class="form-check-label small" for="cc10">OAuth cache</label></div>
                 </div>
               </div>
             </div>
             <div class="mb-4">
               <label class="form-label" for="cCmd">Command</label>
               <textarea id="cCmd" class="form-control form-control-sm" rows="2" name="command_display"></textarea>
-              <div class="form-text">Backend adds <code>--config</code> and <code>--destination</code> if missing.</div>
+              <div class="form-text">Backend adds <code>--config</code> and <code>--destination</code> if missing. Tick <strong>OAuth cache</strong> for sites that need it, then authenticate from the <a href="{{ url_for('oauth_page') }}">OAuth</a> page after saving.</div>
             </div>
             <input type="hidden" id="cCmdH" name="command"/>
             <button type="submit" class="btn btn-sm btn-go">Create task</button>
@@ -789,11 +804,24 @@ a.r-item:hover {
                   <div class="form-text mb-2">On demand: the task sits idle until you click Run. It won't repeat unless you switch this to Recurring.</div>
                   <input type="text" id="eSched" name="schedule" class="form-control form-control-sm" placeholder="*/5 * * * *"/>
                 </div>
-                <div class="mb-0">
+                <div class="mb-3">
                   <label class="form-label">Cookies <span class="text-muted fw-normal">(optional)</span></label>
                   <div id="eCookieStatus" class="mb-1" style="font-size:0.8rem;"></div>
                   <input type="file" id="eCookiesFile" name="cookies_file" class="form-control form-control-sm" accept=".txt"/>
                   <div class="form-text">Upload to replace existing <code>cookies.txt</code>. gallery-dl uses it via <code>--cookies</code> automatically.</div>
+                </div>
+                <div class="mb-0">
+                  <label class="form-label" for="eOauthSite">OAuth site <span class="text-muted fw-normal">(optional)</span></label>
+                  <select id="eOauthSite" name="oauth_site" class="form-select form-select-sm">
+                    <option value="">None</option>
+                    {% for key, label in oauth_sites.items() %}
+                    <option value="{{ key }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                  <div class="form-text">
+                    Adds <code>--cache-file</code> to the command automatically — authenticate on the
+                    <a href="{{ url_for('oauth_page') }}">OAuth page</a> after saving.
+                  </div>
                 </div>
               </div>
 
@@ -813,13 +841,14 @@ a.r-item:hover {
                       <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec7" data-flag="--no-skip"><label class="form-check-label small" for="ec7">Don't skip existing</label></div>
                       <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec8" data-flag="-v"><label class="form-check-label small" for="ec8">Verbose</label></div>
                       <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec9" data-flag="--cookies cookies.txt"><label class="form-check-label small" for="ec9">Use cookies</label></div>
+                      <div class="form-check"><input class="form-check-input gde" type="checkbox" id="ec10" data-flag="--cache-file gallery-dl-cache.sqlite3"><label class="form-check-label small" for="ec10">OAuth cache</label></div>
                     </div>
                   </div>
                 </div>
                 <div class="mb-4">
                   <label class="form-label" for="eCmd">Command</label>
                   <textarea id="eCmd" class="form-control form-control-sm" rows="2" name="command_display"></textarea>
-                  <div class="form-text">Backend adds <code>--config</code> and <code>--destination</code> if missing.</div>
+                  <div class="form-text">Backend adds <code>--config</code> and <code>--destination</code> if missing. Tick <strong>OAuth cache</strong> for sites that need it, then authenticate from the <a href="{{ url_for('oauth_page') }}">OAuth</a> page after saving.</div>
                 </div>
                 <input type="hidden" id="eCmdH" name="command"/>
                 <button type="submit" class="btn btn-sm btn-go">Save changes</button>
@@ -877,6 +906,7 @@ a.r-item:hover {
     var cModeManual = $('cModeManual'), cModeCron = $('cModeCron'), cSchedHelp = $('cSchedHelp');
     var eModeManual = $('eModeManual'), eModeCron = $('eModeCron');
     var eCmd = $('eCmd'), eCmdH = $('eCmdH'), eKeepUrls = $('eKeepUrls');
+    var eOauthSite = $('eOauthSite');
     var eUrlCntLbl = $('eUrlCntLbl'), urlGate = $('urlGate');
     var urlGateMsg = $('urlGateMsg'), bLoadUrls = $('bLoadUrls');
     var cCmd = $('cCmd'), cCmdH = $('cCmdH');
@@ -1091,6 +1121,7 @@ a.r-item:hover {
         eModeCron.checked    = !!btn.dataset.schedule;
         eModeManual.checked  = !btn.dataset.schedule;
         syncScheduleMode('e');
+        eOauthSite.value      = btn.dataset.oauthSite || '';
         eCmd.value           = btn.dataset.command;
         eCmdH.value          = btn.dataset.command;
         eUrlCntLbl.textContent = selUrlCount ? '— ' + fmtN(selUrlCount) : '';
