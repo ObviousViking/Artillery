@@ -1,0 +1,5 @@
+# Shell scripts run inside the Linux container and need a real LF shebang
+# line — on a Windows checkout with core.autocrlf=true, git silently
+# rewrites them to CRLF, which breaks `exec /app/entrypoint.sh` with
+# "no such file or directory" the moment the image runs.
+*.sh text eol=lf

@@ -47,6 +47,7 @@
           data-slug="{{ task.slug|e }}"
           data-name="{{ task.name|e }}"
           data-site="{{ task.oauth_site|e }}"
+          data-stdin="{{ '1' if task.oauth_site in oauth_stdin_sites else '0' }}"
           data-auth="{{ '1' if task.oauth_authenticated else '0' }}"
           data-site-label="{{ oauth_sites.get(task.oauth_site, task.oauth_site)|e }}"
           data-has-client-id="{{ '1' if client_ids.get(task.oauth_site) else '0' }}"
@@ -104,7 +105,7 @@
           under <code>extractor.&lt;site&gt;</code> in the <a href="{{ url_for('config_page') }}">Config</a> editor.
         </div>
 
-        <p class="text-muted small mb-3">
+        <p class="text-muted small mb-3" id="opInstrHttp">
           Click <strong>Start</strong>, then open the authorization URL that shows up in the log
           below and approve access. The provider will try to send your browser back to
           <code>localhost:6414</code>, which is gallery-dl's callback listener running
@@ -114,10 +115,24 @@
           paste it into the box below, and Artillery will deliver it to the listener for you.
         </p>
 
-        <!-- Start / Stop -->
+        <p class="text-muted small mb-3" id="opInstrStdin" style="display:none;">
+          Click <strong>Start</strong>, then open the login URL that shows up in the log below and
+          log in. Pixiv doesn't redirect your browser back anywhere useful, so instead: open your
+          browser's <strong>Developer Tools</strong> (F12) → <strong>Network</strong> tab
+          <em>before</em> you log in, log in, then find the last request whose name starts with
+          <code>callback?state=</code> and copy its <code>code</code> query parameter (pasting the
+          whole entry works too — Artillery/gallery-dl only look at what comes after the last
+          <code>=</code>). Paste it into the box below.
+          <strong>It expires ~30 seconds after you log in</strong>, so have the Network tab open
+          and ready first.
+        </p>
+
+        <!-- Start / Stop / Reset -->
         <div class="d-flex align-items-center gap-2 mb-3">
           <button type="button" id="btnOauthStart" class="btn btn-sm btn-go">&#9654; Start</button>
           <button type="button" id="btnOauthStop"  class="btn btn-sm btn-destruct" disabled>&#9632; Stop</button>
+          <button type="button" id="btnOauthReset" class="btn btn-sm btn-outline-secondary"
+            title="Forget the cached token for this task and start over">&#8635; Reset auth</button>
           <span id="opStatus" class="small text-muted">Idle</span>
           <span id="opSpinner"
             class="spinner-border spinner-border-sm text-secondary"
@@ -135,7 +150,7 @@
                  white-space:pre-wrap;word-break:break-all;"><span class="text-muted">Not started.</span></div>
 
         <!-- Paste-back -->
-        <label class="form-label small fw-semibold mb-1" for="opPaste">Paste the failed redirect URL (or its query string)</label>
+        <label class="form-label small fw-semibold mb-1" for="opPaste" id="opPasteLabel">Paste the failed redirect URL (or its query string)</label>
         <div class="d-flex flex-wrap gap-2 mb-2">
           <input type="text" id="opPaste" class="form-control form-control-sm" style="max-width:520px;"
             placeholder="http://localhost:6414/?code=...&amp;state=..." disabled>
@@ -165,8 +180,12 @@
     var opSiteLabel = document.getElementById('opSiteLabel');
     var opAuthBadge = document.getElementById('opAuthBadge');
     var opClientIdHint = document.getElementById('opClientIdHint');
+    var opInstrHttp = document.getElementById('opInstrHttp');
+    var opInstrStdin = document.getElementById('opInstrStdin');
+    var opPasteLabel = document.getElementById('opPasteLabel');
     var btnStart = document.getElementById('btnOauthStart');
     var btnStop  = document.getElementById('btnOauthStop');
+    var btnReset = document.getElementById('btnOauthReset');
     var opStatus = document.getElementById('opStatus');
     var opSpinner = document.getElementById('opSpinner');
     var opLog = document.getElementById('opLog');
@@ -197,6 +216,28 @@
         opStatus.className = 'small ' + (cls || 'text-muted');
     }
 
+    // Applies the "Auth" / "Setup needed" styling to both the sidebar badge
+    // for 'btn' and (if it's the currently-open one) the panel header badge.
+    function applyAuthBadge(btn, authed) {
+        btn.dataset.auth = authed ? '1' : '0';
+        var badge = btn.querySelector('.badge');
+        if (badge) {
+            badge.innerHTML = authed ? '&#10003; Auth' : 'Setup needed';
+            badge.style.background = authed ? 'rgba(22,163,74,0.15)' : 'rgba(217,119,6,0.15)';
+            badge.style.color = authed ? '#16a34a' : '#d97706';
+            badge.style.border = authed
+                ? '1px solid rgba(22,163,74,0.3)' : '1px solid rgba(217,119,6,0.3)';
+        }
+        if (btn.classList.contains('active')) {
+            opAuthBadge.style.display = '';
+            opAuthBadge.textContent = authed ? '✓ Authenticated' : 'Setup needed';
+            opAuthBadge.style.background = authed ? 'rgba(22,163,74,0.15)' : 'rgba(217,119,6,0.15)';
+            opAuthBadge.style.color = authed ? '#16a34a' : '#d97706';
+            opAuthBadge.style.border = authed
+                ? '1px solid rgba(22,163,74,0.3)' : '1px solid rgba(217,119,6,0.3)';
+        }
+    }
+
     function selectTask(btn) {
         selSlug = btn.dataset.slug;
         document.querySelectorAll('.ot-item').forEach(function (el) {
@@ -206,21 +247,19 @@
         opTaskName.textContent = btn.dataset.name;
         opSiteLabel.textContent = btn.dataset.siteLabel;
 
-        var authed = btn.dataset.auth === '1';
-        opAuthBadge.style.display = '';
-        if (authed) {
-            opAuthBadge.textContent = '✓ Authenticated';
-            opAuthBadge.style.background = 'rgba(22,163,74,0.15)';
-            opAuthBadge.style.color = '#16a34a';
-            opAuthBadge.style.border = '1px solid rgba(22,163,74,0.3)';
-        } else {
-            opAuthBadge.textContent = 'Setup needed';
-            opAuthBadge.style.background = 'rgba(217,119,6,0.15)';
-            opAuthBadge.style.color = '#d97706';
-            opAuthBadge.style.border = '1px solid rgba(217,119,6,0.3)';
-        }
+        applyAuthBadge(btn, btn.dataset.auth === '1');
 
         opClientIdHint.style.display = (btn.dataset.hasClientId === '1') ? 'none' : '';
+
+        var stdinFlow = btn.dataset.stdin === '1';
+        opInstrHttp.style.display = stdinFlow ? 'none' : '';
+        opInstrStdin.style.display = stdinFlow ? '' : 'none';
+        opPasteLabel.textContent = stdinFlow
+            ? "Paste the 'code' value (expires ~30s after login)"
+            : 'Paste the failed redirect URL (or its query string)';
+        opPaste.placeholder = stdinFlow
+            ? 'code=... (or just the code)'
+            : 'http://localhost:6414/?code=...&state=...';
 
         opLog.innerHTML = '<span class="text-muted">Not started.</span>';
         opPasteStatus.textContent = '';
@@ -237,6 +276,7 @@
     function setRunningUi(running) {
         btnStart.disabled = running;
         btnStop.disabled = !running;
+        btnReset.disabled = running;
         opPaste.disabled = !running;
         btnPaste.disabled = !running;
         opSpinner.style.display = running ? '' : 'none';
@@ -303,6 +343,26 @@
             .then(function (r) { return r.json(); })
             .then(function () { stopPolling(); refreshLog(); })
             .catch(function () { stopPolling(); });
+    });
+
+    btnReset.addEventListener('click', function () {
+        if (!selSlug) return;
+        if (!window.confirm('Forget the cached token for this task? You will need to authenticate again before it can run.')) return;
+        btnReset.disabled = true;
+        fetch('/api/oauth/reset', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'task_slug=' + encodeURIComponent(selSlug),
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                btnReset.disabled = false;
+                if (d.error) { setStatus(d.error, 'text-danger'); return; }
+                var activeBtn = document.querySelector('.ot-item.active');
+                if (activeBtn) applyAuthBadge(activeBtn, false);
+                setStatus('Auth reset — click Start to authenticate again.', 'text-muted');
+            })
+            .catch(function (e) { btnReset.disabled = false; setStatus('Request failed: ' + e.message, 'text-danger'); });
     });
 
     btnPaste.addEventListener('click', function () {
