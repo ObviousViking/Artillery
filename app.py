@@ -20,6 +20,7 @@ import hashlib
 import random
 import secrets
 import atexit
+import sqlite3
 from pathlib import Path
 from typing import Optional, List, Tuple
 from croniter import croniter
@@ -126,6 +127,15 @@ OAUTH_SITES = {
     "mastodon":   "Mastodon",
     "pixiv":      "Pixiv",
 }
+
+# Sites whose gallery-dl OAuth flow reads the callback code from gallery-dl's
+# stdin instead of the local HTTP listener on 127.0.0.1:6414. Pixiv's redirect
+# URI is a real HTTPS endpoint it controls (not localhost), so gallery-dl
+# can't intercept it with a local server — instead it prints instructions and
+# blocks on input() for the 'code' value (see OAuthPixiv._input_code in
+# gallery_dl's extractor/oauth.py). Everything else here uses OAuthBase's
+# default recv(), which does listen on :6414.
+OAUTH_STDIN_SITES = {"pixiv"}
 
 TASK_TIMEOUT_SECONDS = int(os.environ.get("TASK_TIMEOUT_SECONDS", "0") or "0")
 TASK_CONCURRENT_MAX  = int(os.environ.get("TASK_CONCURRENT_MAX", "5"))
@@ -922,8 +932,7 @@ def load_tasks():
         timeout_val = read_text(os.path.join(task_path, "timeout.txt")) or ""
 
         oauth_site = (read_text(os.path.join(task_path, "oauth_site.txt")) or "").strip()
-        oauth_authenticated = os.path.getsize(os.path.join(task_path, "gallery-dl-cache.sqlite3")) > 0 \
-            if os.path.exists(os.path.join(task_path, "gallery-dl-cache.sqlite3")) else False
+        oauth_authenticated = _cache_has_token(os.path.join(task_path, "gallery-dl-cache.sqlite3"))
 
         task = {
             "id": slug,
@@ -2432,18 +2441,24 @@ def download_task_log_archived(slug, filename):
 # OAuth (interactive `gallery-dl oauth:<site>` flow, per task)
 # ---------------------------------------------------------------------
 #
-# gallery-dl's interactive OAuth client always finishes by waiting for an
+# Most of gallery-dl's interactive OAuth clients finish by waiting for an
 # HTTP callback on 127.0.0.1:6414 — inside this container, not on whatever
 # machine the browser completing the provider's consent screen happens to be
-# on. There is no way around that (it's how gallery-dl's OAuthBase.recv() is
-# built), so this flow still needs one manual step: the browser's redirect
-# back to localhost:6414 fails (nothing listens there on YOUR machine), but
-# the failed URL in the address bar still carries the `code`/`state` — paste
-# that here and we relay it, server-side, to the real listener next to it in
-# this same container.
+# on. There is no way around that (it's how OAuthBase.recv() is built), so
+# this flow still needs one manual step: the browser's redirect back to
+# localhost:6414 fails (nothing listens there on YOUR machine), but the
+# failed URL in the address bar still carries the `code`/`state` — paste that
+# here and we relay it, server-side, to the real listener next to it in this
+# same container.
+#
+# Pixiv (see OAUTH_STDIN_SITES) is the exception: its OAuth client never
+# opens that listener at all — it blocks on stdin instead, waiting for the
+# code to be typed/piped in. For those sites we write the pasted value
+# straight to the subprocess's stdin rather than relaying it over HTTP.
 _OAUTH_LOG_PATH = os.path.join(CONFIG_ROOT, ".oauth_run.log")
 _oauth_proc: "subprocess.Popen | None" = None
 _oauth_proc_task: str = ""
+_oauth_proc_site: str = ""
 _oauth_proc_lock = threading.Lock()
 
 
@@ -2452,6 +2467,25 @@ def _oauth_client_id_configured(site: str) -> bool:
         conf = json.loads(read_text(CONFIG_FILE) or "{}")
         return bool(conf.get("extractor", {}).get(site, {}).get("client-id"))
     except Exception:
+        return False
+
+
+def _cache_has_token(path: str) -> bool:
+    """True once gallery-dl has actually written something (e.g. a
+    refresh-token) into this task's cache db — not merely once the file
+    exists. gallery-dl runs 'CREATE TABLE IF NOT EXISTS data' the instant it
+    opens the cache file, before any authentication happens, so checking
+    file existence/size alone reports "authenticated" the moment the OAuth
+    subprocess starts, regardless of whether login ever succeeded."""
+    if not os.path.exists(path):
+        return False
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=1)
+        try:
+            return con.execute("SELECT 1 FROM data LIMIT 1").fetchone() is not None
+        finally:
+            con.close()
+    except sqlite3.Error:
         return False
 
 
@@ -2481,6 +2515,7 @@ def oauth_page():
         "oauth.html",
         oauth_tasks=oauth_tasks,
         oauth_sites=OAUTH_SITES,
+        oauth_stdin_sites=OAUTH_STDIN_SITES,
         client_ids=client_ids,
         active_task=active_task,
     )
@@ -2488,7 +2523,7 @@ def oauth_page():
 
 @app.route("/api/oauth/start", methods=["POST"])
 def api_oauth_start():
-    global _oauth_proc, _oauth_proc_task
+    global _oauth_proc, _oauth_proc_task, _oauth_proc_site
     task_slug = request.form.get("task_slug", "").strip()
     if not is_valid_slug(task_slug):
         return jsonify({"error": "Invalid task"}), 400
@@ -2511,10 +2546,15 @@ def api_oauth_start():
             with open(_OAUTH_LOG_PATH, "w", encoding="utf-8") as logf:
                 logf.write(f"Starting OAuth for {OAUTH_SITES[site]} (task: {task_slug})\n$ {' '.join(cmd)}\n\n")
             logf = open(_OAUTH_LOG_PATH, "a", encoding="utf-8")
+            # stdin=PIPE unconditionally: harmless for sites that never read
+            # it, and required for OAUTH_STDIN_SITES (pixiv) to receive the
+            # pasted code — see api_oauth_paste().
             _oauth_proc = subprocess.Popen(
-                cmd, stdout=logf, stderr=subprocess.STDOUT, text=True, env=env, cwd=task_folder,
+                cmd, stdin=subprocess.PIPE, stdout=logf, stderr=subprocess.STDOUT,
+                text=True, env=env, cwd=task_folder,
             )
             _oauth_proc_task = task_slug
+            _oauth_proc_site = site
         except Exception as exc:
             app.logger.exception("Failed to start OAuth process")
             return jsonify({"error": str(exc)}), 500
@@ -2536,6 +2576,8 @@ def api_oauth_paste():
     with _oauth_proc_lock:
         exit_code = _oauth_proc.poll() if _oauth_proc else None
         running = bool(_oauth_proc and exit_code is None)
+        proc = _oauth_proc
+        site = _oauth_proc_site
     if not running:
         if _oauth_proc is None:
             return jsonify({"error": "No OAuth flow is currently running. Click Start first."}), 400
@@ -2543,6 +2585,24 @@ def api_oauth_paste():
             "error": f"gallery-dl isn't running anymore (exit code: {exit_code}). "
                      "Check the log below for why, then click Start again."
         }), 400
+
+    if site in OAUTH_STDIN_SITES:
+        # No HTTP listener to relay to here — gallery-dl is blocked on
+        # input() reading its own stdin. Hand it off exactly as it parses
+        # it (rpartition on the last '='), so a bare code, a query string,
+        # or a full URL all work the same way pasting into a real terminal
+        # would. The code expires ~30s after login, so this needs to land
+        # immediately — no timeout to fail with here, it's a direct pipe write.
+        raw = (request.form.get("value", "") or "").strip()
+        if not raw:
+            return jsonify({"error": "Paste something first."}), 400
+        try:
+            proc.stdin.write(raw + "\n")
+            proc.stdin.flush()
+        except Exception as exc:
+            app.logger.exception("oauth stdin-relay error")
+            return jsonify({"error": f"Could not deliver code to gallery-dl: {exc}"}), 500
+        return jsonify({"ok": True})
 
     qs = _parse_oauth_paste(request.form.get("value", ""))
     if not qs or "code=" not in qs:
@@ -2571,9 +2631,13 @@ def api_oauth_paste():
 
 @app.route("/api/oauth/stop", methods=["POST"])
 def api_oauth_stop():
-    global _oauth_proc, _oauth_proc_task
+    global _oauth_proc, _oauth_proc_task, _oauth_proc_site
     with _oauth_proc_lock:
         if _oauth_proc and _oauth_proc.poll() is None:
+            try:
+                _oauth_proc.stdin.close()
+            except Exception:
+                pass
             _oauth_proc.terminate()
             try:
                 _oauth_proc.wait(timeout=5)
@@ -2586,6 +2650,7 @@ def api_oauth_stop():
             except Exception:
                 pass
         _oauth_proc_task = ""
+        _oauth_proc_site = ""
     _invalidate_task_cache()
     return jsonify({"ok": True})
 

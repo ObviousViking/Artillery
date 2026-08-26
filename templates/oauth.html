@@ -47,6 +47,7 @@
           data-slug="{{ task.slug|e }}"
           data-name="{{ task.name|e }}"
           data-site="{{ task.oauth_site|e }}"
+          data-stdin="{{ '1' if task.oauth_site in oauth_stdin_sites else '0' }}"
           data-auth="{{ '1' if task.oauth_authenticated else '0' }}"
           data-site-label="{{ oauth_sites.get(task.oauth_site, task.oauth_site)|e }}"
           data-has-client-id="{{ '1' if client_ids.get(task.oauth_site) else '0' }}"
@@ -104,7 +105,7 @@
           under <code>extractor.&lt;site&gt;</code> in the <a href="{{ url_for('config_page') }}">Config</a> editor.
         </div>
 
-        <p class="text-muted small mb-3">
+        <p class="text-muted small mb-3" id="opInstrHttp">
           Click <strong>Start</strong>, then open the authorization URL that shows up in the log
           below and approve access. The provider will try to send your browser back to
           <code>localhost:6414</code>, which is gallery-dl's callback listener running
@@ -112,6 +113,18 @@
           That's expected. The page it lands on will still have the code in its address bar even
           though it failed to load. Copy that URL (or just the part after the question mark) and
           paste it into the box below, and Artillery will deliver it to the listener for you.
+        </p>
+
+        <p class="text-muted small mb-3" id="opInstrStdin" style="display:none;">
+          Click <strong>Start</strong>, then open the login URL that shows up in the log below and
+          log in. Pixiv doesn't redirect your browser back anywhere useful, so instead: open your
+          browser's <strong>Developer Tools</strong> (F12) → <strong>Network</strong> tab
+          <em>before</em> you log in, log in, then find the last request whose name starts with
+          <code>callback?state=</code> and copy its <code>code</code> query parameter (pasting the
+          whole entry works too — Artillery/gallery-dl only look at what comes after the last
+          <code>=</code>). Paste it into the box below.
+          <strong>It expires ~30 seconds after you log in</strong>, so have the Network tab open
+          and ready first.
         </p>
 
         <!-- Start / Stop -->
@@ -135,7 +148,7 @@
                  white-space:pre-wrap;word-break:break-all;"><span class="text-muted">Not started.</span></div>
 
         <!-- Paste-back -->
-        <label class="form-label small fw-semibold mb-1" for="opPaste">Paste the failed redirect URL (or its query string)</label>
+        <label class="form-label small fw-semibold mb-1" for="opPaste" id="opPasteLabel">Paste the failed redirect URL (or its query string)</label>
         <div class="d-flex flex-wrap gap-2 mb-2">
           <input type="text" id="opPaste" class="form-control form-control-sm" style="max-width:520px;"
             placeholder="http://localhost:6414/?code=...&amp;state=..." disabled>
@@ -165,6 +178,9 @@
     var opSiteLabel = document.getElementById('opSiteLabel');
     var opAuthBadge = document.getElementById('opAuthBadge');
     var opClientIdHint = document.getElementById('opClientIdHint');
+    var opInstrHttp = document.getElementById('opInstrHttp');
+    var opInstrStdin = document.getElementById('opInstrStdin');
+    var opPasteLabel = document.getElementById('opPasteLabel');
     var btnStart = document.getElementById('btnOauthStart');
     var btnStop  = document.getElementById('btnOauthStop');
     var opStatus = document.getElementById('opStatus');
@@ -221,6 +237,16 @@
         }
 
         opClientIdHint.style.display = (btn.dataset.hasClientId === '1') ? 'none' : '';
+
+        var stdinFlow = btn.dataset.stdin === '1';
+        opInstrHttp.style.display = stdinFlow ? 'none' : '';
+        opInstrStdin.style.display = stdinFlow ? '' : 'none';
+        opPasteLabel.textContent = stdinFlow
+            ? "Paste the 'code' value (expires ~30s after login)"
+            : 'Paste the failed redirect URL (or its query string)';
+        opPaste.placeholder = stdinFlow
+            ? 'code=... (or just the code)'
+            : 'http://localhost:6414/?code=...&state=...';
 
         opLog.innerHTML = '<span class="text-muted">Not started.</span>';
         opPasteStatus.textContent = '';
