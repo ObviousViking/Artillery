@@ -7,8 +7,9 @@
     <h2 class="mb-1">OAuth</h2>
     <p class="text-muted small mb-0">
       Authenticate tasks that need a logged-in session (DeviantArt, Reddit, etc).
-      Tokens are cached in <code>gallery-dl-cache.sqlite3</code> inside each task's folder,
-      so they persist across restarts.
+      Tokens are cached once per site under <code>/config</code> and shared by every task
+      that has that site's OAuth ticked — authenticate once and all of them pick it up,
+      and it persists across restarts.
     </p>
   </div>
 </div>
@@ -347,7 +348,15 @@
 
     btnReset.addEventListener('click', function () {
         if (!selSlug) return;
-        if (!window.confirm('Forget the cached token for this task? You will need to authenticate again before it can run.')) return;
+        var activeBtn = document.querySelector('.ot-item.active');
+        var site = activeBtn ? activeBtn.dataset.site : '';
+        var siteLabel = activeBtn ? activeBtn.dataset.siteLabel : 'this site';
+        var sameSiteCount = site ? document.querySelectorAll('.ot-item[data-site="' + site + '"]').length : 1;
+        var warning = sameSiteCount > 1
+            ? 'Forget the cached ' + siteLabel + ' token? This is shared, so it resets authentication for all '
+                + sameSiteCount + ' tasks using ' + siteLabel + ', not just this one.'
+            : 'Forget the cached ' + siteLabel + ' token? You will need to authenticate again before it can run.';
+        if (!window.confirm(warning)) return;
         btnReset.disabled = true;
         fetch('/api/oauth/reset', {
             method: 'POST',
@@ -358,8 +367,11 @@
             .then(function (d) {
                 btnReset.disabled = false;
                 if (d.error) { setStatus(d.error, 'text-danger'); return; }
-                var activeBtn = document.querySelector('.ot-item.active');
-                if (activeBtn) applyAuthBadge(activeBtn, false);
+                // The cache is shared per-site, so every task on this site just
+                // lost its auth, not only the one Reset was clicked from.
+                document.querySelectorAll('.ot-item[data-site="' + site + '"]').forEach(function (el) {
+                    applyAuthBadge(el, false);
+                });
                 setStatus('Auth reset — click Start to authenticate again.', 'text-muted');
             })
             .catch(function (e) { btnReset.disabled = false; setStatus('Request failed: ' + e.message, 'text-danger'); });

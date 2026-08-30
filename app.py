@@ -137,6 +137,83 @@ OAUTH_SITES = {
 # default recv(), which does listen on :6414.
 OAUTH_STDIN_SITES = {"pixiv"}
 
+
+def _cache_has_token(path: str) -> bool:
+    """True once gallery-dl has actually written something (e.g. a
+    refresh-token) into this cache db — not merely once the file exists.
+    gallery-dl runs 'CREATE TABLE IF NOT EXISTS data' the instant it opens
+    the cache file, before any authentication happens, so checking file
+    existence/size alone reports "authenticated" the moment an OAuth
+    subprocess starts, regardless of whether login ever succeeded."""
+    if not os.path.exists(path):
+        return False
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=1)
+        try:
+            return con.execute("SELECT 1 FROM data LIMIT 1").fetchone() is not None
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return False
+
+
+def _oauth_cache_path(site: str) -> str:
+    """Path to the shared, site-scoped OAuth cache db — one file per site
+    under CONFIG_ROOT, used by every task with that OAuth site ticked.
+    Authenticate once and any task using that site picks it up, instead of
+    each task needing its own separate login."""
+    return os.path.join(CONFIG_ROOT, "oauth_cache", f"{site}.sqlite3")
+
+
+def _migrate_legacy_oauth_cache(site: str, task_folder: str) -> None:
+    """One-time upgrade path from when each task had its own
+    gallery-dl-cache.sqlite3 cache. If the shared cache for 'site' has no
+    token yet but this task's old per-task file does, copy it over so a
+    task that was already authenticated doesn't need to redo OAuth just
+    because caches got centralized."""
+    shared_path = _oauth_cache_path(site)
+    if _cache_has_token(shared_path):
+        return
+    legacy_path = os.path.join(task_folder, "gallery-dl-cache.sqlite3")
+    if not _cache_has_token(legacy_path):
+        return
+    try:
+        os.makedirs(os.path.dirname(shared_path), exist_ok=True)
+        shutil.copy2(legacy_path, shared_path)
+    except OSError:
+        app.logger.warning(
+            "Could not migrate legacy OAuth cache for '%s' from %s",
+            site, task_folder, exc_info=True)
+
+
+def _resolve_task_cache_file(cmd_parts: list, task_folder: str) -> list:
+    """A task saved before OAuth caches were centralized may still have the
+    old relative '--cache-file gallery-dl-cache.sqlite3' baked into its
+    command. Rewrite that to the shared, site-scoped path at run time (and
+    migrate any real token sitting in that legacy file into the shared
+    cache) so an already-configured task keeps working without needing to
+    be re-saved."""
+    oauth_site = (read_text(os.path.join(task_folder, "oauth_site.txt")) or "").strip()
+    if oauth_site not in OAUTH_SITES:
+        return cmd_parts
+
+    _migrate_legacy_oauth_cache(oauth_site, task_folder)
+    shared_path = _oauth_cache_path(oauth_site)
+    legacy_names = {"gallery-dl-cache.sqlite3",
+                     os.path.join(task_folder, "gallery-dl-cache.sqlite3")}
+
+    for i, p in enumerate(cmd_parts):
+        if p == "--cache-file" and i + 1 < len(cmd_parts):
+            if cmd_parts[i + 1] in legacy_names:
+                cmd_parts[i + 1] = shared_path
+            break
+        if p.startswith("--cache-file="):
+            if p.split("=", 1)[1] in legacy_names:
+                cmd_parts[i] = "--cache-file=" + shared_path
+            break
+    return cmd_parts
+
+
 TASK_TIMEOUT_SECONDS = int(os.environ.get("TASK_TIMEOUT_SECONDS", "0") or "0")
 TASK_CONCURRENT_MAX  = int(os.environ.get("TASK_CONCURRENT_MAX", "5"))
 MAX_ROTATED_LOGS = 5
@@ -567,6 +644,17 @@ def _task_mtimes(task_path: str) -> dict:
             return os.path.getmtime(p)
         except Exception:
             return None
+
+    oauth_site = (read_text(os.path.join(task_path, "oauth_site.txt")) or "").strip()
+    # The OAuth cache is shared per-site under CONFIG_ROOT now, not per-task —
+    # watch that shared file's mtime so every task using the same site
+    # notices when any one of them (re)authenticates or gets reset, not just
+    # whichever task happened to run the OAuth flow.
+    oauth_cache_path = (
+        _oauth_cache_path(oauth_site) if oauth_site in OAUTH_SITES
+        else os.path.join(task_path, "gallery-dl-cache.sqlite3")
+    )
+
     return {
         "name": _mt(os.path.join(task_path, "name.txt")),
         "cron": _mt(os.path.join(task_path, "cron.txt")),
@@ -581,7 +669,7 @@ def _task_mtimes(task_path: str) -> dict:
         "last_error": _mt(os.path.join(task_path, "last_error.txt")),
         "timeout":    _mt(os.path.join(task_path, "timeout.txt")),
         "oauth_site":  _mt(os.path.join(task_path, "oauth_site.txt")),
-        "oauth_cache": _mt(os.path.join(task_path, "gallery-dl-cache.sqlite3")),
+        "oauth_cache": _mt(oauth_cache_path),
     }
 
 def _cache_name_for_relpath(relpath: str) -> str:
@@ -932,7 +1020,10 @@ def load_tasks():
         timeout_val = read_text(os.path.join(task_path, "timeout.txt")) or ""
 
         oauth_site = (read_text(os.path.join(task_path, "oauth_site.txt")) or "").strip()
-        oauth_authenticated = _cache_has_token(os.path.join(task_path, "gallery-dl-cache.sqlite3"))
+        oauth_authenticated = False
+        if oauth_site in OAUTH_SITES:
+            _migrate_legacy_oauth_cache(oauth_site, task_path)
+            oauth_authenticated = _cache_has_token(_oauth_cache_path(oauth_site))
 
         task = {
             "id": slug,
@@ -1249,9 +1340,12 @@ def tasks():
 
                 # Only ever ADD this — never remove it on a later edit, in case
                 # the user tuned the command by hand after turning OAuth off.
+                # Points at the shared, site-scoped cache (not a per-task
+                # file) so every task using this site's OAuth shares one
+                # login — see _oauth_cache_path().
                 if oauth_site and not has_cache_flag:
                     parts.insert(insert_index, "--cache-file")
-                    parts.insert(insert_index + 1, "gallery-dl-cache.sqlite3")
+                    parts.insert(insert_index + 1, _oauth_cache_path(oauth_site))
 
                 command = " ".join(shlex.quote(p) for p in parts)
         except ValueError as exc:
@@ -2007,6 +2101,8 @@ def run_task_background(task_folder: str):
         _release_task_slot()
         return
 
+    cmd_parts = _resolve_task_cache_file(cmd_parts, task_folder)
+
     env = os.environ.copy()
     env["GALLERY_DL_CONFIG"] = CONFIG_FILE
     env["PATH"] = env.get("PATH", "") + os.pathsep + "/usr/local/bin"
@@ -2470,25 +2566,6 @@ def _oauth_client_id_configured(site: str) -> bool:
         return False
 
 
-def _cache_has_token(path: str) -> bool:
-    """True once gallery-dl has actually written something (e.g. a
-    refresh-token) into this task's cache db — not merely once the file
-    exists. gallery-dl runs 'CREATE TABLE IF NOT EXISTS data' the instant it
-    opens the cache file, before any authentication happens, so checking
-    file existence/size alone reports "authenticated" the moment the OAuth
-    subprocess starts, regardless of whether login ever succeeded."""
-    if not os.path.exists(path):
-        return False
-    try:
-        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=1)
-        try:
-            return con.execute("SELECT 1 FROM data LIMIT 1").fetchone() is not None
-        finally:
-            con.close()
-    except sqlite3.Error:
-        return False
-
-
 def _parse_oauth_paste(raw: str) -> str:
     """Accepts a full failed-redirect URL, a bare query string (with or
     without a leading '?'), or just "code=...&state=..." and normalizes to
@@ -2538,7 +2615,9 @@ def api_oauth_start():
         if _oauth_proc and _oauth_proc.poll() is None:
             return jsonify({"error": f"An OAuth flow for '{_oauth_proc_task}' is already running. Stop it before starting another one."}), 409
 
-        cache_file = os.path.join(task_folder, "gallery-dl-cache.sqlite3")
+        _migrate_legacy_oauth_cache(site, task_folder)
+        cache_file = _oauth_cache_path(site)
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
         cmd = ["gallery-dl", "--config", CONFIG_FILE, f"oauth:{site}", "--cache-file", cache_file]
         if site in OAUTH_STDIN_SITES:
             # This subprocess's stdin is a pipe, not a real terminal, so
@@ -2665,28 +2744,33 @@ def api_oauth_stop():
 
 @app.route("/api/oauth/reset", methods=["POST"])
 def api_oauth_reset():
-    """Forget a task's cached OAuth state so it can be re-authenticated from
-    scratch — clears the "Auth" badge and lets a fresh 'gallery-dl oauth:...'
-    run write a new token. This deletes the task's whole cache db (it only
-    ever holds gallery-dl's own session/token cache, never the download
-    archive, which lives in a separate archive.sqlite)."""
+    """Forget the cached OAuth state for a task's site so it can be
+    re-authenticated from scratch — clears the "Auth" badge and lets a fresh
+    'gallery-dl oauth:...' run write a new token. The cache is shared per
+    site (see _oauth_cache_path()), so this resets it for EVERY task using
+    that site's OAuth, not just the one this was clicked from. Also clears
+    the (possibly still-present, pre-centralization) legacy per-task cache
+    file, so a stale token in it can't get migrated back in on next load."""
     task_slug = request.form.get("task_slug", "").strip()
     if not is_valid_slug(task_slug):
         return jsonify({"error": "Invalid task"}), 400
     task_folder = os.path.join(TASKS_ROOT, task_slug)
     if not os.path.isdir(task_folder):
         return jsonify({"error": "Task not found"}), 404
+    site = (read_text(os.path.join(task_folder, "oauth_site.txt")) or "").strip()
+    if site not in OAUTH_SITES:
+        return jsonify({"error": "Task has no OAuth site configured"}), 400
 
     with _oauth_proc_lock:
-        if _oauth_proc_task == task_slug and _oauth_proc and _oauth_proc.poll() is None:
-            return jsonify({"error": "An OAuth flow is currently running for this task. Stop it first."}), 409
+        if _oauth_proc_site == site and _oauth_proc and _oauth_proc.poll() is None:
+            return jsonify({"error": f"An OAuth flow for '{OAUTH_SITES[site]}' is currently running. Stop it first."}), 409
 
-    cache_file = os.path.join(task_folder, "gallery-dl-cache.sqlite3")
-    try:
-        if os.path.exists(cache_file):
-            os.remove(cache_file)
-    except OSError as exc:
-        return jsonify({"error": f"Could not remove cache file: {exc}"}), 500
+    for cache_file in (_oauth_cache_path(site), os.path.join(task_folder, "gallery-dl-cache.sqlite3")):
+        try:
+            if os.path.exists(cache_file):
+                os.remove(cache_file)
+        except OSError as exc:
+            return jsonify({"error": f"Could not remove cache file: {exc}"}), 500
 
     _invalidate_task_cache()
     return jsonify({"ok": True})
