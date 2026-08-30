@@ -31,6 +31,24 @@ mkdir -p "$TASKS_DIR" "$CONFIG_DIR" "$DOWNLOADS_DIR"
 mkdir -p "$CONFIG_DIR/media_wall"
 chmod 777 "$CONFIG_DIR/media_wall" 2>/dev/null || true
 
+# Bootstrap a default gallery-dl.conf on first run, so a brand-new install
+# has something sane to edit instead of failing every task until someone
+# remembers to hit "Reset" on the Config page. Only runs when there's no
+# config file at all yet — never touches one that already exists, even an
+# empty one (an intentionally-cleared config is still a choice).
+GALLERYDL_DEFAULT_CONFIG_URL="${GALLERYDL_DEFAULT_CONFIG_URL:-https://raw.githubusercontent.com/mikf/gallery-dl/master/docs/gallery-dl.conf}"
+CONFIG_FILE="$CONFIG_DIR/gallery-dl.conf"
+if [ ! -f "$CONFIG_FILE" ]; then
+  log "No gallery-dl.conf found — downloading default config from GitHub..."
+  if wget -q -O "$CONFIG_FILE.tmp" "$GALLERYDL_DEFAULT_CONFIG_URL"; then
+    mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+    log "Default gallery-dl config installed at $CONFIG_FILE"
+  else
+    rm -f "$CONFIG_FILE.tmp"
+    log "WARNING: could not download default config from $GALLERYDL_DEFAULT_CONFIG_URL — starting without one (use Config > Reset in the UI to retry)."
+  fi
+fi
+
 #######################
 chown -R "$PUID:$PGID" "$TASKS_DIR" "$CONFIG_DIR" 2>/dev/null || true
 chmod -R 775 "$TASKS_DIR" "$CONFIG_DIR" 2>/dev/null || true  # ADD THIS
