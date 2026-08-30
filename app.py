@@ -217,6 +217,11 @@ def _resolve_task_cache_file(cmd_parts: list, task_folder: str) -> list:
 TASK_TIMEOUT_SECONDS = int(os.environ.get("TASK_TIMEOUT_SECONDS", "0") or "0")
 TASK_CONCURRENT_MAX  = int(os.environ.get("TASK_CONCURRENT_MAX", "5"))
 MAX_ROTATED_LOGS = 5
+# Rotated logs live in a subfolder, not loose in the task folder — keeps
+# things tidy once MAX_ROTATED_LOGS worth of "logs-<timestamp>.txt" files
+# pile up next to the task's actual config files.
+ARCHIVED_LOGS_DIRNAME = "logs_archive"
+_ARCHIVED_LOG_RE = re.compile(r'^logs-(\d{4}-\d{2}-\d{2}T\d{6})\.txt$')
 
 def _get_task_timeout(task_folder: str) -> Optional[int]:
     txt = read_text(os.path.join(task_folder, "timeout.txt"))
@@ -225,22 +230,50 @@ def _get_task_timeout(task_folder: str) -> Optional[int]:
         return v if v > 0 else None
     return TASK_TIMEOUT_SECONDS if TASK_TIMEOUT_SECONDS > 0 else None
 
+def _archived_logs_dir(task_folder: str) -> str:
+    return os.path.join(task_folder, ARCHIVED_LOGS_DIRNAME)
+
+
+def _migrate_legacy_archived_logs(task_folder: str) -> None:
+    """One-time upgrade path: rotated logs used to sit loose in the task
+    folder as 'logs-<timestamp>.txt'. Sweep any stragglers into the archive
+    subfolder so old tasks end up just as tidy as new ones, without the user
+    having to touch anything."""
+    try:
+        strays = [f for f in os.listdir(task_folder) if _ARCHIVED_LOG_RE.match(f)]
+    except OSError:
+        return
+    if not strays:
+        return
+    archive_dir = _archived_logs_dir(task_folder)
+    try:
+        os.makedirs(archive_dir, exist_ok=True)
+        for fn in strays:
+            os.replace(os.path.join(task_folder, fn), os.path.join(archive_dir, fn))
+    except OSError:
+        app.logger.warning(
+            "Could not migrate legacy archived logs for %s", task_folder, exc_info=True)
+
+
 def _rotate_logs(task_folder: str) -> None:
+    _migrate_legacy_archived_logs(task_folder)
+
     logs_path = os.path.join(task_folder, "logs.txt")
     if not os.path.exists(logs_path) or os.path.getsize(logs_path) == 0:
         return
+    archive_dir = _archived_logs_dir(task_folder)
+    os.makedirs(archive_dir, exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y-%m-%dT%H%M%S")
-    archived = os.path.join(task_folder, f"logs-{stamp}.txt")
+    archived = os.path.join(archive_dir, f"logs-{stamp}.txt")
     try:
         os.rename(logs_path, archived)
     except Exception:
         app.logger.warning("Could not rotate log for %s", task_folder, exc_info=True)
         return
-    pat = re.compile(r'^logs-\d{4}-\d{2}-\d{2}T\d{6}\.txt$')
-    archives = sorted(f for f in os.listdir(task_folder) if pat.match(f))
+    archives = sorted(f for f in os.listdir(archive_dir) if _ARCHIVED_LOG_RE.match(f))
     for old in archives[:-MAX_ROTATED_LOGS]:
         try:
-            os.remove(os.path.join(task_folder, old))
+            os.remove(os.path.join(archive_dir, old))
         except Exception:
             app.logger.warning("Could not remove old log archive %s", old, exc_info=True)
 
@@ -1746,12 +1779,15 @@ def config_backup():
             task_dir = os.path.join(TASKS_ROOT, slug)
             if not os.path.isdir(task_dir):
                 continue
-            for fn in os.listdir(task_dir):
-                if fn in SKIP_FILES:
-                    continue
-                fp = os.path.join(task_dir, fn)
-                if os.path.isfile(fp):
-                    zf.write(fp, f"tasks/{slug}/{fn}")
+            # Recursive so it also picks up logs_archive/ (and any future
+            # per-task subfolders) instead of only the task dir's top level.
+            for root, _dirs, filenames in os.walk(task_dir):
+                for fn in filenames:
+                    if fn in SKIP_FILES:
+                        continue
+                    fp = os.path.join(root, fn)
+                    arcname = f"tasks/{slug}/{os.path.relpath(fp, task_dir)}".replace("\\", "/")
+                    zf.write(fp, arcname)
 
         if include_config and os.path.isfile(CONFIG_FILE):
             zf.write(CONFIG_FILE, f"config/{os.path.basename(CONFIG_FILE)}")
@@ -2496,7 +2532,6 @@ def download_task_logs(slug):
 # ---------------------------------------------------------------------
 # Archived (rotated) log listing and download
 # ---------------------------------------------------------------------
-_ARCHIVED_LOG_RE = re.compile(r'^logs-(\d{4}-\d{2}-\d{2}T\d{6})\.txt$')
 
 @app.route("/tasks/<slug>/logs/archived")
 def task_logs_archived(slug):
@@ -2505,17 +2540,21 @@ def task_logs_archived(slug):
     task_folder = os.path.join(TASKS_ROOT, slug)
     if not os.path.isdir(task_folder):
         return jsonify({"error": "Task not found"}), 404
+    _migrate_legacy_archived_logs(task_folder)
+    archive_dir = _archived_logs_dir(task_folder)
     files = []
     try:
-        for fn in sorted(os.listdir(task_folder), reverse=True):
+        for fn in sorted(os.listdir(archive_dir), reverse=True):
             m = _ARCHIVED_LOG_RE.match(fn)
             if m:
-                fp = os.path.join(task_folder, fn)
+                fp = os.path.join(archive_dir, fn)
                 files.append({
                     "name": fn,
                     "ts": m.group(1),
                     "size": os.path.getsize(fp),
                 })
+    except OSError:
+        pass  # no archive dir yet — nothing rotated for this task
     except Exception:
         app.logger.exception("Could not list archived logs for %s", slug)
     return jsonify({"slug": slug, "files": files})
@@ -2525,7 +2564,7 @@ def download_task_log_archived(slug, filename):
     if not is_valid_slug(slug) or not _ARCHIVED_LOG_RE.match(filename):
         return jsonify({"error": "Invalid"}), 400
     task_folder = os.path.join(TASKS_ROOT, slug)
-    fp = os.path.join(task_folder, filename)
+    fp = os.path.join(_archived_logs_dir(task_folder), filename)
     if not os.path.isfile(fp):
         return jsonify({"error": "Not found"}), 404
     try:
